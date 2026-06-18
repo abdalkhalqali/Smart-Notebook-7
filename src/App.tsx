@@ -2987,12 +2987,40 @@ export default function App() {
     alert("تم تصدير المحاضرة كملف Markdown بنجاح! 🚀");
   };
 
-  // Mock instant QR code generator
-  const handleToggleQRCodeShare = () => {
-    if (qrStateCode) {
-      setQrStateCode(null);
-    } else {
-      setQrStateCode("https://ai.studio/notebook-share/" + selectedLectureId);
+  // Native Share — uses Web Share API or falls back to clipboard copy
+  const handleToggleQRCodeShare = async () => {
+    const lec = getSelectedLecture();
+    if (!lec) return;
+
+    // Build shareable text from notebook title + pages
+    const pagesText = lec.pages
+      .map((p, i) => {
+        const lines: string[] = [`📄 صفحة ${i + 1}`];
+        p.textboxes.forEach((tb) => { if (tb.text?.trim()) lines.push(tb.text.trim()); });
+        if (p.cornellSummary?.trim()) lines.push(`خلاصة: ${p.cornellSummary.trim()}`);
+        return lines.join("\n");
+      })
+      .join("\n\n");
+
+    const shareTitle = `📚 دفتر: ${lec.title}`;
+    const shareText = `${shareTitle}\n\n${pagesText || "الدفتر فارغ"}`;
+
+    if (typeof navigator.share === "function") {
+      try {
+        await navigator.share({ title: shareTitle, text: shareText });
+        return;
+      } catch (err: any) {
+        if (err?.name === "AbortError") return;
+        // Fallthrough to clipboard
+      }
+    }
+
+    // Clipboard fallback
+    try {
+      await navigator.clipboard.writeText(shareText);
+      alert("تم نسخ محتوى الدفتر إلى الحافظة ✅");
+    } catch {
+      alert("تعذّر المشاركة أو النسخ على هذا الجهاز.");
     }
   };
 
@@ -5077,8 +5105,8 @@ export default function App() {
                     )}
 
                     {/* Integrated Page Controls bar */}
-                    <div className="flex items-center justify-between bg-slate-950 px-4 py-3 rounded-xl border border-slate-800 text-xs">
-                      <div className="flex items-center gap-1.5">
+                    <div className="flex items-center justify-between bg-slate-950 px-2 py-3 rounded-xl border border-slate-800 text-xs overflow-x-auto gap-2">
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
                         <button
                           onClick={() => handleMovePageOrder('up')}
                           disabled={activePageNumber <= 1}
@@ -5117,7 +5145,7 @@ export default function App() {
                       </div>
 
                       {/* Dropdown background selector - Compacted and visual popover */}
-                      <div className="flex items-center gap-2 relative">
+                      <div className="flex items-center gap-2 relative flex-shrink-0">
                         {/* Fullscreen focus mode controller button */}
                         <button
                           onClick={() => setIsCanvasFullScreen(true)}
