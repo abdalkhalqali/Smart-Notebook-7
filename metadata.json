@@ -1,0 +1,11 @@
+{
+  "name": "Smart Lecture Notebook",
+  "description": "دفتر ملاحظات أكاديمي ذكي مدعوم بالذكاء الاصطناعي لتلخيص وتحليل المحاضرات، التعرف الضوئي (OCR) على الكتابة اليدوية والسبورة، توليد اختبارات وبطاقات مراجعة تفاعلية، وتحويل الدروس لبودكاست مسموع.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
