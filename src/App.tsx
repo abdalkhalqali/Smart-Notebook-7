@@ -302,10 +302,13 @@ export default function App() {
   const [isVideoRecording, setIsVideoRecording] = useState(false);
   const [videoSeconds, setVideoSeconds] = useState(0);
   const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
+  const [cameraFacing, setCameraFacing] = useState<'user' | 'environment'>('user');
   const videoPreviewRef = useRef<HTMLVideoElement | null>(null);
   const cameraFileInputRef = useRef<HTMLInputElement | null>(null);
   const voiceActiveRef = useRef<boolean>(false);
   const videoSpeechActiveRef = useRef<boolean>(false);
+  const voiceDedupeRef = useRef<string[]>([]);
+  const videoDedupeRef = useRef<string[]>([]);
 
   // Active playback console for recorded lecture videos 
   const [activeViewingVideoId, setActiveViewingVideoId] = useState<string | null>(null);
@@ -1178,6 +1181,7 @@ export default function App() {
   const handleStartVoiceRecording = () => {
     setIsVoiceRecording(true);
     voiceActiveRef.current = true;
+    voiceDedupeRef.current = [];
     setLiveTranscriptText("جاري تشغيل ميكروفون المستمع الصوتي الذكي... 🎙️\n");
     setNewLectureTitle("");
 
@@ -1189,17 +1193,23 @@ export default function App() {
         try {
           const recognition = new SpeechRecognition();
           recognition.continuous = true;
-          recognition.interimResults = true;
+          recognition.interimResults = false;
           recognition.lang = "ar-SA";
           recognition.onresult = (event: any) => {
             let latestText = "";
             for (let i = event.resultIndex; i < event.results.length; ++i) {
               if (event.results[i].isFinal) {
-                latestText += " " + event.results[i][0].transcript;
+                const seg = event.results[i][0].transcript.trim();
+                if (!seg) continue;
+                // Dedup: skip if this exact segment was recently added
+                if (voiceDedupeRef.current.includes(seg)) continue;
+                voiceDedupeRef.current.push(seg);
+                if (voiceDedupeRef.current.length > 20) voiceDedupeRef.current.shift();
+                latestText += " " + seg;
               }
             }
             if (latestText.trim()) {
-              setLiveTranscriptText(prev => prev + " " + latestText);
+              setLiveTranscriptText(prev => prev + latestText);
             }
           };
           recognition.onerror = (e: any) => {
@@ -1208,7 +1218,7 @@ export default function App() {
             }
           };
           recognition.onend = () => {
-            if (voiceActiveRef.current) setTimeout(startRecognition, 200);
+            if (voiceActiveRef.current) setTimeout(startRecognition, 300);
           };
           recognition.start();
           (window as any)._activeSpeechRec = recognition;
@@ -1357,15 +1367,45 @@ export default function App() {
     setRecordingTitle("تسجيل صفي جديد...");
   };
 
+  // Switch between front and back camera while recording
+  const handleSwitchCamera = async () => {
+    const newFacing = cameraFacing === 'user' ? 'environment' : 'user';
+    setCameraFacing(newFacing);
+    if (!isVideoRecording) return;
+    // Stop current stream tracks
+    if (videoStream) videoStream.getTracks().forEach(t => t.stop());
+    try {
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: newFacing },
+        audio: true
+      });
+      setVideoStream(newStream);
+      // Restart MediaRecorder on new stream
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        try { mediaRecorderRef.current.stop(); } catch(e) {}
+      }
+      const videoMime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
+        ? 'video/webm;codecs=vp9,opus'
+        : MediaRecorder.isTypeSupported('video/webm') ? 'video/webm' : 'audio/webm';
+      const mr = new MediaRecorder(newStream, { mimeType: videoMime });
+      mr.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
+      mr.start(500);
+      mediaRecorderRef.current = mr;
+    } catch(e: any) {
+      console.warn("Camera switch failed:", e.message);
+    }
+  };
+
   // Start real camera capture stream using WebRTC or use dynamic simulation helper
   const handleStartVideoRecording = async () => {
     try {
       setVideoSeconds(0);
+      videoDedupeRef.current = [];
       setLiveTranscriptText("جاري تشغيل كاميرا المحاضرة والمستمع الصوتي... 📹\n");
 
       // Request camera + microphone
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: cameraFacing },
         audio: true
       });
 
@@ -1382,19 +1422,26 @@ export default function App() {
           try {
             const rec = new SpeechRecognition();
             rec.continuous = true;
-            rec.interimResults = true;
+            rec.interimResults = false;
             rec.lang = "ar-SA";
             rec.onresult = (ev: any) => {
               let latest = "";
               for (let i = ev.resultIndex; i < ev.results.length; ++i) {
-                if (ev.results[i].isFinal) latest += " " + ev.results[i][0].transcript;
+                if (ev.results[i].isFinal) {
+                  const seg = ev.results[i][0].transcript.trim();
+                  if (!seg) continue;
+                  if (videoDedupeRef.current.includes(seg)) continue;
+                  videoDedupeRef.current.push(seg);
+                  if (videoDedupeRef.current.length > 20) videoDedupeRef.current.shift();
+                  latest += " " + seg;
+                }
               }
-              if (latest.trim()) setLiveTranscriptText(p => p + " " + latest);
+              if (latest.trim()) setLiveTranscriptText(p => p + latest);
             };
             rec.onerror = (e: any) => {
               if (e.error !== "no-speech" && e.error !== "network") console.warn("Video speech recognition error:", e.error);
             };
-            rec.onend = () => { if (videoSpeechActiveRef.current) setTimeout(startVideoSpeech, 200); };
+            rec.onend = () => { if (videoSpeechActiveRef.current) setTimeout(startVideoSpeech, 300); };
             rec.start();
             (window as any)._activeVideoSpeechRec = rec;
           } catch (e) {}
@@ -4824,22 +4871,34 @@ export default function App() {
                           {isVideoRecording && (
                             <div className="bg-slate-900 rounded-2xl border border-indigo-500/60 overflow-hidden shadow-lg p-3 space-y-2.5">
                               <div className="flex items-center justify-between text-[11px]">
-                                <div className="flex items-center gap-1.5 text-red-00 font-bold">
+                                <div className="flex items-center gap-1.5 font-bold">
                                   <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
-                                  <span>● البث المباشر نشط</span>
+                                  <span className="text-red-400">● البث المباشر نشط</span>
                                 </div>
-                                <span className="font-extrabold text-slate-300 font-sansArabic">معاينة عدسة كاميرا المحاضر</span>
+                                <div className="flex items-center gap-2">
+                                  {/* Camera Switch Button */}
+                                  <button
+                                    onClick={handleSwitchCamera}
+                                    className="flex items-center gap-1 px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white rounded-lg text-[10px] font-bold transition cursor-pointer"
+                                    title={cameraFacing === 'user' ? 'التبديل للكاميرا الخلفية 🔄' : 'التبديل للكاميرا الأمامية 🔄'}
+                                  >
+                                    <span>🔄</span>
+                                    <span>{cameraFacing === 'user' ? 'خلفية' : 'أمامية'}</span>
+                                  </button>
+                                  <span className="font-extrabold text-slate-300 font-sansArabic">
+                                    {cameraFacing === 'user' ? '📷 أمامية' : '📸 خلفية'}
+                                  </span>
+                                </div>
                               </div>
                               
-                              {/* ✅ FIX: Always render <video> element so ref is available when stream arrives */}
+                              {/* Video preview — mirror only for front camera */}
                               <div className="aspect-video w-full rounded-xl bg-black border border-slate-800 overflow-hidden relative flex items-center justify-center text-slate-600">
-                                {/* Video element always mounted — srcObject bound via useEffect */}
                                 <video
                                   ref={videoPreviewRef}
                                   autoPlay
                                   playsInline
                                   muted
-                                  className={`w-full h-full object-cover scale-x-[-1] ${videoStream ? 'block' : 'hidden'}`}
+                                  className={`w-full h-full object-cover ${cameraFacing === 'user' ? 'scale-x-[-1]' : ''} ${videoStream ? 'block' : 'hidden'}`}
                                 />
                                 {!videoStream && (
                                   <div className="absolute inset-0 flex flex-col items-center justify-center text-center space-y-2 p-4">
