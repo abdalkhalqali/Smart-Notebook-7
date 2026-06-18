@@ -192,6 +192,13 @@ async function executeVisionCall(req: express.Request, promptText: string, base6
   }
 }
 
+// Logic to identify if an error is an API Key auth error — never retry these
+function isAuthError(error: any): boolean {
+  const msg = (error?.message || "").toLowerCase();
+  const status = error?.status;
+  return status === 401 || status === 403 || msg.includes("api key") || msg.includes("unauthorized") || msg.includes("invalid key");
+}
+
 // ⏳ Robust Exponential Backoff with Jitter for Gemini API to neutralize temporary 503 spikes or 429 rate limits
 async function callWithRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 1500): Promise<T> {
   let attempt = 0;
@@ -200,6 +207,11 @@ async function callWithRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 150
       return await fn();
     } catch (error: any) {
       attempt++;
+
+      // If it is an auth error, do NOT retry — fail fast
+      if (isAuthError(error)) {
+        throw error;
+      }
       
       const isTemporary = 
         error?.status === "UNAVAILABLE" || 
@@ -494,6 +506,9 @@ app.post("/api/ai/summarize", async (req, res) => {
     try { result = JSON.parse(responseText || "{}"); } catch { result = { summary: responseText || "", keyPoints: [], keywords: [] }; }
     res.json(result);
   } catch (error: any) {
+    if (isAuthError(error)) {
+      return res.status(401).json({ error: "فشل الاتصال: مفتاح API غير صالح أو غير مصرح به." });
+    }
     console.error("AI Summarize error (falling back to generated stub):", error);
     // Graceful fallback to prevent frontend crash
     res.json({
@@ -535,6 +550,9 @@ app.post("/api/ai/handwriting", async (req, res) => {
 
     res.json({ text: responseText.trim() || "" });
   } catch (error) {
+    if (isAuthError(error)) {
+      return res.status(401).json({ error: "فشل الاتصال: مفتاح API غير صالح." });
+    }
     console.error("Handwriting conversion error (falling back to stub):", error);
     res.json({
       text: "التعرف الذكي: تدوينات ورسومات الطالب الهندسية في صفحة الملاحظات المخصصة",
@@ -569,6 +587,9 @@ app.post("/api/ai/ocr", async (req, res) => {
 
     res.json({ text: responseText.trim() || "" });
   } catch (error) {
+    if (isAuthError(error)) {
+      return res.status(401).json({ error: "فشل الاتصال: مفتاح API غير صالح." });
+    }
     console.error("OCR error (falling back to stub):", error);
     res.json({
       text: "تم مسح الصورة بنجاح وتوليد المربعات النصية الذكية الداعمة للصفحة تلقائياً في الدفتر.",
@@ -645,6 +666,9 @@ app.post("/api/ai/quiz", async (req, res) => {
     try { result = JSON.parse(responseText || "[]"); } catch { result = []; }
     res.json(result);
   } catch (error) {
+    if (isAuthError(error)) {
+      return res.status(401).json({ error: "فشل الاتصال: مفتاح API غير صالح." });
+    }
     console.error("AI Quiz error (falling back to generated stub):", error);
     res.json([
       {
@@ -721,6 +745,9 @@ app.post("/api/ai/flashcards", async (req, res) => {
     try { result = JSON.parse(responseText || "[]"); } catch { result = []; }
     res.json(result);
   } catch (error) {
+    if (isAuthError(error)) {
+      return res.status(401).json({ error: "فشل الاتصال: مفتاح API غير صالح." });
+    }
     console.error("AI Flashcards error (falling back to stub):", error);
     res.json([
       { front: "س: ما هي الطريقة المثالية لمذاكرة مادة " + (subject || "اليوم") + "؟", back: "ج: تلخيص الصفحة في نظام كورنيل الصفي وحل بطاقات التكرار المتباعد لتعطيل منحنى النسيان." },
@@ -761,6 +788,9 @@ app.post("/api/ai/tutor", async (req, res) => {
     try { result = JSON.parse(responseText || "{}"); } catch { result = { plan: responseText || "", recommendations: "", tips: "" }; }
     res.json(result);
   } catch (error) {
+    if (isAuthError(error)) {
+      return res.status(401).json({ error: "فشل الاتصال: مفتاح API غير صالح." });
+    }
     console.error("AI Tutor error (falling back to placeholder):", error);
     res.json({
       plan: `خطة المستشار الموصى بها لمادة ${currentSubject || "الحالية"}:\n1. خذ جلسة تركيز بومودورو مدتها 25 دقيقة لاستعراض صفحة كورنيل.\n2. حل التمارين التجريبية وتثبيت شارات المفردات الصعبة.\n3. لخص الملاحظات الصعبة في مربعات نصوص لضمان ثباتها.`,
@@ -815,6 +845,9 @@ app.post("/api/ai/podcast", async (req, res) => {
 
     res.json({ audioBase64: base64Audio, textScript: podcastSpeechText });
   } catch (error: any) {
+    if (isAuthError(error)) {
+      return res.status(401).json({ error: "فشل الاتصال: مفتاح API غير صالح." });
+    }
     console.error("AI Podcast error:", error);
     res.status(500).json({ error: "خادم البودكاست يواجه ضغطاً طلبياً مؤقتاً بالشبكة حالياً. يرجى إعادة النقر بعد ثوانٍ لتوليد المذياع الصوتي." });
   }
