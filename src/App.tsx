@@ -3156,7 +3156,7 @@ export default function App() {
                 className="w-full py-1.5 px-2.5 bg-indigo-600/15 hover:bg-indigo-600/25 text-indigo-300 text-[10px] border border-indigo-600/30 rounded-lg flex items-center justify-center gap-1.5 font-bold transition duration-150"
               >
                 <Key className="w-3 h-3 text-indigo-400" />
-                <span>مفتاح المساعد الذكي الذاتي API</span>
+                <span>كود تشغيل التطبيق</span>
               </button>
 
               <button
@@ -3693,7 +3693,7 @@ export default function App() {
       </header>
 
         {/* Outer view swapper panel */}
-        <main className="flex-1 p-4 md:p-6 space-y-6 relative overflow-hidden">
+        <main className="flex-1 p-4 md:p-6 space-y-6 relative">
           
           {/* Academic Breadcrumb Status Bar (شريط تتبع المسار الدراسي الفوري للتكيف الفوري) */}
           {isEditingBreadcrumb ? (
@@ -4210,10 +4210,9 @@ export default function App() {
                           <button
                             onClick={() => {
                               if (isVoiceRecording) {
-                                setIsVoiceRecording(false);
+                                handleStopVoiceRecording();
                               } else {
-                                setIsVoiceRecording(true);
-                                alert("🎙️ تم تدشين الميكروفون المساعد! سيقوم Gemini بالإنصات لملخص المادة بشكل مباشر وتفريغه ككتابة يدوية.");
+                                handleStartVoiceRecording();
                               }
                             }}
                             className={`p-3 rounded-xl border text-center font-bold text-xs flex flex-col items-center justify-center gap-2 transition ${
@@ -4222,8 +4221,8 @@ export default function App() {
                                 : 'bg-slate-905 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200'
                             }`}
                           >
-                            <Mic className="w-5 h-5 text-rose-400" />
-                            <span>تفريغ وبدء ميكروفون المدرس 🎙️</span>
+                            <Mic className={`w-5 h-5 ${isVoiceRecording ? 'text-rose-400 animate-pulse' : 'text-rose-400'}`} />
+                            <span>{isVoiceRecording ? `⏹ إيقاف (${recordingSeconds} ث)` : 'تسجيل ميكروفون المدرس 🎙️'}</span>
                           </button>
 
                           <button
@@ -5322,17 +5321,17 @@ export default function App() {
                     {/* Integrated Canvas Workstage Board */}
                     <div className={`relative transition-all duration-300 ${
                       layoutMode === 'phone' 
-                        ? 'max-w-[420px] mx-auto border-[12px] border-slate-900 rounded-[36px] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.8)] overflow-hidden bg-white' 
+                        ? 'max-w-[420px] mx-auto border-[10px] border-slate-900 rounded-[36px] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.8)] overflow-y-auto bg-slate-950' 
                         : ''
-                    }`} style={{ minHeight: "500px" }}>
+                    }`} style={layoutMode === 'phone' ? { maxHeight: "85vh" } : { minHeight: "calc(100vh - 220px)" }}>
                       
                       {layoutMode === 'phone' && (
-                        <div className="absolute top-0 inset-x-0 h-4 bg-slate-900 z-50 flex items-center justify-center">
-                          <div className="w-16 h-3.5 bg-black rounded-b-xl absolute top-0" /> {/* Speaker/Notch simulation */}
+                        <div className="sticky top-0 inset-x-0 h-5 bg-slate-900 z-50 flex items-center justify-center shrink-0">
+                          <div className="w-16 h-4 bg-black rounded-b-xl absolute top-0" />
                         </div>
                       )}
 
-                      <div className={layoutMode === 'phone' ? 'pt-4 border-t border-slate-900/10' : ''}>
+                      <div className={layoutMode === 'phone' ? 'pt-2' : ''}>
                         {/* Floating Speed Dial & Quick action buttons */}
                         {showFloatingQuickActions && lecture.pages.length > 0 && (
                           <div className="absolute top-4 left-4 z-45 flex flex-col gap-2 p-1.5 bg-slate-950/85 backdrop-blur border border-slate-800 rounded-2xl shadow-2xl select-none text-right">
@@ -5765,8 +5764,8 @@ export default function App() {
           {/* AI Settings Modal & OpenRouter Credentials */}
           {showAiKeyModal && (
             <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fade-in" dir="rtl">
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl relative text-right animate-scale-in">
-                <div className="p-5 bg-slate-950 border-b border-slate-850 flex items-center justify-between">
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg flex flex-col max-h-[90vh] shadow-2xl relative text-right animate-scale-in">
+                <div className="shrink-0 p-5 bg-slate-950 border-b border-slate-850 flex items-center justify-between rounded-t-2xl">
                   <button
                     onClick={() => setShowAiKeyModal(false)}
                     className="p-1 px-2.5 bg-slate-900 border border-slate-800 rounded-lg text-rose-400 hover:bg-slate-800 font-extrabold text-xs transition duration-150 cursor-pointer"
@@ -5775,11 +5774,11 @@ export default function App() {
                   </button>
                   <div className="flex items-center gap-2">
                     <Key className="w-5 h-5 text-indigo-400" />
-                    <h3 className="text-sm font-black text-white">إعدادات مفاتيح المساعد الذكي والمزودين</h3>
+                    <h3 className="text-sm font-black text-white">إعدادات الأكواد الخاصة بتشغيل التطبيق</h3>
                   </div>
                 </div>
 
-                <div className="p-6 space-y-4">
+                <div className="p-6 space-y-4 overflow-y-auto flex-1 custom-scrollbar">
                   <p className="text-xs text-slate-400 leading-relaxed">
                     يمكنك تشغيل المساعد الدراسي الذكي بمفتاح الذكاء الاصطناعي الخاص بك لتفادي أي انقطاع بالخدمة أو للوصول لموديلات مالكة وفوق العادة ومستقلة.
                   </p>
@@ -5828,7 +5827,7 @@ export default function App() {
                   </div>
 
                    <div className="space-y-1.5">
-                    <label className="text-[11px] text-slate-300 font-bold block">مفتاح الـ API الشخصي (Secret API Key)</label>
+                    <label className="text-[11px] text-slate-300 font-bold block">كود تشغيل التطبيق الشخصي (Secret Code)</label>
                     <div className="flex gap-2">
                       <input
                         type="password"
@@ -5923,12 +5922,12 @@ export default function App() {
 
                   <button
                     onClick={() => {
-                      alert("تم حفظ مفاتيح الأمان والذكاء الاصطناعي بنجاح! سيتم تطبيقها تلقائياً على كل الطلبات الذكية 🚀");
+                      alert("✅ تم حفظ كود التطبيق بنجاح! سيتم تطبيقه تلقائياً على كل الطلبات الذكية 🚀");
                       setShowAiKeyModal(false);
                     }}
                     className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-black transition cursor-pointer"
                   >
-                    تأكيد وحفظ الإعدادات الفورية
+                    تأكيد وحفظ الكود
                   </button>
                 </div>
               </div>

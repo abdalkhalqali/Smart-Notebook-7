@@ -372,55 +372,46 @@ app.post("/api/ai/validate-key", async (req, res) => {
       });
 
     } else if (prov === "openrouter") {
-      const url = "https://openrouter.ai/api/v1/chat/completions";
-      const resp = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${trimmedKey}`,
-          "HTTP-Referer": "https://ai.studio/build",
-          "X-Title": "UnNoted Key Validator"
-        },
-        body: JSON.stringify({
-          model: "google/gemini-2.5-flash",
-          messages: [{ role: "user", content: "Hi" }],
-          max_tokens: 1
-        })
+      // Verify key + fetch real credit balance from OpenRouter
+      const keyInfoResp = await fetch("https://openrouter.ai/api/v1/auth/key", {
+        headers: { "Authorization": `Bearer ${trimmedKey}` }
       });
 
-      if (!resp.ok) {
-        const errText = await resp.text();
+      if (!keyInfoResp.ok) {
+        const errText = await keyInfoResp.text();
         let displayError = errText;
         try {
           const parsed = JSON.parse(errText);
-          if (parsed.error?.message) {
-            displayError = parsed.error.message;
-          }
+          if (parsed.error?.message) displayError = parsed.error.message;
         } catch (_) {}
-        throw new Error(`Key Check Failed: ${resp.status} - ${displayError}`);
+        throw new Error(`فشل التحقق من الكود: ${keyInfoResp.status} - ${displayError}`);
       }
+
+      const keyInfo = await keyInfoResp.json();
+      // OpenRouter returns: { data: { label, usage, limit, is_free_tier, rate_limit } }
+      const kd = keyInfo.data || {};
+      const usageCredits: number = typeof kd.usage === "number" ? kd.usage : 0;
+      const limitCredits: number = typeof kd.limit === "number" ? kd.limit : 0;
+      const remainingCredits = limitCredits > 0 ? Math.max(0, limitCredits - usageCredits) : null;
+      const isFree = kd.is_free_tier === true;
 
       const permissions = [
         "الوصول الكامل لجميع ميزات التطبيق الذكي 🚀",
         "التحليل الدراسي الشامل وحفظ المراجعات المخططة 📝",
-        "حل الاستفسارات وحفظ الملخصات والبطاقات الأكاديمية 🧠"
+        "حل الاستفسارات وحفظ الملخصات والبطاقات الأكاديمية 🧠",
+        "التفريغ الصوتي والتلخيص الآلي بالذكاء الاصطناعي 🎙️"
       ];
-
-      const limit = 15000;
-      const baseUsed = Math.floor(Math.abs(Math.cos(trimmedKey.length)) * 450) + 210;
-      const quotaUsedVal = baseUsed + extraUsed;
-      const quotaRemainingVal = Math.max(0, limit - quotaUsedVal);
 
       return res.json({
         valid: true,
-        provider: "academic_pro",
-        owner: "تم منحه وتفعيله بصلاحية أكاديمية مباشرة من المطور والمالك 👑",
+        provider: "openrouter_pro",
+        owner: kd.label ? `كود OpenRouter — ${kd.label}` : "كود OpenRouter مفعّل ✅",
         permissions,
-        quotaAllowed: "15,000 طلب دراسي",
-        quotaUsed: `${quotaUsedVal} طلب مستهلك`,
-        quotaRemaining: `${quotaRemainingVal} طلب`,
+        quotaAllowed: limitCredits > 0 ? `$${limitCredits.toFixed(2)} رصيد إجمالي` : (isFree ? "حساب مجاني" : "غير محدود"),
+        quotaUsed: `$${usageCredits.toFixed(4)} مستهلك`,
+        quotaRemaining: remainingCredits !== null ? `$${remainingCredits.toFixed(4)} متبقٍ` : "مفتوح",
         expiryDate: "نشط ومتجدد",
-        status: "المفتاح فَعَّال ونشط ومصرح بالكامل للاستخدام الفوري 🟢"
+        status: "الكود فَعَّال ونشط ومصرح بالكامل للاستخدام الفوري 🟢"
       });
 
     } else {
@@ -846,24 +837,66 @@ app.post("/api/ai/transcribe",
         mimeType = 'audio/webm';
       }
 
-      const ai = getAI(req);
       const base64Audio = audioBuffer.toString('base64');
 
-      const response = await generateContentWithRetryAndFallback(ai, {
-        model: "gemini-2.5-flash",
-        contents: [{
-          parts: [
-            {
-              text: "أنت نظام تحويل صوت إلى نص متخصص في اللغة العربية. حوّل هذا التسجيل الصوتي إلى نص عربي كامل ودقيق. اكتب النص كما هو مسموع حرفياً دون أي تعليقات أو مقدمات. إذا كان أي جزء غير مسموع اكتب [غير واضح] بدلاً منه."
-            },
-            {
-              inlineData: { mimeType, data: base64Audio }
-            }
-          ]
-        }]
-      });
+      const customKey = req.headers["x-custom-api-key"] as string | undefined;
+      const provider = (req.headers["x-custom-provider"] as string | undefined) || "gemini";
 
-      const transcript = response.text?.trim() || "";
+      let transcript = "";
+
+      if (provider === "openrouter" && customKey?.trim()) {
+        // OpenRouter: send audio as base64 inline data to a multimodal model
+        const orResp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${customKey.trim()}`,
+            "HTTP-Referer": "https://unnoted.app",
+            "X-Title": "UnNoted Transcription"
+          },
+          body: JSON.stringify({
+            model: "google/gemini-2.5-flash",
+            messages: [{
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: "أنت نظام تحويل صوت إلى نص متخصص في اللغة العربية. حوّل هذا التسجيل الصوتي إلى نص عربي كامل ودقيق. اكتب النص كما هو مسموع حرفياً دون أي تعليقات أو مقدمات. إذا كان أي جزء غير مسموع اكتب [غير واضح] بدلاً منه."
+                },
+                {
+                  type: "image_url",
+                  image_url: { url: `data:${mimeType};base64,${base64Audio}` }
+                }
+              ]
+            }],
+            max_tokens: 4096
+          })
+        });
+        if (!orResp.ok) {
+          const errText = await orResp.text();
+          throw new Error(`OpenRouter transcription failed: ${orResp.status} - ${errText.slice(0, 200)}`);
+        }
+        const orData = await orResp.json();
+        transcript = orData.choices?.[0]?.message?.content?.trim() || "";
+      } else {
+        // Default: use Gemini SDK (direct key or server key)
+        const ai = getAI(req);
+        const response = await generateContentWithRetryAndFallback(ai, {
+          model: "gemini-2.5-flash",
+          contents: [{
+            parts: [
+              {
+                text: "أنت نظام تحويل صوت إلى نص متخصص في اللغة العربية. حوّل هذا التسجيل الصوتي إلى نص عربي كامل ودقيق. اكتب النص كما هو مسموع حرفياً دون أي تعليقات أو مقدمات. إذا كان أي جزء غير مسموع اكتب [غير واضح] بدلاً منه."
+              },
+              {
+                inlineData: { mimeType, data: base64Audio }
+              }
+            ]
+          }]
+        });
+        transcript = response.text?.trim() || "";
+      }
+
       res.json({ transcript });
     } catch (error: any) {
       console.error("Transcription error:", error);
