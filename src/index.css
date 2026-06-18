@@ -7,8 +7,23 @@
   --font-mono: "JetBrains Mono", monospace;
 }
 
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  min-height: 100vh;
+  overflow-x: hidden;
+  background-color: #0f172a;
+}
+
 body {
   font-family: var(--font-sansArabic);
+}
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+  overflow-x: hidden;
 }
 
 /* Premium Night/Dark Mode Overrides for consistent low-light comfort */

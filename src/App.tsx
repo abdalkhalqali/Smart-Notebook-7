@@ -3000,7 +3000,7 @@ export default function App() {
 
   // 1. Left Sidebar navigation - Converted to overlay drawer panel
   return (
-    <div className={`min-h-screen bg-slate-900 text-slate-100 flex flex-col font-sansArabic relative ${
+    <div className={`min-h-screen w-full max-w-full overflow-x-hidden bg-slate-900 text-slate-100 flex flex-col font-sansArabic relative ${
       isDarkMode ? "night-mode" : ""
     }`}>
       {!isFocusMode && (
@@ -3413,7 +3413,7 @@ export default function App() {
 
 
       {/* Main top header bar across all modes */}
-      <header className="px-6 py-3 bg-slate-950 border-b border-slate-800 flex items-center justify-between text-right">
+      <header className="px-3 sm:px-6 py-3 bg-slate-950 border-b border-slate-800 flex items-center justify-between text-right w-full max-w-full overflow-hidden">
         
         {/* Left panel action symbols: Clean Camera Capture Types & Notifications */}
         <div className="flex items-center gap-2.5 relative">
@@ -3605,7 +3605,7 @@ export default function App() {
       </header>
 
         {/* Outer view swapper panel */}
-        <main className={`flex-1 space-y-6 relative ${layoutMode === 'phone' ? 'p-1 sm:p-2' : 'p-4 md:p-6'}`}>
+        <main className={`flex-1 space-y-6 relative w-full max-w-full overflow-x-hidden ${layoutMode === 'phone' ? 'p-1 sm:p-2' : 'p-4 md:p-6'}`}>
           
           {/* Academic Breadcrumb Status Bar (شريط تتبع المسار الدراسي الفوري للتكيف الفوري) */}
           {isEditingBreadcrumb ? (
@@ -3701,7 +3701,7 @@ export default function App() {
               </div>
             </div>
           ) : (
-            <div className="flex flex-wrap items-center justify-between gap-3 py-1 px-1.5 w-full select-none" dir="rtl">
+            <div className="flex flex-wrap items-center justify-between gap-2 py-1 px-1 w-full max-w-full overflow-hidden select-none" dir="rtl">
               <div className="flex flex-wrap items-center gap-1.5">
                 {/* University Tag */}
                 <div className="inline-flex items-center gap-1 bg-slate-900/90 border border-slate-800/80 px-2 py-1 rounded-lg text-white font-extrabold shadow-sm">
