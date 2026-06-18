@@ -6188,7 +6188,6 @@ export default function App() {
                           <video 
                             src={videoSrc}
                             controls 
-                            autoPlay
                             preload="metadata"
                             className="w-full max-h-[60vh] bg-black" 
                           />
