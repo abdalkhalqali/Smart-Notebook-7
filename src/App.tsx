@@ -2350,7 +2350,7 @@ export default function App() {
         >
             <option value="null">⬅️ نقل</option>
             <option value="null">الرئيسية</option>
-            {lecture.folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+            {(lecture.folders || []).map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
         </select>
     );
   };
@@ -3161,7 +3161,7 @@ export default function App() {
               </button>
 
               <button
-                onClick={() => { setActiveOverlay('materials'); setIsSidebarOpen(false); }}
+                onClick={() => { setActiveOverlay('materials'); setIsAiAdvisorCollapsed(false); setIsSidebarOpen(false); }}
                 className={`w-full p-2 rounded-xl text-right text-xs font-black transition flex items-center justify-between gap-2 ${activeOverlay === 'materials' ? 'bg-indigo-600/15 text-indigo-300 border-r-4 border-indigo-500 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
               >
                 <div className="flex items-center gap-2">
@@ -3172,7 +3172,7 @@ export default function App() {
               </button>
 
               <button
-                onClick={() => { setActiveOverlay('lecture-hub'); setIsSidebarOpen(false); }}
+                onClick={() => { setActiveOverlay('lecture-hub'); setIsAiAdvisorCollapsed(false); setIsSidebarOpen(false); }}
                 className={`w-full p-2 rounded-xl text-right text-xs font-black transition flex items-center justify-between gap-2 ${activeOverlay === 'lecture-hub' ? 'bg-indigo-600/15 text-indigo-300 border-r-4 border-indigo-500 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
               >
                 <div className="flex items-center gap-2">
@@ -3194,7 +3194,7 @@ export default function App() {
               </button>
 
               <button
-                onClick={() => { setActiveOverlay('training'); setIsSidebarOpen(false); }}
+                onClick={() => { setActiveOverlay('training'); setIsAiAdvisorCollapsed(false); setIsSidebarOpen(false); }}
                 className={`w-full p-2 rounded-xl text-right text-xs font-black transition flex items-center justify-between gap-2 ${activeOverlay === 'training' ? 'bg-amber-600/15 text-amber-300 border-r-4 border-amber-500 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
               >
                 <div className="flex items-center gap-2">
@@ -3205,7 +3205,7 @@ export default function App() {
               </button>
 
               <button
-                onClick={() => { setActiveOverlay('handwriting-ai'); setIsSidebarOpen(false); }}
+                onClick={() => { setActiveOverlay('handwriting-ai'); setIsAiAdvisorCollapsed(false); setIsSidebarOpen(false); }}
                 className={`w-full p-2 rounded-xl text-right text-xs font-black transition flex items-center justify-between gap-2 ${activeOverlay === 'handwriting-ai' ? 'bg-purple-600/15 text-purple-300 border-r-4 border-purple-500 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
               >
                 <div className="flex items-center gap-2">
@@ -3216,7 +3216,7 @@ export default function App() {
               </button>
 
               <button
-                onClick={() => { setActiveOverlay('stats'); setIsSidebarOpen(false); }}
+                onClick={() => { setActiveOverlay('stats'); setIsAiAdvisorCollapsed(false); setIsSidebarOpen(false); }}
                 className={`w-full p-2 rounded-xl text-right text-xs font-black transition flex items-center justify-between gap-2 ${activeOverlay === 'stats' ? 'bg-emerald-600/15 text-emerald-300 border-r-4 border-emerald-500 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
               >
                 <div className="flex items-center gap-2">
@@ -3227,7 +3227,7 @@ export default function App() {
               </button>
 
               <button
-                onClick={() => { setActiveOverlay('settings'); setIsSidebarOpen(false); }}
+                onClick={() => { setActiveOverlay('settings'); setIsAiAdvisorCollapsed(false); setIsSidebarOpen(false); }}
                 className={`w-full p-2 rounded-xl text-right text-xs font-black transition flex items-center justify-between gap-2 ${activeOverlay === 'settings' ? 'bg-indigo-600/15 text-indigo-305 border-r-4 border-indigo-500 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
               >
                 <div className="flex items-center gap-2">
@@ -3238,7 +3238,7 @@ export default function App() {
               </button>
 
               <button
-                onClick={() => { setActiveOverlay('changelog'); setIsSidebarOpen(false); }}
+                onClick={() => { setActiveOverlay('changelog'); setIsAiAdvisorCollapsed(false); setIsSidebarOpen(false); }}
                 className={`w-full p-2 rounded-xl text-right text-xs font-black transition flex items-center justify-between gap-2 ${activeOverlay === 'changelog' ? 'bg-amber-600/15 text-amber-350 border-r-4 border-amber-505 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
               >
                 <div className="flex items-center gap-2">
@@ -3249,7 +3249,7 @@ export default function App() {
               </button>
 
               <button
-                onClick={() => { setActiveOverlay('cloud'); setIsSidebarOpen(false); }}
+                onClick={() => { setActiveOverlay('cloud'); setIsAiAdvisorCollapsed(false); setIsSidebarOpen(false); }}
                 className={`w-full p-2 rounded-xl text-right text-xs font-black transition flex items-center justify-between gap-2 ${activeOverlay === 'cloud' ? 'bg-sky-600/15 text-sky-300 border-r-4 border-sky-500 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
               >
                 <div className="flex items-center gap-2">
@@ -3260,7 +3260,7 @@ export default function App() {
               </button>
 
               <button
-                onClick={() => { setActiveOverlay('security'); setIsSidebarOpen(false); }}
+                onClick={() => { setActiveOverlay('security'); setIsAiAdvisorCollapsed(false); setIsSidebarOpen(false); }}
                 className={`w-full p-2 rounded-xl text-right text-xs font-black transition flex items-center justify-between gap-2 ${activeOverlay === 'security' ? 'bg-rose-600/15 text-rose-300 border-r-4 border-rose-500 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
               >
                 <div className="flex items-center gap-2">
@@ -3271,7 +3271,7 @@ export default function App() {
               </button>
 
               <button
-                onClick={() => { setActiveOverlay('file-manager'); setIsSidebarOpen(false); }}
+                onClick={() => { setActiveOverlay('file-manager'); setIsAiAdvisorCollapsed(false); setIsSidebarOpen(false); }}
                 className={`w-full p-2 rounded-xl text-right text-xs font-black transition flex items-center justify-between gap-2 ${activeOverlay === 'file-manager' ? 'bg-teal-600/15 text-teal-300 border-r-4 border-teal-500 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
               >
                 <div className="flex items-center gap-2">
