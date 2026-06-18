@@ -5746,8 +5746,8 @@ export default function App() {
 
           {/* AI Settings Modal & OpenRouter Credentials */}
           {showAiKeyModal && (
-            <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4 transition-all" dir="rtl">
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl relative text-right">
+            <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fade-in" dir="rtl">
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl relative text-right animate-scale-in">
                 <div className="p-5 bg-slate-950 border-b border-slate-850 flex items-center justify-between">
                   <button
                     onClick={() => setShowAiKeyModal(false)}

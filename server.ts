@@ -114,7 +114,7 @@ async function executeGeminiOrOpenRouterCall(req: express.Request, systemPrompt:
     }
 
     const response = await generateContentWithRetryAndFallback(ai, {
-      model: "gemini-3.5-flash",
+      model: "gemini-2.5-flash",
       contents: fullContents,
       config
     });
@@ -184,7 +184,7 @@ async function executeVisionCall(req: express.Request, promptText: string, base6
     };
 
     const response = await generateContentWithRetryAndFallback(ai, {
-      model: "gemini-3.5-flash",
+      model: "gemini-2.5-flash",
       contents: [imagePart, { text: promptText }]
     });
 
@@ -231,7 +231,7 @@ async function callWithRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 150
   throw new Error("Unable to contact Gemini AI after multiple attempts.");
 }
 
-// 🌐 Seamless Fallback mechanism to 'gemini-2.5-flash' in case 'gemini-3.5-flash' is overloaded with 503/UNAVAILABLE errors
+// 🌐 Seamless Fallback mechanism to 'gemini-2.0-flash' in case 'gemini-2.5-flash' is overloaded with 503/UNAVAILABLE errors
 async function generateContentWithRetryAndFallback(ai: any, p: { model: string; contents: any; config?: any }): Promise<any> {
   try {
     return await callWithRetry(() => ai.models.generateContent(p));
@@ -251,11 +251,11 @@ async function generateContentWithRetryAndFallback(ai: any, p: { model: string; 
         error.message.includes("busy")
       ));
 
-    if (isDemandError && p.model === "gemini-3.5-flash") {
-      console.warn("[Gemini API Fallback Warning] 'gemini-3.5-flash' returned 503 high demand or was busy. Swapping model to 'gemini-2.5-flash' and retrying call...");
+    if (isDemandError && p.model === "gemini-2.5-flash") {
+      console.warn("[Gemini API Fallback Warning] 'gemini-2.5-flash' returned 503 high demand or was busy. Swapping model to 'gemini-2.0-flash' and retrying call...");
       const fallbackParams = {
         ...p,
-        model: "gemini-2.5-flash"
+        model: "gemini-2.0-flash"
       };
       return await callWithRetry(() => ai.models.generateContent(fallbackParams));
     }
@@ -795,7 +795,7 @@ app.post("/api/ai/podcast", async (req, res) => {
 
     // Generate a beautiful TTS script from summary then feed to TTS model
     const scriptResponse = await generateContentWithRetryAndFallback(ai, {
-      model: "gemini-3.5-flash",
+      model: "gemini-2.5-flash",
       contents: `أعد صياغة هذا الملخص لمحاضرة بعنوان (${title || "محاضرة اليوم"}) ليصبح سيناريو بودكاست شيق للغاية ومبسط بصوت متحدث واحد باللغة العربية الفصحى المبسطة. يجب أن يكون قصيراً جداً (لا يتجاوز 70 كلمة) لكي يناسب التنزيل الصوتي المباشر.
       الملخص:
       ${summary}`
@@ -845,7 +845,7 @@ app.post("/api/ai/transcribe",
       const base64Audio = audioBuffer.toString('base64');
 
       const response = await generateContentWithRetryAndFallback(ai, {
-        model: "gemini-3.5-flash",
+        model: "gemini-2.5-flash",
         contents: [{
           parts: [
             {
@@ -1001,7 +1001,7 @@ app.post("/api/ai/parse-document", async (req, res) => {
       try {
         const base64Data = fileData.includes(",") ? fileData.split(",")[1] : fileData;
         const response = await generateContentWithRetryAndFallback(ai, {
-          model: "gemini-3.5-flash",
+          model: "gemini-2.5-flash",
           contents: [
             {
               inlineData: {
@@ -1047,7 +1047,7 @@ app.post("/api/ai/parse-document", async (req, res) => {
       // PPTX, Excel, text, etc.
       try {
         const response = await generateContentWithRetryAndFallback(ai, {
-          model: "gemini-3.5-flash",
+          model: "gemini-2.5-flash",
           contents: `أنت محلل المستندات والمناهج الجامعية الذكي المعتمد في الدفتر. قام الطالب برفع مستند باسم (${fileName}) بحجم (${fileSize} كيلوبايت) ونوع (${fileType}).
           بما أن هذا الملف هو عرض تقديمي (PowerPoint) أو جدول بيانات مالي (Excel) أو ملف نصي، قم بصياغة دليل دراسي مثالي متوقع مبني على اسم هذا الملف ونوع محتواه وموضوعه.
           استخرج المخرجات في هيئة ملف JSON باللغة العربية الفصحى الفائقة التفاصيل:
@@ -1174,7 +1174,7 @@ app.post("/api/ai/analyze-document", async (req, res) => {
     contents.push(`${instructions}\n\nاسم المستند المرفق: ${fileName}`);
 
     const response = await generateContentWithRetryAndFallback(ai, {
-      model: "gemini-3.5-flash",
+      model: "gemini-2.5-flash",
       contents
     });
 
