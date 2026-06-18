@@ -156,6 +156,7 @@ export const initialLectures: Lecture[] = [
       { id: "fc-1", front: "ما دور الأوزان (Weights)؟", back: "تحديد قوة وأهمية كل مدخل في اتخاذ القرار داخل العصبون الاصطناعي." },
       { id: "fc-2", front: "لماذا نحتاج اللاخطية (Non-linearity)؟", back: "بدون دالة تنشيط لا خطية، ستتصرف الشبكة العصبية العميقة مثل دالة خطية واحدة بسيطة ولن تتمكن من حل المشاكل المعقدة." }
     ],
+    folders: [],
     changelog: [
       { id: "chg-1", version: 1, timestamp: "2026-06-11T12:00:00.000Z", author: "أنا", description: "إنشاء المحاضرة وإضافة الرسمة وصوت الأستاذ." }
     ]
@@ -204,6 +205,7 @@ export const initialLectures: Lecture[] = [
       }
     ],
     recordings: [],
+    folders: [],
     changelog: [
       { id: "chg-2", version: 1, timestamp: "2026-06-12T14:30:00.000Z", author: "أنا", description: "بدء كتابة الأساسيات." }
     ]

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { University, AcademicYear, SubjectItem, Lecture, PageData, StudyStats, SecurityConfig, BackupRestoreConfig, AudioRecording, TimeMarker, ChangelogEntry, DragTextbox, LectureDocument, bgType } from "./types";
+import { University, AcademicYear, SubjectItem, Lecture, PageData, StudyStats, SecurityConfig, BackupRestoreConfig, AudioRecording, TimeMarker, ChangelogEntry, DragTextbox, LectureDocument, bgType, Folder as FolderType } from "./types";
 import { loadAppState, saveAppState } from "./initialData";
 import NotebookCanvas from "./components/NotebookCanvas";
 import AICommandPanel from "./components/AICommandPanel";
@@ -818,6 +818,7 @@ export default function App() {
         }
       ],
       recordings: [],
+      folders: [],
       changelog: [
         { id: "chg-start", version: 1, timestamp: new Date().toISOString(), author: "النظام", description: "تهيئة المذكرة الدراسية لأول مرة." }
       ]
@@ -4179,7 +4180,7 @@ export default function App() {
                             <button onClick={() => {
                                 const name = prompt("أدخل اسم المجلد الجديد:");
                                 if (name && lecture) {
-                                    const newFolder: Folder = { id: Date.now().toString(), name, parentId: currentFolderId || undefined };
+                                    const newFolder: FolderType = { id: Date.now().toString(), name, parentId: currentFolderId || undefined };
                                     updateLectureData(lecture.id, { folders: [...(lecture.folders || []), newFolder] });
                                 }
                             }} className="text-xs text-emerald-400 font-bold">+ مجلد</button>
@@ -5447,6 +5448,7 @@ export default function App() {
                                       }
                                     ],
                                     recordings: [],
+                                    folders: [],
                                     changelog: [
                                       { id: "chg-start", version: 1, timestamp: new Date().toISOString(), author: "النظام", description: "تهيئة المذكرة الدراسية لأول مرة." }
                                     ]
