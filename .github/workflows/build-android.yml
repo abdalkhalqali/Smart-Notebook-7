@@ -40,6 +40,11 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | sdkmanager --licenses 2>/dev/null || true
 
+      - name: Install Android SDK 35 and build tools
+        run: |
+          sdkmanager "platforms;android-35" "build-tools;35.0.0.3" 2>/dev/null || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0" 2>/dev/null || true
+
       - name: Add Android platform
         run: |
           if [ ! -d "android" ]; then
@@ -61,6 +66,18 @@ jobs:
         run: ./gradlew assembleDebug --no-daemon --stacktrace
         env:
           GRADLE_OPTS: "-Dorg.gradle.daemon=false -Xmx4g"
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+
+      - name: Verify APK exists
+        run: |
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+          if [ ! -f "$APK" ]; then
+            echo "❌ APK not found — listing build outputs:"
+            find android/app/build -name "*.apk" 2>/dev/null || echo "No APKs in build dir"
+            find android/app/build -name "*.log" 2>/dev/null | xargs tail -50 2>/dev/null || true
+            exit 1
+          fi
+          echo "✅ APK found: $(du -h $APK | cut -f1)"
 
       - name: Rename APK
         run: |

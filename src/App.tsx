@@ -1213,7 +1213,18 @@ export default function App() {
         mr.start(500);
         mediaRecorderRef.current = mr;
       })
-      .catch(e => console.warn("MediaRecorder audio capture unavailable:", e));
+      .catch(e => {
+        console.warn("MediaRecorder audio capture unavailable:", e);
+        setIsVoiceRecording(false);
+        voiceActiveRef.current = false;
+        if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
+          alert("❌ تم رفض إذن الميكروفون\n\nللتسجيل الصوتي يجب السماح للتطبيق بالوصول إلى الميكروفون.\n\n📱 على الأندرويد: الإعدادات ← التطبيقات ← UnNoted ← الأذونات ← الميكروفون ← سماح");
+        } else if (e.name === 'NotFoundError') {
+          alert("❌ لا يوجد ميكروفون — تأكد من توصيل الميكروفون بجهازك.");
+        } else {
+          alert("❌ تعذّر تشغيل الميكروفون: " + e.message);
+        }
+      });
   };
 
   // Stop recording of lecture
@@ -4761,6 +4772,20 @@ export default function App() {
                                 <input type="file" accept=".pdf, .pptx, .xlsx, .docx, .txt, .png, .jpg, .jpeg, .mp4, .mov, .avi, .webm, .wav, .mp3, .m4a" onChange={handleParseDocumentUpload} className="hidden" disabled={isParsingDocument} />
                               </label>
                             </div>
+
+                            {/* Row 3: Import from phone gallery / storage */}
+                            <label className="flex items-center justify-center gap-2 p-2.5 bg-slate-900 hover:bg-rose-950/30 border border-slate-800 hover:border-rose-800/50 text-rose-300 rounded-xl text-[11px] font-bold cursor-pointer transition duration-150 w-full">
+                              <span className="text-base leading-none">🖼️</span>
+                              <span>{isParsingDocument ? "جاري الاستيراد..." : "استيراد صور · فيديوهات · تسجيلات من الذاكرة"}</span>
+                              <input
+                                type="file"
+                                accept="image/*,video/*,audio/*"
+                                multiple
+                                onChange={handleParseDocumentUpload}
+                                className="hidden"
+                                disabled={isParsingDocument}
+                              />
+                            </label>
 
                             {/* 📎 Lecture Files & Attachments Shelf */}
                             <div className="space-y-2 pt-3 border-t border-slate-900 mt-3 font-sansArabic text-right">
