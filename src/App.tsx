@@ -3039,6 +3039,7 @@ export default function App() {
 
   // 1. Left Sidebar navigation - Converted to overlay drawer panel
   return (
+    <>
     <div className={`min-h-screen w-full max-w-full overflow-x-hidden bg-slate-900 text-slate-100 flex flex-col font-sansArabic relative ${
       isDarkMode ? "night-mode" : ""
     }`}>
@@ -6709,6 +6710,6 @@ export default function App() {
           </a>
         </div>
       </div>
-
+    </>
   );
 }
