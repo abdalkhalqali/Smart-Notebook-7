@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Android APK → Telegram
 
 on:
   push:
@@ -23,15 +23,15 @@ jobs:
       - name: Install dependencies
         run: npm install --ignore-engines
 
-      - name: Build web app (Vite)
+      - name: Build web app (Vite only)
         run: npx vite build
         env:
           NODE_ENV: production
 
-      - name: Setup Java 21
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
-          java-version: '21'
+          java-version: '17'
           distribution: 'temurin'
 
       - name: Setup Android SDK
@@ -40,169 +40,94 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | sdkmanager --licenses 2>/dev/null || true
 
-      - name: Install Android SDK platforms and build tools
-        run: |
-          sdkmanager "platforms;android-35" "build-tools;35.0.0" || true
-          sdkmanager "platforms;android-34" "build-tools;34.0.0" || true
-          sdkmanager "platforms;android-33" "build-tools;33.0.3" || true
-          echo "=== Installed SDK packages ==="
-          sdkmanager --list_installed 2>/dev/null | grep -E "platforms|build-tools" | head -20 || true
-
       - name: Add Android platform
         run: |
           if [ ! -d "android" ]; then
+            echo "Adding Android platform..."
             npx cap add android
+            echo "✅ Android platform added"
+          else
+            echo "✅ Android directory already exists"
           fi
 
-      - name: Generate app icons from resources
-        run: npx @capacitor/assets generate --android --iconBackgroundColor '#0f172a' --iconBackgroundColorDark '#0f172a' --splashBackgroundColor '#0f172a' --splashBackgroundColorDark '#0f172a'
-        continue-on-error: true
-
       - name: Sync Capacitor
-        run: npx cap sync android
-
-      - name: Restore stable Android build configs
         run: |
-          cat > android/variables.gradle << 'VARS_EOF'
-          ext {
-              minSdkVersion = 24
-              compileSdkVersion = 35
-              targetSdkVersion = 35
-              androidxActivityVersion = '1.9.3'
-              androidxAppCompatVersion = '1.7.0'
-              androidxCoordinatorLayoutVersion = '1.2.0'
-              androidxCoreVersion = '1.13.1'
-              androidxFragmentVersion = '1.8.5'
-              coreSplashScreenVersion = '1.0.1'
-              androidxWebkitVersion = '1.12.1'
-              junitVersion = '4.13.2'
-              androidxJunitVersion = '1.2.1'
-              androidxEspressoCoreVersion = '3.6.1'
-              cordovaAndroidVersion = '14.0.1'
-          }
-          VARS_EOF
-          cat > android/build.gradle << 'GRADLE_EOF'
-          buildscript {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-              dependencies {
-                  classpath 'com.android.tools.build:gradle:8.7.3'
-                  classpath 'com.google.gms:google-services:4.4.2'
-              }
-          }
+          npx cap sync android
+          echo "✅ Capacitor sync complete"
 
-          apply from: "variables.gradle"
-
-          allprojects {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
-
-          task clean(type: Delete) {
-              delete rootProject.buildDir
-          }
-          GRADLE_EOF
-          echo "=== variables.gradle ==="
-          cat android/variables.gradle
-          echo "=== build.gradle ==="
-          cat android/build.gradle
-
-      - name: Make gradlew executable
+      - name: Fix Gradle wrapper permissions
         run: chmod +x android/gradlew
 
-      - name: Cache Gradle
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties') }}
-          restore-keys: gradle-
+      - name: Show Gradle version
+        working-directory: android
+        run: ./gradlew --version
+
+      - name: Accept additional SDK licenses
+        working-directory: android
+        run: yes | ./gradlew --no-daemon dependencies > /dev/null 2>&1 || true
 
       - name: Build Debug APK
         working-directory: android
         run: |
-          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee /tmp/gradle-build.log
-          BUILD_EXIT=${PIPESTATUS[0]}
-          if [ $BUILD_EXIT -ne 0 ]; then
-            echo "=== GRADLE BUILD FAILED — last 150 lines ==="
-            tail -150 /tmp/gradle-build.log
-            exit $BUILD_EXIT
-          fi
+          echo "🔨 Starting Gradle build..."
+          ./gradlew assembleDebug \
+            --no-daemon \
+            --info \
+            --stacktrace \
+            2>&1 | tee /tmp/gradle-build.log
+          echo "✅ Gradle build completed"
         env:
-          GRADLE_OPTS: "-Dorg.gradle.daemon=false -Xmx4g -Dorg.gradle.configureondemand=false"
+          GRADLE_OPTS: "-Dorg.gradle.daemon=false -Xmx4g -XX:+HeapDumpOnOutOfMemoryError"
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
 
       - name: Verify APK exists
+        id: verify_apk
         run: |
+          echo "Searching for APKs..."
+          find android/app/build -name "*.apk" 2>/dev/null || echo "No APKs found"
+          
           APK="android/app/build/outputs/apk/debug/app-debug.apk"
-          if [ ! -f "$APK" ]; then
-            echo "❌ APK not found — searching build outputs:"
-            find android/app/build -name "*.apk" 2>/dev/null || echo "No APKs anywhere in build dir"
+          if [ -f "$APK" ]; then
+            SIZE=$(du -h "$APK" | cut -f1)
+            echo "✅ APK found: $SIZE"
+            echo "apk_path=$APK" >> $GITHUB_OUTPUT
+            echo "apk_size=$SIZE" >> $GITHUB_OUTPUT
+          else
+            echo "❌ APK not found. Last 50 lines of build log:"
+            tail -50 /tmp/gradle-build.log
             exit 1
           fi
-          echo "✅ APK found: $(du -h $APK | cut -f1)"
 
       - name: Rename APK
         run: |
           mkdir -p output
-          cp android/app/build/outputs/apk/debug/app-debug.apk \
-             output/UnNoted-Android-debug-v${{ github.run_number }}.apk
+          cp "${{ steps.verify_apk.outputs.apk_path }}" \
+             "output/UnNoted-Android-v${{ github.run_number }}.apk"
 
-      - name: Upload Debug APK artifact
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: UnNoted-Android-debug-${{ github.run_number }}
-          path: output/UnNoted-Android-debug-v${{ github.run_number }}.apk
+          name: UnNoted-Android-v${{ github.run_number }}
+          path: output/UnNoted-Android-v${{ github.run_number }}.apk
           retention-days: 30
-
-      - name: Build Release APK (unsigned)
-        working-directory: android
-        run: ./gradlew assembleRelease --no-daemon
-        continue-on-error: true
-        env:
-          GRADLE_OPTS: "-Dorg.gradle.daemon=false -Xmx4g"
-
-      - name: Upload Release APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: UnNoted-Android-release-${{ github.run_number }}
-          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
-          retention-days: 30
-        continue-on-error: true
-
-      - name: Upload Gradle build log on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: gradle-build-log-${{ github.run_number }}
-          path: /tmp/gradle-build.log
-          retention-days: 7
-        continue-on-error: true
 
       - name: Send APK to Telegram
-        if: success()
-        continue-on-error: true
         run: |
-          APK_PATH="output/UnNoted-Android-debug-v${{ github.run_number }}.apk"
-          CAPTION="📱 *UnNoted - Android APK*%0A%0A✅ Build %23${{ github.run_number }} مكتمل%0A🌿 Branch: ${{ github.ref_name }}%0A📝 Commit: \`${{ github.sha }}\`%0A%0Aحمّل وثبّت على أي جهاز أندرويد."
+          APK_FILE="output/UnNoted-Android-v${{ github.run_number }}.apk"
+          SIZE="${{ steps.verify_apk.outputs.apk_size }}"
+          
           curl -s -X POST \
             "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendDocument" \
             -F "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -F "document=@${APK_PATH}" \
-            -F "caption=${CAPTION}" \
+            -F "document=@${APK_FILE}" \
+            -F "caption=📱 *UnNoted Android APK*%0A%0A✅ Build %23${{ github.run_number }} ناجح%0A📦 الحجم: ${SIZE}%0A🌿 Branch: ${{ github.ref_name }}%0A🔗 https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             -F "parse_mode=Markdown"
 
-      - name: Notify on failure
+      - name: Send failure notification to Telegram
         if: failure()
-        continue-on-error: true
         run: |
           curl -s -X POST \
             "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -d "text=❌ فشل بناء Android APK في Build %23${{ github.run_number }}%0A%0Ahttps://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            -d "text=❌ *فشل بناء Android APK*%0A%0ABuild %23${{ github.run_number }}%0A%0Aانقر للتفاصيل:%0Ahttps://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             -d "parse_mode=Markdown"
