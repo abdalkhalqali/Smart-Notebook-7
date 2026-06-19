@@ -1,4 +1,4 @@
-name: Build iOS IPA → Telegram
+name: Build iOS IPA
 
 on:
   push:
@@ -23,141 +23,87 @@ jobs:
       - name: Install dependencies
         run: npm install --ignore-engines
 
-      - name: Build web app
+      - name: Build web app (Vite only)
         run: npx vite build
         env:
           NODE_ENV: production
 
-      - name: Add iOS platform (always sync)
+      - name: Add iOS platform (if not present)
         run: |
           if [ ! -d "ios" ]; then
-            echo "ios/ not in repo — running cap add ios"
             npx cap add ios
-          else
-            echo "ios/ found in repo"
           fi
-          echo "=== ios/ structure ==="
-          find ios -maxdepth 3 -type f -name "*.plist" -o -name "Podfile" -o -name "*.xcodeproj" 2>/dev/null | head -20 || echo "No ios/ structure found"
+
+      - name: Generate app icons from resources
+        run: npx @capacitor/assets generate --ios --iconBackgroundColor '#0f172a' --iconBackgroundColorDark '#0f172a' --splashBackgroundColor '#0f172a' --splashBackgroundColorDark '#0f172a'
+        continue-on-error: true
 
       - name: Sync Capacitor
-        run: |
-          npx cap sync ios
-          echo "=== After sync: ios/App contents ==="
-          ls -la ios/App/ 2>/dev/null || echo "ios/App/ not found after sync"
+        run: npx cap sync ios
 
-      - name: Install CocoaPods
-        run: |
-          sudo gem install cocoapods --no-document 2>/dev/null || true
-          pod --version
-
-      - name: Pod install
-        run: |
-          echo "=== Searching for Podfile ==="
-          find . -name "Podfile" -not -path "*/node_modules/*" 2>/dev/null
-
-          PODFILE=$(find . -name "Podfile" -not -path "*/node_modules/*" 2>/dev/null | head -1)
-
-          if [ -z "$PODFILE" ]; then
-            echo "❌ Podfile not found. Checking ios/ directory:"
-            ls -la ios/ 2>/dev/null || echo "ios/ missing"
-            ls -la ios/App/ 2>/dev/null || echo "ios/App/ missing"
-            echo "Trying to create ios project manually..."
-            npx cap add ios --no-interactive 2>&1 || true
-            PODFILE=$(find . -name "Podfile" -not -path "*/node_modules/*" 2>/dev/null | head -1)
-          fi
-
-          if [ -z "$PODFILE" ]; then
-            echo "❌ Still no Podfile. Cannot continue."
-            exit 1
-          fi
-
-          PODFILE_DIR=$(dirname "$PODFILE")
-          echo "✅ Podfile at: $PODFILE_DIR"
-          echo "PODFILE_DIR=$PODFILE_DIR" >> $GITHUB_ENV
-
-          cd "$PODFILE_DIR"
-          pod install --repo-update 2>&1
-          echo "✅ pod install done"
+      - name: Select Xcode version
+        run: sudo xcode-select -s /Applications/Xcode.app
 
       - name: Show Xcode version
         run: xcodebuild -version
 
-      - name: Build iOS (no code signing)
+      - name: Update iOS deployment target to 14.0
+        working-directory: ios/App
         run: |
-          WORKSPACE="${{ env.PODFILE_DIR }}/App.xcworkspace"
-          PROJECT="${{ env.PODFILE_DIR }}/App.xcodeproj"
-          DERIVED="${{ github.workspace }}/DerivedData"
+          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*/IPHONEOS_DEPLOYMENT_TARGET = 14.0/g' App.xcodeproj/project.pbxproj || true
 
-          if [ -d "$WORKSPACE" ]; then
-            echo "Building with workspace..."
-            xcodebuild \
-              -workspace "$WORKSPACE" \
-              -scheme App \
-              -configuration Release \
-              -sdk iphoneos \
-              -derivedDataPath "$DERIVED" \
-              CODE_SIGNING_ALLOWED=NO \
-              CODE_SIGNING_REQUIRED=NO \
-              CODE_SIGN_IDENTITY="" \
-              DEVELOPMENT_TEAM="" \
-              build 2>&1 | tee /tmp/xcode.log
-          elif [ -d "$PROJECT" ]; then
-            echo "Building with project..."
-            xcodebuild \
-              -project "$PROJECT" \
-              -scheme App \
-              -configuration Release \
-              -sdk iphoneos \
-              -derivedDataPath "$DERIVED" \
-              CODE_SIGNING_ALLOWED=NO \
-              CODE_SIGNING_REQUIRED=NO \
-              CODE_SIGN_IDENTITY="" \
-              DEVELOPMENT_TEAM="" \
-              build 2>&1 | tee /tmp/xcode.log
-          else
-            echo "❌ No xcworkspace or xcodeproj found at: ${{ env.PODFILE_DIR }}"
-            exit 1
-          fi
-
-      - name: Find .app and package IPA
-        id: package
+      - name: Build iOS app (no signing)
+        working-directory: ios/App
         run: |
-          APP=$(find "${{ github.workspace }}/DerivedData" -name "App.app" -type d | head -1)
-          if [ -z "$APP" ]; then
-            echo "❌ App.app not found."
-            grep "error:" /tmp/xcode.log | head -20
-            exit 1
-          fi
-          echo "✅ Found: $APP"
+          xcodebuild \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            PROVISIONING_PROFILE="" \
+            DEVELOPMENT_TEAM="" \
+            PRODUCT_BUNDLE_IDENTIFIER=com.unnoted.smartnotebook \
+            build 2>&1 | tail -50
+
+      - name: Package IPA (unsigned)
+        run: |
           mkdir -p output/Payload
-          cp -r "$APP" output/Payload/UnNoted.app
+          APP_PATH=$(find ios/App/DerivedData -name "App.app" -type d | head -1)
+          echo "Found app at: $APP_PATH"
+          cp -r "$APP_PATH" output/Payload/UnNoted.app
           cd output
-          zip -r "UnNoted-iOS-unsigned-v${{ github.run_number }}.ipa" Payload
-          SIZE=$(du -h "UnNoted-iOS-unsigned-v${{ github.run_number }}.ipa" | cut -f1)
-          echo "✅ IPA: $SIZE"
-          echo "ipa_size=$SIZE" >> $GITHUB_OUTPUT
+          zip -r UnNoted-iOS-unsigned-v${{ github.run_number }}.ipa Payload
+          ls -lh *.ipa
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: UnNoted-iOS-unsigned-v${{ github.run_number }}
+          name: UnNoted-iOS-unsigned-${{ github.run_number }}
           path: output/UnNoted-iOS-unsigned-v${{ github.run_number }}.ipa
           retention-days: 30
 
       - name: Send IPA to Telegram
+        if: success()
+        continue-on-error: true
         run: |
+          IPA_PATH="output/UnNoted-iOS-unsigned-v${{ github.run_number }}.ipa"
+          CAPTION="🍎 *UnNoted - iOS IPA (Unsigned)*%0A%0A✅ Build %23${{ github.run_number }} مكتمل%0A🌿 Branch: ${{ github.ref_name }}%0A📝 Commit: ${{ github.sha }}%0A%0A⚠️ هذا ملف IPA غير موقع. لتثبيته استخدم AltStore أو Sideloadly على جهازك."
           curl -s -X POST \
             "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendDocument" \
             -F "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -F "document=@output/UnNoted-iOS-unsigned-v${{ github.run_number }}.ipa" \
-            -F "caption=🍎 *UnNoted iOS IPA*%0A%0A✅ Build %23${{ github.run_number }} ناجح%0A📦 ${{ steps.package.outputs.ipa_size }}%0A🌿 ${{ github.ref_name }}%0A%0A⚠️ غير موقع — استخدم AltStore أو Sideloadly%0A🔗 https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            -F "document=@${IPA_PATH}" \
+            -F "caption=${CAPTION}" \
             -F "parse_mode=Markdown"
 
-      - name: Notify failure
+      - name: Notify on failure
         if: failure()
+        continue-on-error: true
         run: |
           curl -s -X POST \
             "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -d "text=❌ *فشل iOS IPA*%0ABuild %23${{ github.run_number }}%0Ahttps://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            -d "text=❌ فشل بناء iOS IPA في Build %23${{ github.run_number }}%0A%0Ahttps://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             -d "parse_mode=Markdown"
