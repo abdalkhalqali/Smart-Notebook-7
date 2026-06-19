@@ -1,4 +1,4 @@
-name: Build iOS IPA
+name: Build iOS IPA → Telegram
 
 on:
   push:
@@ -28,82 +28,102 @@ jobs:
         env:
           NODE_ENV: production
 
-      - name: Add iOS platform (if not present)
+      - name: Add iOS platform
         run: |
           if [ ! -d "ios" ]; then
+            echo "Adding iOS platform..."
             npx cap add ios
+            echo "✅ iOS platform added"
+          else
+            echo "✅ iOS directory already exists"
           fi
 
-      - name: Generate app icons from resources
-        run: npx @capacitor/assets generate --ios --iconBackgroundColor '#0f172a' --iconBackgroundColorDark '#0f172a' --splashBackgroundColor '#0f172a' --splashBackgroundColorDark '#0f172a'
-        continue-on-error: true
-
       - name: Sync Capacitor
-        run: npx cap sync ios
-
-      - name: Select Xcode version
-        run: sudo xcode-select -s /Applications/Xcode.app
+        run: |
+          npx cap sync ios
+          echo "✅ Capacitor sync complete"
 
       - name: Show Xcode version
         run: xcodebuild -version
 
-      - name: Update iOS deployment target to 14.0
+      - name: List available schemes
         working-directory: ios/App
-        run: |
-          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*/IPHONEOS_DEPLOYMENT_TARGET = 14.0/g' App.xcodeproj/project.pbxproj || true
+        run: xcodebuild -list
 
-      - name: Build iOS app (no signing)
+      - name: Build iOS (no code signing)
         working-directory: ios/App
         run: |
+          set -o pipefail
           xcodebuild \
+            -workspace App.xcworkspace \
             -scheme App \
             -configuration Release \
             -sdk iphoneos \
-            -derivedDataPath DerivedData \
+            -derivedDataPath "${{ github.workspace }}/DerivedData" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             PROVISIONING_PROFILE="" \
             DEVELOPMENT_TEAM="" \
-            PRODUCT_BUNDLE_IDENTIFIER=com.unnoted.smartnotebook \
-            build 2>&1 | tail -50
+            build 2>&1 | xcpretty || \
+          xcodebuild \
+            -workspace App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath "${{ github.workspace }}/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            PROVISIONING_PROFILE="" \
+            DEVELOPMENT_TEAM="" \
+            build
+
+      - name: Find built .app
+        id: find_app
+        run: |
+          echo "Searching for .app bundle..."
+          APP_PATH=$(find "${{ github.workspace }}/DerivedData" -name "App.app" -type d | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "❌ .app bundle not found"
+            find "${{ github.workspace }}/DerivedData" -type d | head -30
+            exit 1
+          fi
+          echo "✅ Found: $APP_PATH"
+          echo "app_path=$APP_PATH" >> $GITHUB_OUTPUT
 
       - name: Package IPA (unsigned)
         run: |
           mkdir -p output/Payload
-          APP_PATH=$(find ios/App/DerivedData -name "App.app" -type d | head -1)
-          echo "Found app at: $APP_PATH"
-          cp -r "$APP_PATH" output/Payload/UnNoted.app
+          cp -r "${{ steps.find_app.outputs.app_path }}" output/Payload/UnNoted.app
           cd output
-          zip -r UnNoted-iOS-unsigned-v${{ github.run_number }}.ipa Payload
-          ls -lh *.ipa
+          zip -r "UnNoted-iOS-unsigned-v${{ github.run_number }}.ipa" Payload
+          SIZE=$(du -h "UnNoted-iOS-unsigned-v${{ github.run_number }}.ipa" | cut -f1)
+          echo "✅ IPA created: $SIZE"
+          echo "IPA_SIZE=$SIZE" >> $GITHUB_ENV
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: UnNoted-iOS-unsigned-${{ github.run_number }}
+          name: UnNoted-iOS-unsigned-v${{ github.run_number }}
           path: output/UnNoted-iOS-unsigned-v${{ github.run_number }}.ipa
           retention-days: 30
 
       - name: Send IPA to Telegram
-        if: success()
-        continue-on-error: true
         run: |
-          IPA_PATH="output/UnNoted-iOS-unsigned-v${{ github.run_number }}.ipa"
-          CAPTION="🍎 *UnNoted - iOS IPA (Unsigned)*%0A%0A✅ Build %23${{ github.run_number }} مكتمل%0A🌿 Branch: ${{ github.ref_name }}%0A📝 Commit: ${{ github.sha }}%0A%0A⚠️ هذا ملف IPA غير موقع. لتثبيته استخدم AltStore أو Sideloadly على جهازك."
+          IPA_FILE="output/UnNoted-iOS-unsigned-v${{ github.run_number }}.ipa"
           curl -s -X POST \
             "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendDocument" \
             -F "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -F "document=@${IPA_PATH}" \
-            -F "caption=${CAPTION}" \
+            -F "document=@${IPA_FILE}" \
+            -F "caption=🍎 *UnNoted iOS IPA (Unsigned)*%0A%0A✅ Build %23${{ github.run_number }} ناجح%0A📦 الحجم: ${{ env.IPA_SIZE }}%0A🌿 Branch: ${{ github.ref_name }}%0A%0A⚠️ لتثبيته استخدم AltStore أو Sideloadly%0A🔗 https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             -F "parse_mode=Markdown"
 
-      - name: Notify on failure
+      - name: Send failure notification to Telegram
         if: failure()
-        continue-on-error: true
         run: |
           curl -s -X POST \
             "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -d "text=❌ فشل بناء iOS IPA في Build %23${{ github.run_number }}%0A%0Ahttps://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            -d "text=❌ *فشل بناء iOS IPA*%0A%0ABuild %23${{ github.run_number }}%0A%0Aانقر للتفاصيل:%0Ahttps://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             -d "parse_mode=Markdown"
