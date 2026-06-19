@@ -43,9 +43,11 @@ jobs:
       - name: Add Android platform
         run: |
           if [ ! -d "android" ]; then
+            echo "Running npx cap add android..."
             npx cap add android
+          else
+            echo "android/ already exists in repo"
           fi
-          ls android/
 
       - name: Sync Capacitor
         run: npx cap sync android
@@ -53,39 +55,43 @@ jobs:
       - name: Create local.properties
         run: |
           echo "sdk.dir=$ANDROID_HOME" > android/local.properties
-          echo "✅ local.properties: sdk.dir=$ANDROID_HOME"
+          echo "✅ sdk.dir=$ANDROID_HOME"
 
       - name: Fix gradlew permissions
         run: chmod +x android/gradlew
 
-      - name: Build Debug APK
+      - name: Show settings.gradle (verify :app module is included)
+        run: cat android/settings.gradle 2>/dev/null || cat android/settings.gradle.kts 2>/dev/null || echo "settings.gradle not found"
+
+      - name: Build :app:assembleDebug
         working-directory: android
         run: |
-          ./gradlew assembleDebug \
+          ./gradlew :app:assembleDebug \
             --no-daemon \
             --stacktrace \
-            2>&1 | tee /tmp/gradle-build.log
+            2>&1 | tee /tmp/gradle.log
         env:
           GRADLE_OPTS: "-Dorg.gradle.daemon=false -Xmx4g"
-          JAVA_HOME: ${{ env.JAVA_HOME }}
 
       - name: Verify APK
         id: verify
         run: |
-          echo "=== APK Search ==="
-          find android/app/build -name "*.apk" 2>/dev/null || echo "No APKs found"
+          echo "=== All APKs found ==="
+          find android -name "*.apk" 2>/dev/null || echo "None found"
+
           APK="android/app/build/outputs/apk/debug/app-debug.apk"
           if [ ! -f "$APK" ]; then
-            echo "❌ APK not found. Build errors:"
-            grep -E "error:|FAILED|Caused by" /tmp/gradle-build.log | head -20
+            echo "❌ APK not found."
+            echo "--- Build errors ---"
+            grep -E "error:|FAILED|Caused by:|Exception" /tmp/gradle.log | head -30
             exit 1
           fi
           SIZE=$(du -h "$APK" | cut -f1)
-          echo "✅ APK: $SIZE"
+          echo "✅ APK found: $SIZE"
           echo "apk_path=$APK" >> $GITHUB_OUTPUT
           echo "apk_size=$SIZE" >> $GITHUB_OUTPUT
 
-      - name: Rename APK
+      - name: Package APK
         run: |
           mkdir -p output
           cp "${{ steps.verify.outputs.apk_path }}" \
