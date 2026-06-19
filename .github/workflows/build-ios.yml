@@ -28,110 +28,114 @@ jobs:
         env:
           NODE_ENV: production
 
-      - name: Add iOS platform
+      - name: Add iOS platform (always sync)
         run: |
           if [ ! -d "ios" ]; then
+            echo "ios/ not in repo — running cap add ios"
             npx cap add ios
+          else
+            echo "ios/ found in repo"
           fi
-          echo "=== ios/ contents ==="
-          ls ios/ || echo "ios/ not found"
+          echo "=== ios/ structure ==="
+          find ios -maxdepth 3 -type f -name "*.plist" -o -name "Podfile" -o -name "*.xcodeproj" 2>/dev/null | head -20 || echo "No ios/ structure found"
 
       - name: Sync Capacitor
         run: |
           npx cap sync ios
-          echo "=== ios/App/ contents after sync ==="
-          ls ios/App/ || echo "ios/App/ not found"
+          echo "=== After sync: ios/App contents ==="
+          ls -la ios/App/ 2>/dev/null || echo "ios/App/ not found after sync"
 
-      - name: Install CocoaPods gem
+      - name: Install CocoaPods
         run: |
           sudo gem install cocoapods --no-document 2>/dev/null || true
           pod --version
 
-      - name: Find Podfile and run pod install
+      - name: Pod install
         run: |
           echo "=== Searching for Podfile ==="
           find . -name "Podfile" -not -path "*/node_modules/*" 2>/dev/null
 
-          PODFILE_DIR=$(find . -name "Podfile" -not -path "*/node_modules/*" 2>/dev/null | head -1 | xargs -I{} dirname {})
+          PODFILE=$(find . -name "Podfile" -not -path "*/node_modules/*" 2>/dev/null | head -1)
 
-          if [ -z "$PODFILE_DIR" ]; then
-            echo "❌ No Podfile found. iOS platform may not have been added correctly."
-            find . -name "*.xcodeproj" -not -path "*/node_modules/*" 2>/dev/null || true
+          if [ -z "$PODFILE" ]; then
+            echo "❌ Podfile not found. Checking ios/ directory:"
+            ls -la ios/ 2>/dev/null || echo "ios/ missing"
+            ls -la ios/App/ 2>/dev/null || echo "ios/App/ missing"
+            echo "Trying to create ios project manually..."
+            npx cap add ios --no-interactive 2>&1 || true
+            PODFILE=$(find . -name "Podfile" -not -path "*/node_modules/*" 2>/dev/null | head -1)
+          fi
+
+          if [ -z "$PODFILE" ]; then
+            echo "❌ Still no Podfile. Cannot continue."
             exit 1
           fi
 
-          echo "✅ Podfile found in: $PODFILE_DIR"
+          PODFILE_DIR=$(dirname "$PODFILE")
+          echo "✅ Podfile at: $PODFILE_DIR"
           echo "PODFILE_DIR=$PODFILE_DIR" >> $GITHUB_ENV
+
           cd "$PODFILE_DIR"
-          pod install --repo-update
-          echo "✅ pod install complete"
-          ls -la
+          pod install --repo-update 2>&1
+          echo "✅ pod install done"
 
       - name: Show Xcode version
         run: xcodebuild -version
-
-      - name: List schemes
-        run: |
-          xcodebuild -workspace "${{ env.PODFILE_DIR }}/App.xcworkspace" -list 2>/dev/null || \
-          xcodebuild -project "${{ env.PODFILE_DIR }}/App.xcodeproj" -list 2>/dev/null || true
 
       - name: Build iOS (no code signing)
         run: |
           WORKSPACE="${{ env.PODFILE_DIR }}/App.xcworkspace"
           PROJECT="${{ env.PODFILE_DIR }}/App.xcodeproj"
+          DERIVED="${{ github.workspace }}/DerivedData"
 
-          if [ -f "$WORKSPACE" ]; then
-            echo "Building with workspace: $WORKSPACE"
+          if [ -d "$WORKSPACE" ]; then
+            echo "Building with workspace..."
             xcodebuild \
               -workspace "$WORKSPACE" \
               -scheme App \
               -configuration Release \
               -sdk iphoneos \
-              -derivedDataPath "${{ github.workspace }}/DerivedData" \
+              -derivedDataPath "$DERIVED" \
               CODE_SIGNING_ALLOWED=NO \
               CODE_SIGNING_REQUIRED=NO \
               CODE_SIGN_IDENTITY="" \
-              PROVISIONING_PROFILE="" \
               DEVELOPMENT_TEAM="" \
-              build 2>&1 | tee /tmp/xcode-build.log
-          else
-            echo "Building with project: $PROJECT"
+              build 2>&1 | tee /tmp/xcode.log
+          elif [ -d "$PROJECT" ]; then
+            echo "Building with project..."
             xcodebuild \
               -project "$PROJECT" \
               -scheme App \
               -configuration Release \
               -sdk iphoneos \
-              -derivedDataPath "${{ github.workspace }}/DerivedData" \
+              -derivedDataPath "$DERIVED" \
               CODE_SIGNING_ALLOWED=NO \
               CODE_SIGNING_REQUIRED=NO \
               CODE_SIGN_IDENTITY="" \
-              PROVISIONING_PROFILE="" \
               DEVELOPMENT_TEAM="" \
-              build 2>&1 | tee /tmp/xcode-build.log
-          fi
-          echo "✅ xcodebuild done"
-
-      - name: Find .app bundle
-        id: find_app
-        run: |
-          APP_PATH=$(find "${{ github.workspace }}/DerivedData" -name "App.app" -type d | head -1)
-          if [ -z "$APP_PATH" ]; then
-            echo "❌ .app bundle not found. Xcode errors:"
-            grep -E "error:|BUILD FAILED" /tmp/xcode-build.log | head -20
+              build 2>&1 | tee /tmp/xcode.log
+          else
+            echo "❌ No xcworkspace or xcodeproj found at: ${{ env.PODFILE_DIR }}"
             exit 1
           fi
-          echo "✅ Found: $APP_PATH"
-          echo "app_path=$APP_PATH" >> $GITHUB_OUTPUT
 
-      - name: Package unsigned IPA
+      - name: Find .app and package IPA
+        id: package
         run: |
+          APP=$(find "${{ github.workspace }}/DerivedData" -name "App.app" -type d | head -1)
+          if [ -z "$APP" ]; then
+            echo "❌ App.app not found."
+            grep "error:" /tmp/xcode.log | head -20
+            exit 1
+          fi
+          echo "✅ Found: $APP"
           mkdir -p output/Payload
-          cp -r "${{ steps.find_app.outputs.app_path }}" output/Payload/UnNoted.app
+          cp -r "$APP" output/Payload/UnNoted.app
           cd output
           zip -r "UnNoted-iOS-unsigned-v${{ github.run_number }}.ipa" Payload
           SIZE=$(du -h "UnNoted-iOS-unsigned-v${{ github.run_number }}.ipa" | cut -f1)
           echo "✅ IPA: $SIZE"
-          echo "IPA_SIZE=$SIZE" >> $GITHUB_ENV
+          echo "ipa_size=$SIZE" >> $GITHUB_OUTPUT
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
@@ -146,7 +150,7 @@ jobs:
             "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendDocument" \
             -F "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
             -F "document=@output/UnNoted-iOS-unsigned-v${{ github.run_number }}.ipa" \
-            -F "caption=🍎 *UnNoted iOS IPA*%0A%0A✅ Build %23${{ github.run_number }} ناجح%0A📦 ${{ env.IPA_SIZE }}%0A🌿 ${{ github.ref_name }}%0A%0A⚠️ غير موقع — استخدم AltStore أو Sideloadly%0A🔗 https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            -F "caption=🍎 *UnNoted iOS IPA*%0A%0A✅ Build %23${{ github.run_number }} ناجح%0A📦 ${{ steps.package.outputs.ipa_size }}%0A🌿 ${{ github.ref_name }}%0A%0A⚠️ غير موقع — استخدم AltStore أو Sideloadly%0A🔗 https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             -F "parse_mode=Markdown"
 
       - name: Notify failure
