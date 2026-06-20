@@ -473,6 +473,32 @@ app.post("/api/ai/validate-key", async (req, res) => {
         status: "الكود فَعَّال ونشط ومصرح بالكامل للاستخدام الفوري 🟢"
       });
 
+    } else if (prov === "huggingface") {
+      const hfResp = await fetch("https://huggingface.co/api/whoami", {
+        headers: { "Authorization": `Bearer ${trimmedKey}`, "User-Agent": "aistudio-build-validator" }
+      });
+      if (!hfResp.ok) {
+        const errTxt = await hfResp.text();
+        throw new Error(errTxt.includes("Authorization") ? "المفتاح غير صالح أو منتهي الصلاحية — تأكد من نسخه بالكامل" : `فشل التحقق: ${hfResp.status}`);
+      }
+      const hfUser = await hfResp.json();
+      return res.json({
+        valid: true,
+        provider: "huggingface",
+        owner: `حساب HuggingFace: ${hfUser.name || hfUser.fullname || trimmedKey.slice(0, 10) + "..."}`,
+        permissions: [
+          "الوصول إلى نماذج HuggingFace المجانية والمدفوعة 🤗",
+          "التلخيص الذكي وتوليد الأسئلة بالنماذج المفتوحة المصدر 📚",
+          "دعم اللغة العربية مع نموذج Qwen2.5 المتعدد اللغات 🌍",
+          "تحليل الصور والتعرف على النصوص المكتوبة بخط اليد ✍️"
+        ],
+        quotaAllowed: "حسب خطة HuggingFace",
+        quotaUsed: `${extraUsed} طلب مستهلك`,
+        quotaRemaining: "مفتوح",
+        expiryDate: "نشط ومستمر",
+        status: "مفتاح HuggingFace فَعَّال ونشط ✅"
+      });
+
     } else {
       const permissions = [
         "صلاحية خاصة موجهة ومحددة لموارد الدفتر الذكي"
