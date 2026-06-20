@@ -63,6 +63,18 @@ export default function AICommandPanel({ lecture, onUpdateLecture }: AICommandPa
     return fullText;
   };
 
+  // Build request headers — passes user's stored API key and provider to the server
+  const getAiRequestHeaders = (): Record<string, string> => {
+    const key = localStorage.getItem("customAiKey") || "";
+    const provider = localStorage.getItem("aiProvider") || "gemini";
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (key.trim()) {
+      headers["x-custom-api-key"] = key.trim();
+      headers["x-custom-provider"] = provider;
+    }
+    return headers;
+  };
+
   // 1. Call Gemini to summarize
   const handleGenerateSummary = async () => {
     setLoadingSummary(true);
@@ -71,7 +83,7 @@ export default function AICommandPanel({ lecture, onUpdateLecture }: AICommandPa
       const notesContent = gatherLectureText();
       const res = await fetch("/api/ai/summarize", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAiRequestHeaders(),
         body: JSON.stringify({ content: notesContent, subject: lecture.title })
       });
       if (!res.ok) throw new Error("فشلت عملية التلخيص");
@@ -92,7 +104,7 @@ export default function AICommandPanel({ lecture, onUpdateLecture }: AICommandPa
       const notesContent = gatherLectureText();
       const res = await fetch("/api/ai/flashcards", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAiRequestHeaders(),
         body: JSON.stringify({ content: notesContent, subject: lecture.title })
       });
       if (!res.ok) throw new Error("عطل في توليد الكروت");
@@ -117,7 +129,7 @@ export default function AICommandPanel({ lecture, onUpdateLecture }: AICommandPa
       const notesContent = gatherLectureText();
       const res = await fetch("/api/ai/quiz", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAiRequestHeaders(),
         body: JSON.stringify({ content: notesContent, subject: lecture.title })
       });
       if (!res.ok) throw new Error("عطل في إعداد أسئلة الامتحان");
@@ -138,7 +150,7 @@ export default function AICommandPanel({ lecture, onUpdateLecture }: AICommandPa
       const notesContent = gatherLectureText();
       const res = await fetch("/api/ai/tutor", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAiRequestHeaders(),
         body: JSON.stringify({
           historySummary: notesContent,
           currentSubject: lecture.title
@@ -162,7 +174,7 @@ export default function AICommandPanel({ lecture, onUpdateLecture }: AICommandPa
       const summaryText = lecture.aiSummary?.summary || "هذه محاضرة رائعة تتحدث عن موضوعات الجامعة والقرون والشبكات العصبية.";
       const res = await fetch("/api/ai/podcast", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAiRequestHeaders(),
         body: JSON.stringify({
           title: lecture.title,
           summary: summaryText
