@@ -4,6 +4,9 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import "dotenv/config";
 
+// Helper to get server Gemini key — checks both env var names for backward compatibility
+const getServerGeminiKey = () => (process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_AL || "").trim();
+
 const app = express();
 const PORT = 5000;
 
@@ -28,7 +31,7 @@ function getAI(req?: express.Request) {
     });
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = getServerGeminiKey();
   const trimmedServerKey = apiKey ? apiKey.trim() : "";
   return new GoogleGenAI({
     apiKey: trimmedServerKey || "MOCK_KEY",
@@ -47,7 +50,7 @@ async function executeGeminiOrOpenRouterCall(req: express.Request, systemPrompt:
 
   const trimmedKey = customKey ? customKey.trim() : "";
   const hasCustomKey = trimmedKey !== "";
-  const serverKey = process.env.GEMINI_API_KEY;
+  const serverKey = getServerGeminiKey();
 
   if (provider === "openrouter" && hasCustomKey) {
     const url = "https://openrouter.ai/api/v1/chat/completions";
@@ -99,6 +102,29 @@ async function executeGeminiOrOpenRouterCall(req: express.Request, systemPrompt:
       text = text.replace(/^```\s*/, "").replace(/\s*```$/, "");
     }
     return text.trim();
+  } else if (provider === "huggingface") {
+    const hfKey = trimmedKey || (process.env.HF_TOKEN || "").trim();
+    if (!hfKey) throw new Error("API_KEY_MISSING");
+    const hfMessages: any[] = [];
+    if (systemPrompt) hfMessages.push({ role: "system", content: systemPrompt });
+    const hfUserContent = systemSchema
+      ? `${userPrompt}\n\nSTRICT INSTRUCTION: Your output MUST be a valid JSON object strictly matching this schema format: ${JSON.stringify(systemSchema)}. Output ONLY raw JSON, with NO preamble, NO conversational text, and NO markdown ticks or code blocks.`
+      : userPrompt;
+    hfMessages.push({ role: "user", content: hfUserContent });
+    const hfRes = await callWithRetry(async () => {
+      const resp = await fetch("https://api-inference.huggingface.co/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${hfKey}` },
+        body: JSON.stringify({ model: "Qwen/Qwen2.5-72B-Instruct", messages: hfMessages, max_tokens: 1000 })
+      });
+      if (!resp.ok) { const t = await resp.text(); throw new Error(`HuggingFace failed: ${resp.status} - ${t}`); }
+      return resp;
+    });
+    const hfData: any = await hfRes.json();
+    let hfText = (hfData.choices?.[0]?.message?.content || "").trim();
+    if (hfText.startsWith("```json")) hfText = hfText.replace(/^```json\s*/, "").replace(/\s*```$/, "");
+    else if (hfText.startsWith("```")) hfText = hfText.replace(/^```\s*/, "").replace(/\s*```$/, "");
+    return hfText.trim();
   } else {
     // Check if we have neither a custom key nor a server key
     if (!hasCustomKey && !serverKey) {
@@ -132,7 +158,7 @@ async function executeVisionCall(req: express.Request, promptText: string, base6
 
   const trimmedKey = customKey ? customKey.trim() : "";
   const hasCustomKey = trimmedKey !== "";
-  const serverKey = process.env.GEMINI_API_KEY;
+  const serverKey = getServerGeminiKey();
 
   if (provider === "openrouter" && hasCustomKey) {
     const url = "https://openrouter.ai/api/v1/chat/completions";
@@ -172,6 +198,27 @@ async function executeVisionCall(req: express.Request, promptText: string, base6
 
     const data: any = await res.json();
     return data.choices?.[0]?.message?.content || "";
+  } else if (provider === "huggingface") {
+    const hfKey = trimmedKey || (process.env.HF_TOKEN || "").trim();
+    if (!hfKey) throw new Error("API_KEY_MISSING");
+    const hfVisionRes = await callWithRetry(async () => {
+      const resp = await fetch("https://api-inference.huggingface.co/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${hfKey}` },
+        body: JSON.stringify({
+          model: "Qwen/Qwen2.5-72B-Instruct",
+          max_tokens: 1000,
+          messages: [{ role: "user", content: [
+            { type: "text", text: promptText },
+            { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Data}` } }
+          ]}]
+        })
+      });
+      if (!resp.ok) { const t = await resp.text(); throw new Error(`HuggingFace vision failed: ${resp.status} - ${t}`); }
+      return resp;
+    });
+    const hfVisionData: any = await hfVisionRes.json();
+    return hfVisionData.choices?.[0]?.message?.content || "";
   } else {
     if (!hasCustomKey && !serverKey) {
       throw new Error("API_KEY_MISSING");
@@ -470,7 +517,7 @@ app.post("/api/ai/summarize", async (req, res) => {
       return res.status(400).json({ error: "لا يوجد محتوى لتلخيصه" });
     }
 
-    const hasKey = (customKey && customKey.trim() !== "") || process.env.GEMINI_API_KEY;
+    const hasKey = (customKey && customKey.trim() !== "") || getServerGeminiKey();
     if (!hasKey) {
       // Return beautiful mock response in Arabic if API key is not supplied
       return res.json({
@@ -532,7 +579,7 @@ app.post("/api/ai/handwriting", async (req, res) => {
       return res.status(400).json({ error: "لم يتم تزويد صورة الكتابة اليدوية" });
     }
 
-    const hasKey = (customKey && customKey.trim() !== "") || process.env.GEMINI_API_KEY;
+    const hasKey = (customKey && customKey.trim() !== "") || getServerGeminiKey();
     if (!hasKey || strokesImageData === "mock-base64" || strokesImageData.startsWith("mock") || strokesImageData.length < 150 || !strokesImageData.includes("base64")) {
       return res.json({
         text: "ملاحظات الطالب المكتوبة يدوياً: أساسيات الهندسة المستوية والدوال"
@@ -569,7 +616,7 @@ app.post("/api/ai/ocr", async (req, res) => {
       return res.status(400).json({ error: "لا توجد صورة للسبورة أو السلايد" });
     }
 
-    const hasKey = (customKey && customKey.trim() !== "") || process.env.GEMINI_API_KEY;
+    const hasKey = (customKey && customKey.trim() !== "") || getServerGeminiKey();
     if (!hasKey || imageData === "mock-base64" || imageData.startsWith("mock") || imageData.length < 150 || !imageData.includes("base64")) {
       return res.json({
         text: "نص مستخرج من السبورة: 'قوانين الحركة لنيوتن: القانون الأول: يبقى الجسم الساكن ساكناً والمتحرك متحركاً ما لم تؤثر عليه قوة خارجية.'"
@@ -606,7 +653,7 @@ app.post("/api/ai/quiz", async (req, res) => {
       return res.status(400).json({ error: "لا يوجد محتوى كافي لتوليد الأسئلة منه" });
     }
 
-    const hasKey = (customKey && customKey.trim() !== "") || process.env.GEMINI_API_KEY;
+    const hasKey = (customKey && customKey.trim() !== "") || getServerGeminiKey();
     if (!hasKey) {
       return res.json([
         {
@@ -716,7 +763,7 @@ app.post("/api/ai/flashcards", async (req, res) => {
       return res.status(400).json({ error: "لا يوجد محتوى لتوليد بطاقات استذكار منه" });
     }
 
-    const hasKey = (customKey && customKey.trim() !== "") || process.env.GEMINI_API_KEY;
+    const hasKey = (customKey && customKey.trim() !== "") || getServerGeminiKey();
     if (!hasKey) {
       return res.json([
         { front: "ما هو أسلوب Cornell؟", back: "هو أسلوب تدوين الملاحظات يعتمد على تقسيم الصفحة لثلاثة أقسام: قائمة الأسئلة/الرموز، الملاحظات، والملخص." },
@@ -761,7 +808,7 @@ app.post("/api/ai/tutor", async (req, res) => {
   const { historySummary, currentSubject } = req.body;
   const customKey = req.headers["x-custom-api-key"] as string;
   try {
-    const hasKey = (customKey && customKey.trim() !== "") || process.env.GEMINI_API_KEY;
+    const hasKey = (customKey && customKey.trim() !== "") || getServerGeminiKey();
     if (!hasKey) {
       return res.json({
         plan: "خطة مراجعة مقترحة لمادة " + (currentSubject || "الحالية") + ":\n1. مراجعة التلخيص الحالي في 15 دقيقة اليوم.\n2. حل الأسئلة التجريبية واختبار الفهم.\n3. تحديد نقاط الصعوبة وإضافتها كشارات لمراجعتها لاحقاً.",
@@ -809,7 +856,7 @@ app.post("/api/ai/podcast", async (req, res) => {
 
     const customKey = req.headers["x-custom-api-key"] as string;
     const ai = getAI(req);
-    const hasKey = (customKey && customKey.trim() !== "") || process.env.GEMINI_API_KEY;
+    const hasKey = (customKey && customKey.trim() !== "") || getServerGeminiKey();
     if (!hasKey) {
       return res.status(400).json({ error: "ميزة تحويل الملاحظات إلى بودكاست تتطلب مفتاح API فعال (GEMINI_API_KEY) على الخادم لتوليد الصوت الواقعي." });
     }
@@ -957,7 +1004,7 @@ app.post("/api/ai/chat", async (req, res) => {
   const { message, history, context } = req.body;
   const customKey = req.headers["x-custom-api-key"] as string;
   try {
-    const hasKey = (customKey && customKey.trim() !== "") || process.env.GEMINI_API_KEY;
+    const hasKey = (customKey && customKey.trim() !== "") || getServerGeminiKey();
     if (!hasKey) {
       const mockMsg = `مرحباً! أنا مستشارك الأكاديمي العائم وسندك الأيمن بالدفتر 👨‍🎓📚.
 
@@ -1062,7 +1109,7 @@ app.post("/api/ai/parse-document", async (req, res) => {
       };
     };
 
-    const hasKey = (customKey && customKey.trim() !== "") || process.env.GEMINI_API_KEY;
+    const hasKey = (customKey && customKey.trim() !== "") || getServerGeminiKey();
     if (!hasKey) {
       return res.json(getOfflineDocumentParsing());
     }
@@ -1206,7 +1253,7 @@ app.post("/api/ai/analyze-document", async (req, res) => {
       };
     };
 
-    const hasKey = (customKey && customKey.trim() !== "") || process.env.GEMINI_API_KEY;
+    const hasKey = (customKey && customKey.trim() !== "") || getServerGeminiKey();
     if (!hasKey) {
       return res.json(getOfflineAnalysis());
     }
