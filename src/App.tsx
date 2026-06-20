@@ -455,14 +455,11 @@ export default function App() {
     localStorage.setItem("unnoted_opened_lectures", JSON.stringify(openedLectureIds));
   }, [openedLectureIds]);
 
-  // Show welcome overlay on first open when no AI key is set, then auto-dismiss
+  // Show welcome overlay on every app open, then auto-dismiss
   useEffect(() => {
-    const key = localStorage.getItem("customAiKey") || "";
-    if (key.trim() === "") {
-      setShowWelcomeOverlay(true);
-      const timer = setTimeout(() => setShowWelcomeOverlay(false), 9000);
-      return () => clearTimeout(timer);
-    }
+    setShowWelcomeOverlay(true);
+    const timer = setTimeout(() => setShowWelcomeOverlay(false), 9000);
+    return () => clearTimeout(timer);
   }, []);
 
   useEffect(() => {
@@ -3635,7 +3632,9 @@ export default function App() {
             </button>
 
             {isNotificationsOpen && (
-              <div className="absolute left-0 mt-2.5 w-80 md:w-96 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl z-50 overflow-hidden text-right">
+              <>
+              <div className="fixed inset-0 z-[199]" onClick={() => setIsNotificationsOpen(false)} />
+              <div className="fixed top-14 left-4 w-80 md:w-96 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl z-[200] overflow-hidden text-right">
                 <div className="p-3.5 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
                   <span className="text-[10px] text-slate-400 font-bold">تنبيهات ونشاط المذاكرة الذكية</span>
                   <h4 className="text-xs font-black text-slate-100">صندوق الإشعارات والمتابعة</h4>
@@ -3678,6 +3677,7 @@ export default function App() {
                   )}
                 </div>
               </div>
+              </>
             )}
           </div>
         </div>
@@ -5345,7 +5345,9 @@ export default function App() {
 
                           {/* Float popover selector list of patterns */}
                           {showBgStyleSelector && (
-                            <div className="absolute bottom-11 left-0 mb-1 bg-slate-950 border border-slate-800 rounded-xl p-2 shadow-[0_15px_40px_rgba(0,0,0,0.85)] flex flex-col gap-1 w-44 z-50 animate-fade-in text-right">
+                            <>
+                            <div className="fixed inset-0 z-[199]" onClick={() => setShowBgStyleSelector(false)} />
+                            <div className="fixed bottom-20 left-4 bg-slate-950 border border-slate-800 rounded-xl p-2 shadow-[0_15px_40px_rgba(0,0,0,0.85)] flex flex-col gap-1 w-44 z-[200] animate-fade-in text-right">
                               <span className="text-[10px] text-indigo-400 font-extrabold pb-1.5 border-b border-slate-900 block text-right">اختر نمط الورقة:</span>
                               {[
                                 { value: 'ruled', label: 'ورقة مسطرة 🗒️', icon: AlignJustify },
@@ -5375,6 +5377,7 @@ export default function App() {
                                 );
                               })}
                             </div>
+                            </>
                           )}
                         </div>
 
