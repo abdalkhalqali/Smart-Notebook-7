@@ -98,6 +98,8 @@ export default function App() {
   const [aiProvider, setAiProvider] = useState(() => localStorage.getItem("aiProvider") || "gemini");
   const [customAiKey, setCustomAiKey] = useState(() => localStorage.getItem("customAiKey") || "");
   const [showAiKeyModal, setShowAiKeyModal] = useState(false);
+  const [serverUrl, setServerUrl] = useState(() => localStorage.getItem("serverUrl") || "");
+  const [serverUrlTestStatus, setServerUrlTestStatus] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle');
   const [isEditingAcademic, setIsEditingAcademic] = useState(false);
   const [showWelcomeOverlay, setShowWelcomeOverlay] = useState(false);
   const [playingVideoId, setPlayingVideoId] = useState<string | null>(null);
@@ -5915,6 +5917,65 @@ export default function App() {
                       <option value="huggingface">HuggingFace Inference API (نماذج مفتوحة المصدر)</option>
                       <option value="custom">مخدم ذكاء اصطناعي خاص (Custom Endpoint)</option>
                     </select>
+                  </div>
+
+                  {/* Server URL — mobile only setting */}
+                  <div className="space-y-1.5 border border-slate-800 rounded-xl p-3 bg-slate-950/60">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] text-amber-400 font-bold bg-amber-950/40 border border-amber-900/40 px-2 py-0.5 rounded-full">📱 للهاتف فقط</span>
+                      <label className="text-[11px] text-slate-300 font-bold block">عنوان خادم الذكاء الاصطناعي (Server URL)</label>
+                    </div>
+                    <p className="text-[10px] text-slate-500 leading-relaxed text-right">
+                      عند تثبيت التطبيق على الهاتف، أدخل رابط الخادم هنا حتى تتصل طلبات الذكاء الاصطناعي بالخادم الصحيح.
+                      مثال: <span className="text-indigo-400 font-mono">https://your-app.replit.app</span>
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        disabled={serverUrlTestStatus === 'testing' || !serverUrl.trim()}
+                        onClick={async () => {
+                          setServerUrlTestStatus('testing');
+                          try {
+                            const url = serverUrl.trim().replace(/\/$/, '');
+                            const res = await fetch(`${url}/api/ai/validate-key`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ key: 'ping-test', provider: 'gemini' }),
+                              signal: AbortSignal.timeout(6000)
+                            });
+                            setServerUrlTestStatus(res.status < 500 ? 'ok' : 'fail');
+                          } catch {
+                            setServerUrlTestStatus('fail');
+                          }
+                        }}
+                        className={`shrink-0 px-3 py-2 rounded-lg text-[10px] font-bold border transition ${
+                          serverUrlTestStatus === 'ok' ? 'bg-emerald-950 border-emerald-800 text-emerald-400' :
+                          serverUrlTestStatus === 'fail' ? 'bg-rose-950 border-rose-800 text-rose-400' :
+                          'bg-slate-900 border-slate-700 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {serverUrlTestStatus === 'testing' ? '⏳' : serverUrlTestStatus === 'ok' ? '✅ متصل' : serverUrlTestStatus === 'fail' ? '❌ فشل' : '🔌 اختبار'}
+                      </button>
+                      <input
+                        type="url"
+                        dir="ltr"
+                        placeholder="https://your-app.replit.app"
+                        value={serverUrl}
+                        autoComplete="off"
+                        autoCorrect="off"
+                        spellCheck={false}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setServerUrl(val);
+                          localStorage.setItem("serverUrl", val);
+                          setServerUrlTestStatus('idle');
+                        }}
+                        className="flex-1 bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200 placeholder-slate-600 focus:ring-1 focus:ring-amber-500 outline-none font-mono"
+                      />
+                    </div>
+                    {serverUrl.trim() && !serverUrl.trim().startsWith('https://') && (
+                      <p className="text-[10px] text-amber-400">⚠️ يجب أن يبدأ الرابط بـ https://</p>
+                    )}
                   </div>
 
                    <div className="space-y-1.5">

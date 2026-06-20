@@ -2,16 +2,22 @@ const isCapacitorNative =
   typeof (window as any).Capacitor !== "undefined" &&
   (window as any).Capacitor?.isNativePlatform?.() === true;
 
-const configuredServerUrl = (import.meta.env.VITE_SERVER_URL as string | undefined)?.replace(/\/$/, "") ?? "";
+const buildTimeServerUrl = (import.meta.env.VITE_SERVER_URL as string | undefined)?.replace(/\/$/, "") ?? "";
 
 export function getApiBase(): string {
   if (isCapacitorNative) {
-    if (configuredServerUrl) return configuredServerUrl;
-    console.error(
-      "[UnNoted] Running on native mobile but VITE_SERVER_URL is not set. " +
-      "Set VITE_SERVER_URL to your deployed server URL (e.g. https://your-app.replit.app) before building the APK."
-    );
-    return "";
+    // Runtime override from settings screen takes priority over build-time value
+    const runtimeUrl = (typeof localStorage !== "undefined"
+      ? localStorage.getItem("serverUrl")
+      : null) ?? "";
+    const resolved = (runtimeUrl || buildTimeServerUrl).replace(/\/$/, "");
+    if (!resolved) {
+      console.error(
+        "[UnNoted] Running on native mobile but no server URL is configured. " +
+        "Go to Settings → عنوان الخادم and enter your server URL (e.g. https://your-app.replit.app)."
+      );
+    }
+    return resolved;
   }
   return "";
 }
