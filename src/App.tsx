@@ -5938,14 +5938,17 @@ export default function App() {
                     <label className="text-[11px] text-slate-300 font-bold block">كود تشغيل التطبيق الشخصي (Secret Code)</label>
                     <div className="flex gap-2">
                       <input
-                        type="password"
-                        placeholder="أدخل مفتاح الـ API هنا (مثال: sk-or-...)"
+                        type="text"
+                        placeholder="أدخل مفتاح الـ API هنا (مثال: sk-or-... / AIza... / hf_...)"
                         value={customAiKey}
+                        autoComplete="off"
+                        autoCorrect="off"
+                        spellCheck={false}
                         onChange={(e) => {
                           const val = e.target.value;
                           setCustomAiKey(val);
                           localStorage.setItem("customAiKey", val);
-                          setKeyValidationResult(null); // Reset because key changed
+                          setKeyValidationResult(null);
                         }}
                         className="flex-1 bg-slate-950 border border-slate-850 rounded-lg p-2.5 text-xs text-slate-200 text-right placeholder-slate-600 focus:ring-1 focus:ring-indigo-500 outline-none font-mono"
                       />
