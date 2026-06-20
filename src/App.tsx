@@ -5929,6 +5929,7 @@ export default function App() {
                     >
                       <option value="gemini">Google Gemini AI (الافتراضي)</option>
                       <option value="openrouter">OpenRouter API (مستقل متعدد النماذج)</option>
+                      <option value="huggingface">HuggingFace Inference API (نماذج مفتوحة المصدر)</option>
                       <option value="custom">مخدم ذكاء اصطناعي خاص (Custom Endpoint)</option>
                     </select>
                   </div>
