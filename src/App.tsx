@@ -8,6 +8,7 @@ import BackupDriveManager from "./components/BackupDriveManager";
 import PINActivationBarrier from "./PINActivationBarrier";
 import DailyTraining from "./DailyTraining";
 import HandwritingAI from "./components/HandwritingAI";
+import { resolveApiUrl } from "./utils/apiBase";
 
 // Lucide icons
 import {
@@ -17,13 +18,21 @@ import {
   Sun, Moon, History, MessageSquare, Menu, Key, X, Mic, ArrowUp, ArrowDown, AlignJustify, Grid3X3, MoreHorizontal
 } from "lucide-react";
 
-// Hook global fetch to intercept backend AI requests and seamlessly inject custom api credentials
+// Hook global fetch to intercept backend AI requests and seamlessly inject custom api credentials.
+// Also rewrites relative /api/ paths to absolute URLs when running inside Capacitor (native mobile),
+// because the mobile WebView has no backend behind it and relative URLs would resolve to the device.
 if (typeof window !== "undefined") {
-  try {
-    const originalFetch = window.fetch;
-    // Standard assignment block
-    (window as any).fetch = function (input: RequestInfo | URL, init?: RequestInit) {
-      const url = typeof input === "string" ? input : (input as Request).url;
+  const _patchFetch = (originalFetch: typeof window.fetch) => {
+    return function (input: RequestInfo | URL, init?: RequestInit) {
+      let url = typeof input === "string" ? input : (input as Request).url;
+
+      // Rewrite relative /api/ paths to absolute server URL on native mobile
+      const resolvedUrl = resolveApiUrl(url);
+      if (resolvedUrl !== url) {
+        input = typeof input === "string" ? resolvedUrl : new Request(resolvedUrl, input as Request);
+        url = resolvedUrl;
+      }
+
       const isAiEndpoint = url && url.includes("/api/ai/");
       const isValidation = url && url.includes("validate-key");
 
@@ -57,46 +66,17 @@ if (typeof window !== "undefined") {
 
       return fetchPromise;
     };
+  };
+
+  try {
+    const originalFetch = window.fetch;
+    (window as any).fetch = _patchFetch(originalFetch);
   } catch (e) {
     console.warn("Failed standard fetch override, attempting property definition override:", e);
     try {
       const originalFetch = window.fetch;
       Object.defineProperty(window, "fetch", {
-        value: function (input: RequestInfo | URL, init?: RequestInit) {
-          const url = typeof input === "string" ? input : (input as Request).url;
-          const isAiEndpoint = url && url.includes("/api/ai/");
-          const isValidation = url && url.includes("validate-key");
-
-          if (isAiEndpoint) {
-            const storedKey = localStorage.getItem("customAiKey") || "";
-            const storedProvider = localStorage.getItem("aiProvider") || "gemini";
-            if (storedKey && storedKey.trim() !== "") {
-              init = init || {};
-              const headers = new Headers(init.headers || {});
-              headers.set("x-custom-api-key", storedKey.trim());
-              headers.set("x-custom-provider", storedProvider);
-              init.headers = headers;
-            }
-          }
-
-          const fetchPromise = originalFetch.call(window, input, init);
-
-          if (isAiEndpoint && !isValidation) {
-            const storedKey = localStorage.getItem("customAiKey") || "";
-            if (storedKey && storedKey.trim() !== "") {
-              fetchPromise.then(res => {
-                if (res && res.ok) {
-                  const cleanedKey = storedKey.trim();
-                  const storageKey = `localUsedCount_${cleanedKey}`;
-                  const current = parseInt(localStorage.getItem(storageKey) || "0", 10);
-                  localStorage.setItem(storageKey, String(current + 1));
-                }
-              }).catch(() => {});
-            }
-          }
-
-          return fetchPromise;
-        },
+        value: _patchFetch(originalFetch),
         configurable: true,
         writable: true
       });

@@ -10,6 +10,30 @@ const getServerGeminiKey = () => (process.env.GEMINI_API_KEY || process.env.GOOG
 const app = express();
 const PORT = parseInt(process.env.PORT || "5000");
 
+// CORS — allow Capacitor mobile apps (capacitor://, file://, ionic://) and any Replit domain to reach the API
+app.use((req, res, next) => {
+  const origin = req.headers.origin || "";
+  const isCapacitorOrigin =
+    origin.startsWith("capacitor://") ||
+    origin.startsWith("ionic://") ||
+    origin.startsWith("file://") ||
+    origin === "null" ||
+    origin === "";
+  const isReplitOrigin = origin.includes(".replit.dev") || origin.includes(".replit.app");
+
+  if (isCapacitorOrigin || isReplitOrigin) {
+    res.setHeader("Access-Control-Allow-Origin", origin || "*");
+  } else {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+  }
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type,x-custom-api-key,x-custom-provider");
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
+  next();
+});
+
 // Increase request size limit to handle images and audio base64 uploads
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));

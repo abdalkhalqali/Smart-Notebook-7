@@ -42,3 +42,8 @@ externalPort = 3000
 deploymentTarget = "autoscale"
 run = ["node", "dist/server.cjs"]
 build = ["npm", "run", "build"]
+
+[userenv]
+
+[userenv.development]
+VITE_SERVER_URL = "https://83bfadfd-3569-4ac0-8cb6-4e4012642786-00-1aptr9jlqkd0e.pike.replit.dev"
