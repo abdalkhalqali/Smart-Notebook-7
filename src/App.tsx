@@ -98,8 +98,15 @@ export default function App() {
   const [aiProvider, setAiProvider] = useState(() => localStorage.getItem("aiProvider") || "gemini");
   const [customAiKey, setCustomAiKey] = useState(() => localStorage.getItem("customAiKey") || "");
   const [showAiKeyModal, setShowAiKeyModal] = useState(false);
-  const [serverUrl, setServerUrl] = useState(() => localStorage.getItem("serverUrl") || "");
+  const [serverUrl, setServerUrl] = useState(() => {
+    const stored = localStorage.getItem("serverUrl");
+    if (stored) return stored;
+    const defaultUrl = "https://smart-notebook-7--aymanbdh551.replit.app";
+    localStorage.setItem("serverUrl", defaultUrl);
+    return defaultUrl;
+  });
   const [serverUrlTestStatus, setServerUrlTestStatus] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle');
+  const [showApiKey, setShowApiKey] = useState(false);
   const [isEditingAcademic, setIsEditingAcademic] = useState(false);
   const [showWelcomeOverlay, setShowWelcomeOverlay] = useState(false);
   const [playingVideoId, setPlayingVideoId] = useState<string | null>(null);
@@ -1173,11 +1180,22 @@ export default function App() {
   };
 
   // Start real or mock recording progress
-  const handleStartVoiceRecording = () => {
+  const handleStartVoiceRecording = async () => {
     setIsVoiceRecording(true);
     voiceActiveRef.current = true;
     voiceDedupeRef.current = [];
     setNewLectureTitle("");
+
+    // Check mic permission first to avoid repeated dialogs
+    try {
+      const perm = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+      if (perm.state === 'denied') {
+        setIsVoiceRecording(false);
+        voiceActiveRef.current = false;
+        alert("❌ تم رفض إذن الميكروفون\n\n📱 على الأندرويد: الإعدادات ← التطبيقات ← UnNoted ← الأذونات ← الميكروفون ← سماح");
+        return;
+      }
+    } catch {}
 
     // Silent MediaRecorder — NO Web Speech API (prevents browser chime)
     // Transcription happens via Gemini AFTER the user stops recording
@@ -1354,6 +1372,16 @@ export default function App() {
     try {
       setVideoSeconds(0);
       videoDedupeRef.current = [];
+
+      // Check camera+mic permission first to avoid repeated system dialogs
+      try {
+        const camPerm = await navigator.permissions.query({ name: 'camera' as PermissionName });
+        const micPerm = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+        if (camPerm.state === 'denied' || micPerm.state === 'denied') {
+          alert("❌ تم رفض إذن الكاميرا أو الميكروفون\n\n📱 على الأندرويد: الإعدادات ← التطبيقات ← UnNoted ← الأذونات ← الكاميرا والميكروفون ← سماح");
+          return;
+        }
+      } catch {}
 
       // Request camera + microphone
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -2060,7 +2088,7 @@ export default function App() {
 
   // Handle gallery import: supports multiple image/video/audio files at once
   const handleGalleryImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || []);
+    const files: File[] = Array.from(event.target.files || []);
     if (files.length === 0) return;
 
     const lecture = getSelectedLecture();
@@ -3040,7 +3068,7 @@ export default function App() {
     const lec = getSelectedLecture();
     if (!lec) return;
 
-    // Build shareable text from notebook title + pages
+    // Build shareable text from notebook title + pages (max 3000 chars for share compatibility)
     const pagesText = lec.pages
       .map((p, i) => {
         const lines: string[] = [`📄 صفحة ${i + 1}`];
@@ -3051,24 +3079,26 @@ export default function App() {
       .join("\n\n");
 
     const shareTitle = `📚 دفتر: ${lec.title}`;
-    const shareText = `${shareTitle}\n\n${pagesText || "الدفتر فارغ"}`;
+    let shareText = `${shareTitle}\n\n${pagesText || "الدفتر فارغ"}`;
+    if (shareText.length > 3000) shareText = shareText.slice(0, 2997) + "...";
 
+    // Try native share first (works on Android/iOS browsers and Capacitor)
     if (typeof navigator.share === "function") {
       try {
         await navigator.share({ title: shareTitle, text: shareText });
         return;
       } catch (err: any) {
         if (err?.name === "AbortError") return;
-        // Fallthrough to clipboard
+        // User cancelled or share failed — fallthrough to clipboard
       }
     }
 
     // Clipboard fallback
     try {
       await navigator.clipboard.writeText(shareText);
-      alert("تم نسخ محتوى الدفتر إلى الحافظة ✅");
+      alert("📋 تم نسخ محتوى الدفتر — الآن يمكنك لصقه في أي تطبيق (واتساب، الملاحظات، الإيميل...)");
     } catch {
-      alert("تعذّر المشاركة أو النسخ على هذا الجهاز.");
+      alert("تعذّر المشاركة على هذا الجهاز.");
     }
   };
 
@@ -5919,15 +5949,14 @@ export default function App() {
                     </select>
                   </div>
 
-                  {/* Server URL — mobile only setting */}
+                  {/* Server URL setting */}
                   <div className="space-y-1.5 border border-slate-800 rounded-xl p-3 bg-slate-950/60">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-[10px] text-amber-400 font-bold bg-amber-950/40 border border-amber-900/40 px-2 py-0.5 rounded-full">📱 للهاتف فقط</span>
-                      <label className="text-[11px] text-slate-300 font-bold block">عنوان خادم الذكاء الاصطناعي (Server URL)</label>
+                      <span className="text-[10px] text-emerald-400 font-bold bg-emerald-950/40 border border-emerald-900/40 px-2 py-0.5 rounded-full">🌐 خادم التطبيق</span>
+                      <label className="text-[11px] text-slate-300 font-bold block">عنوان خادم الذكاء الاصطناعي</label>
                     </div>
                     <p className="text-[10px] text-slate-500 leading-relaxed text-right">
-                      عند تثبيت التطبيق على الهاتف، أدخل رابط الخادم هنا حتى تتصل طلبات الذكاء الاصطناعي بالخادم الصحيح.
-                      مثال: <span className="text-indigo-400 font-mono">https://your-app.replit.app</span>
+                      رابط الخادم الذي يعالج طلبات الذكاء الاصطناعي. تم ضبطه تلقائياً، لا تحتاج لتغييره.
                     </p>
                     <div className="flex gap-2">
                       <button
@@ -5959,7 +5988,7 @@ export default function App() {
                       <input
                         type="url"
                         dir="ltr"
-                        placeholder="https://your-app.replit.app"
+                        placeholder="https://smart-notebook-7--aymanbdh551.replit.app"
                         value={serverUrl}
                         autoComplete="off"
                         autoCorrect="off"
@@ -5970,7 +5999,7 @@ export default function App() {
                           localStorage.setItem("serverUrl", val);
                           setServerUrlTestStatus('idle');
                         }}
-                        className="flex-1 bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200 placeholder-slate-600 focus:ring-1 focus:ring-amber-500 outline-none font-mono"
+                        className="flex-1 bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200 placeholder-slate-600 focus:ring-1 focus:ring-emerald-500 outline-none font-mono"
                       />
                     </div>
                     {serverUrl.trim() && !serverUrl.trim().startsWith('https://') && (
@@ -5979,23 +6008,33 @@ export default function App() {
                   </div>
 
                    <div className="space-y-1.5">
-                    <label className="text-[11px] text-slate-300 font-bold block">كود تشغيل التطبيق الشخصي (Secret Code)</label>
+                    <label className="text-[11px] text-slate-300 font-bold block">كود تشغيل التطبيق الشخصي (API Key)</label>
                     <div className="flex gap-2">
-                      <input
-                        type="text"
-                        placeholder="أدخل مفتاح الـ API هنا (مثال: sk-or-... / AIza... / hf_...)"
-                        value={customAiKey}
-                        autoComplete="off"
-                        autoCorrect="off"
-                        spellCheck={false}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setCustomAiKey(val);
-                          localStorage.setItem("customAiKey", val);
-                          setKeyValidationResult(null);
-                        }}
-                        className="flex-1 bg-slate-950 border border-slate-850 rounded-lg p-2.5 text-xs text-slate-200 text-right placeholder-slate-600 focus:ring-1 focus:ring-indigo-500 outline-none font-mono"
-                      />
+                      <div className="flex-1 relative">
+                        <input
+                          type={showApiKey ? "text" : "password"}
+                          placeholder="أدخل مفتاح الـ API هنا (مثال: AIza... / sk-or-... / hf_...)"
+                          value={customAiKey}
+                          autoComplete="off"
+                          autoCorrect="off"
+                          spellCheck={false}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setCustomAiKey(val);
+                            localStorage.setItem("customAiKey", val);
+                            setKeyValidationResult(null);
+                          }}
+                          className="w-full bg-slate-950 border border-slate-850 rounded-lg p-2.5 pr-9 text-xs text-slate-200 text-right placeholder-slate-600 focus:ring-1 focus:ring-indigo-500 outline-none font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowApiKey(v => !v)}
+                          className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition text-sm"
+                          title={showApiKey ? "إخفاء المفتاح" : "إظهار المفتاح"}
+                        >
+                          {showApiKey ? "🙈" : "👁️"}
+                        </button>
+                      </div>
                       <button
                         type="button"
                         onClick={() => handleVerifyKey(customAiKey, aiProvider)}
