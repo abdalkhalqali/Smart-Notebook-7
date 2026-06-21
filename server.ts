@@ -1364,6 +1364,72 @@ app.post("/api/ai/analyze-document", async (req, res) => {
   }
 });
 
+// 9. Homework / Assignment Extraction from lecture text using Gemini
+app.post("/api/ai/extract-homework", async (req, res) => {
+  const { lectureText, lectureTitle, subject } = req.body;
+  const customKey = req.headers["x-custom-api-key"] as string;
+
+  try {
+    if (!lectureText || lectureText.trim() === "") {
+      return res.status(400).json({ error: "لا يوجد نص محاضرة لاستخراج الواجبات منه" });
+    }
+
+    const hasKey = (customKey && customKey.trim() !== "") || getServerGeminiKey();
+    if (!hasKey) {
+      return res.json({
+        assignments: [
+          {
+            title: "واجب تجريبي: مراجعة الفصل الأول",
+            description: "راجع مفاهيم الفصل الأول وأجب على الأسئلة في نهايته.",
+            deadline: "",
+            grade: "",
+          }
+        ],
+        isMock: true
+      });
+    }
+
+    const systemPrompt = `أنت مساعد أكاديمي متخصص في استخراج الواجبات والمهام الدراسية من نصوص المحاضرات.
+مهمتك: قرأ النص بدقة واستخرج كل الواجبات والمهام والتكاليف المذكورة سواء كانت صريحة أو ضمنية.
+قواعد الاستخراج:
+- ابحث عن كلمات مثل: واجب، تكليف، مهمة، تسليم، حل، مطلوب، افعل، أحضر، ادرس، راجع، احفظ، اكتب، أعد
+- إذا لم توجد واجبات واضحة، اقترح واجبات مناسبة للمحاضرة
+- قدّم النتائج باللغة العربية دائماً
+المادة: ${subject || "غير محددة"}
+عنوان المحاضرة: ${lectureTitle || "محاضرة أكاديمية"}`;
+
+    const userPrompt = `نص المحاضرة:\n${lectureText.slice(0, 8000)}`;
+
+    const schema = {
+      type: Type.OBJECT,
+      properties: {
+        assignments: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              title: { type: Type.STRING, description: "عنوان الواجب" },
+              description: { type: Type.STRING, description: "وصف تفصيلي بما يُطلب من الطالب" },
+              deadline: { type: Type.STRING, description: "موعد التسليم إذا ذُكر، وإلا فارغ" },
+              grade: { type: Type.STRING, description: "الدرجة إذا ذُكرت، وإلا فارغ" },
+            },
+            required: ["title", "description"]
+          }
+        }
+      },
+      required: ["assignments"]
+    };
+
+    const responseText = await executeGeminiOrOpenRouterCall(req, systemPrompt, userPrompt, schema);
+    let result: any;
+    try { result = JSON.parse(responseText || "{}"); } catch { result = { assignments: [] }; }
+    res.json(result);
+  } catch (error: any) {
+    console.error("extract-homework error:", error);
+    res.status(500).json({ error: "فشل استخراج الواجبات. تحقق من مفتاح API." });
+  }
+});
+
 // Configure Vite middleware in development or serve static distribution files in production
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
