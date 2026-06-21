@@ -89,13 +89,34 @@ export default function NotebookCanvas({
   const [isCanvasLocked, setIsCanvasLocked] = useState<boolean>(true); // Default to true so user gets premium stability out of the box!
   const [isCanvasFolded, setIsCanvasFolded] = useState<boolean>(false);
 
+  // Pinch-to-zoom state
+  const [zoomLevel, setZoomLevel] = useState<number>(1.0);
+  const pinchStartDistRef = useRef<number>(0);
+  const pinchStartZoomRef = useRef<number>(1.0);
+  const isPinchingRef = useRef<boolean>(false);
+
+  const getPinchDistance = (touches: TouchList) => {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.hypot(dx, dy);
+  };
+
   // Effect to prevent scrolling/dragging gestures on the canvas when locked
+  // But always allow 2-finger pinch-to-zoom
   useEffect(() => {
-    const handleTouch = (e: TouchEvent) => {
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        // 2-finger gesture → start pinch tracking (always allowed)
+        isPinchingRef.current = true;
+        pinchStartDistRef.current = getPinchDistance(e.touches);
+        pinchStartZoomRef.current = zoomLevel;
+        e.preventDefault();
+        return;
+      }
+      isPinchingRef.current = false;
+
       if (!isCanvasLocked) return;
-      
       const target = e.target as HTMLElement;
-      // Allow scroll/interaction on buttons, textareas, inputs, and elements with pointer-events-auto
       if (
         target.closest('button') ||
         target.closest('textarea') ||
@@ -104,27 +125,58 @@ export default function NotebookCanvas({
         target.closest('.pointer-events-auto') ||
         target.closest('[contenteditable="true"]')
       ) {
-        return; // Allow native interaction! Do not call preventDefault!
+        return;
       }
-
-      // Prevent all drag and scroll actions when touching or writing on the canvas area
       e.preventDefault();
     };
 
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 2 && isPinchingRef.current) {
+        // Pinch-to-zoom: scale between 0.4× and 4×
+        const currentDist = getPinchDistance(e.touches);
+        const ratio = currentDist / pinchStartDistRef.current;
+        const newZoom = Math.min(4.0, Math.max(0.4, pinchStartZoomRef.current * ratio));
+        setZoomLevel(newZoom);
+        e.preventDefault();
+        return;
+      }
+
+      if (!isCanvasLocked) return;
+      const target = e.target as HTMLElement;
+      if (
+        target.closest('button') ||
+        target.closest('textarea') ||
+        target.closest('input') ||
+        target.closest('select') ||
+        target.closest('.pointer-events-auto') ||
+        target.closest('[contenteditable="true"]')
+      ) {
+        return;
+      }
+      e.preventDefault();
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) {
+        isPinchingRef.current = false;
+      }
+    };
+
     const container = containerRef.current;
-    if (container && isCanvasLocked) {
-      // Use standard non-passive event listeners to successfully intercept browser-default scroll gestures
-      container.addEventListener('touchmove', handleTouch, { passive: false });
-      container.addEventListener('touchstart', handleTouch, { passive: false });
+    if (container) {
+      container.addEventListener('touchstart', handleTouchStart, { passive: false });
+      container.addEventListener('touchmove', handleTouchMove, { passive: false });
+      container.addEventListener('touchend', handleTouchEnd, { passive: true });
     }
 
     return () => {
       if (container) {
-        container.removeEventListener('touchmove', handleTouch);
-        container.removeEventListener('touchstart', handleTouch);
+        container.removeEventListener('touchstart', handleTouchStart);
+        container.removeEventListener('touchmove', handleTouchMove);
+        container.removeEventListener('touchend', handleTouchEnd);
       }
     };
-  }, [isCanvasLocked]);
+  }, [isCanvasLocked, zoomLevel]);
 
   // Initialize pencil noise audio synthesis
   const triggerPencilSound = () => {
@@ -678,6 +730,17 @@ export default function NotebookCanvas({
               <Sparkles className="w-5 h-5 text-emerald-600" />
             </button>
 
+            {/* Zoom level indicator + reset */}
+            {zoomLevel !== 1.0 && (
+              <button
+                onClick={() => setZoomLevel(1.0)}
+                className="px-2 py-1 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-700 text-[10px] font-extrabold transition hover:bg-indigo-100 select-none"
+                title="إعادة تعيين مستوى التكبير/التصغير إلى 100%"
+              >
+                {Math.round(zoomLevel * 100)}%
+              </button>
+            )}
+
             <button
               onClick={() => setIsCanvasLocked(!isCanvasLocked)}
               className={`p-2 rounded-lg border transition duration-200 cursor-pointer ${
@@ -865,9 +928,14 @@ export default function NotebookCanvas({
       <div 
         ref={containerRef}
         id={`aistudio-canvas-stage-${page.id}`}
-        className={`relative flex-1 p-6 transition-all duration-300 ${
-          isCanvasLocked ? "overflow-hidden touch-none" : "overflow-auto"
-        } ${isCanvasFolded ? 'hidden' : ''}`}
+        className={`relative flex-1 p-6 transition-all duration-500 ${isCanvasFolded ? 'hidden' : ''}`}
+        style={{
+          overflowY: isCanvasLocked && zoomLevel === 1.0 ? 'hidden' : 'auto',
+          overflowX: isCanvasLocked && zoomLevel === 1.0 ? 'hidden' : 'auto',
+          scrollBehavior: 'smooth',
+          WebkitOverflowScrolling: 'touch',
+          touchAction: 'none',
+        }}
       >
         {/* Main Cornell Layout divided overlay structure */}
         {page.templateType === 'cornell' && (
@@ -901,9 +969,9 @@ export default function NotebookCanvas({
           </div>
         )}
 
-        {/* Page Inner Canvas Surface */}
+        {/* Page Inner Canvas Surface — with pinch-to-zoom transform applied */}
         <div 
-          className={`relative w-full min-h-[650px] shadow-sm rounded-lg transition-all ${getBackgroundClass(page.bgPattern)}`}
+          className={`relative w-full min-h-[650px] shadow-sm rounded-lg ${getBackgroundClass(page.bgPattern)}`}
           style={{ 
             cursor: isReadOnly ? 'default' : (activeTool === 'draw' ? 'crosshair' : 'default'),
             backgroundColor: eyeCareMode === 'sepia' 
@@ -911,7 +979,10 @@ export default function NotebookCanvas({
               : eyeCareMode === 'mint' 
                 ? (isDarkMode ? '#0d1e15' : '#edf6f1') 
                 : (isDarkMode ? '#0b0f19' : undefined),
-            transition: 'background-color 0.3s'
+            transform: zoomLevel !== 1.0 ? `scale(${zoomLevel})` : undefined,
+            transformOrigin: 'top center',
+            transition: 'background-color 0.3s, transform 0.15s ease-out',
+            willChange: zoomLevel !== 1.0 ? 'transform' : undefined,
           }}
         >
           {/* Background image of document page */}
