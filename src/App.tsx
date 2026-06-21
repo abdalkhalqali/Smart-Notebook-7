@@ -107,6 +107,7 @@ export default function App() {
   });
   const [serverUrlTestStatus, setServerUrlTestStatus] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle');
   const [showApiKey, setShowApiKey] = useState(false);
+  const [showShareDialog, setShowShareDialog] = useState(false);
   const [isEditingAcademic, setIsEditingAcademic] = useState(false);
   const [showWelcomeOverlay, setShowWelcomeOverlay] = useState(false);
   const [playingVideoId, setPlayingVideoId] = useState<string | null>(null);
@@ -5411,11 +5412,11 @@ export default function App() {
                           <Bookmark className={`w-3.5 h-3.5 ${lecture.bookmarked ? 'fill-current' : ''}`} />
                         </button>
 
-                        {/* Share QR button */}
+                        {/* Share button — opens format picker */}
                         <button
-                          onClick={handleToggleQRCodeShare}
+                          onClick={() => setShowShareDialog(true)}
                           className="p-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-emerald-400 hover:text-emerald-300 rounded-lg transition cursor-pointer"
-                          title="توليد رمز الاستجابة السريعة (QR) لمشاركة الدفتر فوراً 🔗"
+                          title="مشاركة الدفتر (PDF / نص / نسخ)"
                         >
                           <Share2 className="w-3.5 h-3.5" />
                         </button>
@@ -5947,64 +5948,6 @@ export default function App() {
                       <option value="huggingface">HuggingFace Inference API (نماذج مفتوحة المصدر)</option>
                       <option value="custom">مخدم ذكاء اصطناعي خاص (Custom Endpoint)</option>
                     </select>
-                  </div>
-
-                  {/* Server URL setting */}
-                  <div className="space-y-1.5 border border-slate-800 rounded-xl p-3 bg-slate-950/60">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[10px] text-emerald-400 font-bold bg-emerald-950/40 border border-emerald-900/40 px-2 py-0.5 rounded-full">🌐 خادم التطبيق</span>
-                      <label className="text-[11px] text-slate-300 font-bold block">عنوان خادم الذكاء الاصطناعي</label>
-                    </div>
-                    <p className="text-[10px] text-slate-500 leading-relaxed text-right">
-                      رابط الخادم الذي يعالج طلبات الذكاء الاصطناعي. تم ضبطه تلقائياً، لا تحتاج لتغييره.
-                    </p>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        disabled={serverUrlTestStatus === 'testing' || !serverUrl.trim()}
-                        onClick={async () => {
-                          setServerUrlTestStatus('testing');
-                          try {
-                            const url = serverUrl.trim().replace(/\/$/, '');
-                            const res = await fetch(`${url}/api/ai/validate-key`, {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ key: 'ping-test', provider: 'gemini' }),
-                              signal: AbortSignal.timeout(6000)
-                            });
-                            setServerUrlTestStatus(res.status < 500 ? 'ok' : 'fail');
-                          } catch {
-                            setServerUrlTestStatus('fail');
-                          }
-                        }}
-                        className={`shrink-0 px-3 py-2 rounded-lg text-[10px] font-bold border transition ${
-                          serverUrlTestStatus === 'ok' ? 'bg-emerald-950 border-emerald-800 text-emerald-400' :
-                          serverUrlTestStatus === 'fail' ? 'bg-rose-950 border-rose-800 text-rose-400' :
-                          'bg-slate-900 border-slate-700 text-slate-400 hover:text-white'
-                        }`}
-                      >
-                        {serverUrlTestStatus === 'testing' ? '⏳' : serverUrlTestStatus === 'ok' ? '✅ متصل' : serverUrlTestStatus === 'fail' ? '❌ فشل' : '🔌 اختبار'}
-                      </button>
-                      <input
-                        type="url"
-                        dir="ltr"
-                        placeholder="https://smart-notebook-7--aymanbdh551.replit.app"
-                        value={serverUrl}
-                        autoComplete="off"
-                        autoCorrect="off"
-                        spellCheck={false}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setServerUrl(val);
-                          localStorage.setItem("serverUrl", val);
-                          setServerUrlTestStatus('idle');
-                        }}
-                        className="flex-1 bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200 placeholder-slate-600 focus:ring-1 focus:ring-emerald-500 outline-none font-mono"
-                      />
-                    </div>
-                    {serverUrl.trim() && !serverUrl.trim().startsWith('https://') && (
-                      <p className="text-[10px] text-amber-400">⚠️ يجب أن يبدأ الرابط بـ https://</p>
-                    )}
                   </div>
 
                    <div className="space-y-1.5">
@@ -6868,6 +6811,70 @@ export default function App() {
         </div>
 
       </div>
+
+      {/* ─── Share Dialog ─── */}
+      {showShareDialog && (
+        <div className="fixed inset-0 z-[200] flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowShareDialog(false)}>
+          <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-t-2xl p-5 pb-8 space-y-3" onClick={e => e.stopPropagation()} dir="rtl">
+            <div className="flex items-center justify-between mb-2">
+              <button onClick={() => setShowShareDialog(false)} className="text-slate-500 hover:text-white text-lg">✕</button>
+              <h3 className="text-sm font-bold text-slate-200">مشاركة الدفتر</h3>
+            </div>
+
+            {/* PDF */}
+            <button
+              onClick={() => { setShowShareDialog(false); handleSharePDF(); }}
+              className="w-full flex items-center gap-3 bg-slate-800 hover:bg-slate-750 border border-slate-700 rounded-xl px-4 py-3.5 text-right transition"
+            >
+              <span className="text-2xl">📄</span>
+              <div>
+                <p className="text-sm font-bold text-slate-100">مشاركة كـ PDF</p>
+                <p className="text-[11px] text-slate-400">احفظه أو أرسله عبر واتساب، تيليجرام، إيميل</p>
+              </div>
+            </button>
+
+            {/* Text file */}
+            <button
+              onClick={() => { setShowShareDialog(false); handleShareText(); }}
+              className="w-full flex items-center gap-3 bg-slate-800 hover:bg-slate-750 border border-slate-700 rounded-xl px-4 py-3.5 text-right transition"
+            >
+              <span className="text-2xl">📝</span>
+              <div>
+                <p className="text-sm font-bold text-slate-100">مشاركة كملف نصي (.txt)</p>
+                <p className="text-[11px] text-slate-400">ملف يحوي كل محتوى الدفتر والملاحظات</p>
+              </div>
+            </button>
+
+            {/* Copy to clipboard */}
+            <button
+              onClick={async () => {
+                setShowShareDialog(false);
+                const lec = getSelectedLecture();
+                if (!lec) return;
+                const text = lec.pages.map((p, i) => {
+                  const lines = [`📄 صفحة ${i + 1}`];
+                  p.textboxes.forEach(tb => { if (tb.text?.trim()) lines.push(tb.text.trim()); });
+                  if (p.cornellSummary?.trim()) lines.push(`خلاصة: ${p.cornellSummary.trim()}`);
+                  return lines.join('\n');
+                }).join('\n\n');
+                const full = `📚 ${lec.title}\n\n${text}`;
+                if (typeof navigator.share === 'function') {
+                  try { await navigator.share({ title: lec.title, text: full }); return; } catch (e: any) { if (e?.name === 'AbortError') return; }
+                }
+                await navigator.clipboard.writeText(full);
+                alert('📋 تم نسخ محتوى الدفتر — الصقه في أي تطبيق');
+              }}
+              className="w-full flex items-center gap-3 bg-slate-800 hover:bg-slate-750 border border-slate-700 rounded-xl px-4 py-3.5 text-right transition"
+            >
+              <span className="text-2xl">📋</span>
+              <div>
+                <p className="text-sm font-bold text-slate-100">نسخ ومشاركة النص</p>
+                <p className="text-[11px] text-slate-400">يفتح قائمة المشاركة أو ينسخ للحافظة</p>
+              </div>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ─── Developer Credit Footer ─── */}
       <div className="w-full bg-slate-950 border-t border-slate-800/60 py-3 px-4 flex flex-col items-center gap-1.5 text-center" dir="rtl">
