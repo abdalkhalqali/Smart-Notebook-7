@@ -202,6 +202,22 @@ export interface StudyStats {
   }[];
 }
 
+// Homework / Assignments
+export interface Assignment {
+  id: string;
+  lectureId: string;
+  subjectId: string;
+  title: string;
+  description: string;
+  deadline?: string;
+  grade?: string;
+  status: 'unsolved' | 'solved' | 'expired';
+  solution?: string;
+  imageDataUrls?: string[];
+  hints?: string[];
+  createdAt: string;
+}
+
 // Local PIN lock settings
 export interface SecurityConfig {
   isEnabled: boolean;
