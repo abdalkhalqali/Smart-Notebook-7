@@ -136,11 +136,6 @@ export default function App() {
     localStorage.setItem("showFloatingQuickActions", String(showFloatingQuickActions));
   }, [showFloatingQuickActions]);
 
-  // Sync assignments to localStorage
-  useEffect(() => {
-    localStorage.setItem("smartNotebook_assignments", JSON.stringify(assignments));
-  }, [assignments]);
-
   useEffect(() => {
     localStorage.setItem("academicDetails", JSON.stringify(academicDetails));
   }, [academicDetails]);
@@ -335,6 +330,11 @@ export default function App() {
   const [isFetchingHints, setIsFetchingHints] = useState<boolean>(false);
   const [homeworkFilter, setHomeworkFilter] = useState<'all' | 'unsolved' | 'solved' | 'expired'>('all');
   const [isAiAdvisorCollapsed, setIsAiAdvisorCollapsed] = useState<boolean>(false);
+
+  // Sync assignments to localStorage (must be AFTER assignments state declaration)
+  useEffect(() => {
+    localStorage.setItem("smartNotebook_assignments", JSON.stringify(assignments));
+  }, [assignments]);
 
   // Floating overlay position and size (Computer Window simulation)
   const [overlayPos, setOverlayPos] = useState({ x: 200, y: 80 });
