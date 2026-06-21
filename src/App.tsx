@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { University, AcademicYear, SubjectItem, Lecture, PageData, StudyStats, SecurityConfig, BackupRestoreConfig, AudioRecording, TimeMarker, ChangelogEntry, DragTextbox, LectureDocument, bgType, Folder as FolderType } from "./types";
+import { University, AcademicYear, SubjectItem, Lecture, PageData, StudyStats, SecurityConfig, BackupRestoreConfig, AudioRecording, TimeMarker, ChangelogEntry, DragTextbox, LectureDocument, bgType, Folder as FolderType, Assignment } from "./types";
 import { loadAppState, saveAppState } from "./initialData";
 import NotebookCanvas from "./components/NotebookCanvas";
 import AICommandPanel from "./components/AICommandPanel";
@@ -135,6 +135,11 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("showFloatingQuickActions", String(showFloatingQuickActions));
   }, [showFloatingQuickActions]);
+
+  // Sync assignments to localStorage
+  useEffect(() => {
+    localStorage.setItem("smartNotebook_assignments", JSON.stringify(assignments));
+  }, [assignments]);
 
   useEffect(() => {
     localStorage.setItem("academicDetails", JSON.stringify(academicDetails));
@@ -316,7 +321,19 @@ export default function App() {
   const [activeMainTab, setActiveMainTab] = useState<'editor' | 'stats' | 'cloud' | 'security' | 'training' | 'handwriting-ai' | 'file-manager'>('editor');
 
   // Real-time floating overlay view modes
-  const [activeOverlay, setActiveOverlay] = useState<'materials' | 'lecture-hub' | 'stats' | 'training' | 'handwriting-ai' | 'cloud' | 'security' | 'file-manager' | 'settings' | 'ai-advisor' | 'changelog' | null>(null);
+  const [activeOverlay, setActiveOverlay] = useState<'materials' | 'lecture-hub' | 'stats' | 'training' | 'handwriting-ai' | 'cloud' | 'security' | 'file-manager' | 'settings' | 'ai-advisor' | 'changelog' | 'homework' | null>(null);
+
+  // Homework / Assignments state
+  const [assignments, setAssignments] = useState<Assignment[]>(() => {
+    try { return JSON.parse(localStorage.getItem("smartNotebook_assignments") || "[]"); } catch { return []; }
+  });
+  const [activeHomeworkId, setActiveHomeworkId] = useState<string | null>(null);
+  const [homeworkSolveMode, setHomeworkSolveMode] = useState<boolean>(false);
+  const [isExtractingHomework, setIsExtractingHomework] = useState<boolean>(false);
+  const [homeworkSolutionText, setHomeworkSolutionText] = useState<string>("");
+  const [homeworkHints, setHomeworkHints] = useState<string[]>([]);
+  const [isFetchingHints, setIsFetchingHints] = useState<boolean>(false);
+  const [homeworkFilter, setHomeworkFilter] = useState<'all' | 'unsolved' | 'solved' | 'expired'>('all');
   const [isAiAdvisorCollapsed, setIsAiAdvisorCollapsed] = useState<boolean>(false);
 
   // Floating overlay position and size (Computer Window simulation)
@@ -1178,6 +1195,98 @@ export default function App() {
     };
     handleUpdatePageData(activePageNumber - 1, pasted);
     alert("تم دمج محتويات الصفحة الملصوقة بنجاح 🎉");
+  };
+
+  // Extract homework from current lecture text using Gemini AI
+  const handleExtractHomework = async () => {
+    if (!lecture) { alert("اختر محاضرة أولاً لاستخراج الواجبات منها"); return; }
+    const textSource = lecture.lectureText || lecture.aiSummary?.summary || lecture.recordings?.find(r => r.transcription)?.transcription || "";
+    if (!textSource.trim()) {
+      alert("لا يوجد نص أو تفريغ للمحاضرة بعد. سجّل المحاضرة أو أضف نصاً أولاً.");
+      return;
+    }
+    setIsExtractingHomework(true);
+    try {
+      const subject = appState.subjects.find(s => s.id === lecture.subjectId)?.name || "عامة";
+      const res = await fetch("/api/ai/extract-homework", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lectureText: textSource, lectureTitle: lecture.title, subject })
+      });
+      const data = await res.json();
+      if (data.assignments && data.assignments.length > 0) {
+        const newAssignments: Assignment[] = data.assignments.map((a: any) => ({
+          id: `hw-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          lectureId: lecture.id,
+          subjectId: lecture.subjectId,
+          title: a.title,
+          description: a.description,
+          deadline: a.deadline || "",
+          grade: a.grade || "",
+          status: "unsolved" as const,
+          solution: "",
+          imageDataUrls: [],
+          hints: [],
+          createdAt: new Date().toISOString()
+        }));
+        setAssignments(prev => {
+          // Avoid duplicates: remove any with same lectureId + title if re-extracting
+          const filtered = prev.filter(p => !(p.lectureId === lecture.id));
+          return [...filtered, ...newAssignments];
+        });
+        setActiveOverlay('homework');
+        setIsAiAdvisorCollapsed(false);
+        setIsSidebarOpen(false);
+        alert(`✅ تم استخراج ${newAssignments.length} واجب من المحاضرة وحفظها في قسم الواجبات!`);
+      } else {
+        alert("لم يتم العثور على واجبات في نص المحاضرة. يمكنك إضافة واجب يدوياً من قسم الواجبات.");
+      }
+    } catch (err) {
+      alert("فشل استخراج الواجبات. تحقق من الاتصال بالإنترنت ومفتاح AI.");
+    } finally {
+      setIsExtractingHomework(false);
+    }
+  };
+
+  // Get AI hints for a homework assignment
+  const handleGetHomeworkHints = async (assignmentId: string) => {
+    const hw = assignments.find(a => a.id === assignmentId);
+    if (!hw) return;
+    setIsFetchingHints(true);
+    try {
+      const res = await fetch("/api/ai/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: `أعطني تلميحات لحل هذا الواجب دون إعطاء الحل كاملاً: "${hw.title}" - ${hw.description}`,
+          context: "مساعد دراسي يعطي تلميحات وليس حلولاً كاملة"
+        })
+      });
+      const data = await res.json();
+      const hintsText = data.response || data.reply || "تعذر جلب التلميحات";
+      const hints = hintsText.split('\n').filter((h: string) => h.trim()).slice(0, 5);
+      setHomeworkHints(hints);
+      setAssignments(prev => prev.map(a => a.id === assignmentId ? { ...a, hints } : a));
+    } catch {
+      setHomeworkHints(["تعذر جلب التلميحات. تحقق من الاتصال بالإنترنت."]);
+    } finally {
+      setIsFetchingHints(false);
+    }
+  };
+
+  // Save homework solution
+  const handleSaveHomeworkSolution = (assignmentId: string) => {
+    if (!homeworkSolutionText.trim()) { alert("اكتب الحل أولاً قبل الحفظ"); return; }
+    setAssignments(prev => prev.map(a =>
+      a.id === assignmentId
+        ? { ...a, solution: homeworkSolutionText, status: "solved" as const }
+        : a
+    ));
+    setHomeworkSolveMode(false);
+    setActiveHomeworkId(null);
+    setHomeworkSolutionText("");
+    setHomeworkHints([]);
+    alert("✅ تم حفظ الحل وتحديث حالة الواجب إلى: محلول");
   };
 
   // Start real or mock recording progress
@@ -3390,6 +3499,21 @@ export default function App() {
                 </div>
                 <span className="text-[10px] text-teal-405 font-bold bg-slate-900 px-1.5 py-0.5 rounded">FILE</span>
               </button>
+
+              <button
+                onClick={() => { setActiveOverlay('homework'); setIsAiAdvisorCollapsed(false); setIsSidebarOpen(false); }}
+                className={`w-full p-2 rounded-xl text-right text-xs font-black transition flex items-center justify-between gap-2 ${activeOverlay === 'homework' ? 'bg-orange-600/15 text-orange-300 border-r-4 border-orange-500 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
+              >
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-orange-400" />
+                  <span>قسم الواجبات والمهام</span>
+                </div>
+                <span className="text-[10px] text-orange-400 font-bold bg-slate-900 px-1.5 py-0.5 rounded">
+                  {assignments.filter(a => a.status === 'unsolved').length > 0
+                    ? `${assignments.filter(a => a.status === 'unsolved').length} جديد`
+                    : 'HW'}
+                </span>
+              </button>
             </div>
 
             {/* Core Navigation Selector: Universities & Academic years */}
@@ -3957,6 +4081,7 @@ export default function App() {
                     {activeOverlay === 'settings' && 'إعدادات المنصة وسجل المطور 🛠️'}
                     {activeOverlay === 'cloud' && 'النسخ السحابي والـ Google Drive ☁️'}
                     {activeOverlay === 'security' && 'وضع الحماية ورمز الـ PIN 🔒'}
+                    {activeOverlay === 'homework' && 'قسم الواجبات والمهام الدراسية 📋'}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -4080,6 +4205,7 @@ export default function App() {
                         {activeOverlay === 'cloud' && 'مزامنة السحاب والـ Google Drive ☁️'}
                         {activeOverlay === 'security' && 'تأمين الملفات وقفل الرمز السري 🔒'}
                         {activeOverlay === 'changelog' && 'سجل إصدارات التعديل والمسار الزمني 📖'}
+                        {activeOverlay === 'homework' && 'قسم الواجبات والمهام الدراسية 📋'}
                       </span>
                       
                       <div className="p-1 px-2.5 bg-indigo-650/15 border border-indigo-900/40 text-indigo-400 rounded-lg text-[9px] font-extrabold select-none">
@@ -4102,6 +4228,7 @@ export default function App() {
                       {activeOverlay === 'cloud' && 'تعليمات: تضمن المزامنة السحابية حفظ إصدارات الدفتر وعدم فقدان الملاحظات عبر الأجهزة المختلفة.'}
                       {activeOverlay === 'security' && 'تعليمات: قم بتفعيل الرمز السري المكون من 4 أرقام لضمان حماية مذكرات الكلية من المتطفلين.'}
                       {activeOverlay === 'changelog' && 'تعليمات: تصفح المسار الزمني للتعديلات والنسخ المؤرخة المسترجعة بكبسة زر.'}
+                      {activeOverlay === 'homework' && 'تعليمات: اعرض واجباتك المستخرجة من المحاضرات، افتح أي واجب وابدأ حله مع تلميحات الذكاء الاصطناعي واحفظه فور الانتهاء.'}
                     </div>
                   {/* 1. Materials Search & Selection Area */}
                   {activeOverlay === 'materials' && (
@@ -4713,6 +4840,193 @@ export default function App() {
                           </div>
                         )}
                       </div>
+                    </div>
+                  )}
+
+                  {/* 11. Homework / Assignments Manager */}
+                  {activeOverlay === 'homework' && (
+                    <div className="space-y-4" dir="rtl">
+                      {homeworkSolveMode && activeHomeworkId ? (
+                        /* ─── Solve Screen ─── */
+                        (() => {
+                          const hw = assignments.find(a => a.id === activeHomeworkId);
+                          if (!hw) return null;
+                          return (
+                            <div className="space-y-4">
+                              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                                <button
+                                  onClick={() => { setHomeworkSolveMode(false); setActiveHomeworkId(null); setHomeworkSolutionText(""); setHomeworkHints([]); }}
+                                  className="text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1 transition"
+                                >
+                                  ← رجوع لقائمة الواجبات
+                                </button>
+                                <span className="text-sm font-extrabold text-orange-300 truncate max-w-[60%] text-right">{hw.title}</span>
+                              </div>
+
+                              <div className="bg-slate-950 border border-orange-900/30 rounded-xl p-4 space-y-2 text-right">
+                                <p className="text-xs font-bold text-orange-400">📋 المطلوب:</p>
+                                <p className="text-xs text-slate-300 leading-relaxed">{hw.description}</p>
+                                {hw.deadline && <p className="text-[10px] text-amber-400">⏰ موعد التسليم: {hw.deadline}</p>}
+                                {hw.grade && <p className="text-[10px] text-emerald-400">🎯 الدرجة: {hw.grade}</p>}
+                              </div>
+
+                              <div className="space-y-2">
+                                <label className="text-xs font-bold text-slate-300 block">✏️ اكتب حلّك هنا:</label>
+                                <textarea
+                                  value={homeworkSolutionText}
+                                  onChange={e => setHomeworkSolutionText(e.target.value)}
+                                  placeholder="اكتب حلك التفصيلي هنا... يمكنك استخدام رموز الرياضيات مثل: ∫, Σ, √, π"
+                                  rows={8}
+                                  className="w-full bg-slate-950 border border-slate-700 text-slate-100 text-sm rounded-xl p-3 resize-y focus:ring-2 focus:ring-orange-500 outline-none leading-relaxed font-sansArabic"
+                                  dir="rtl"
+                                />
+                              </div>
+
+                              {homeworkHints.length > 0 && (
+                                <div className="bg-indigo-950/30 border border-indigo-800/40 rounded-xl p-3 space-y-1.5">
+                                  <p className="text-xs font-bold text-indigo-400 mb-1">💡 تلميحات الذكاء الاصطناعي:</p>
+                                  {homeworkHints.map((hint, i) => (
+                                    <p key={i} className="text-xs text-slate-300 leading-relaxed">• {hint}</p>
+                                  ))}
+                                </div>
+                              )}
+
+                              <div className="flex gap-2 flex-wrap">
+                                <button
+                                  onClick={() => handleSaveHomeworkSolution(activeHomeworkId)}
+                                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold rounded-xl transition"
+                                >
+                                  💾 حفظ الحل وتحديث الحالة إلى: محلول
+                                </button>
+                                <button
+                                  onClick={() => handleGetHomeworkHints(activeHomeworkId)}
+                                  disabled={isFetchingHints}
+                                  className="py-2.5 px-4 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-600/40 text-indigo-300 text-xs font-bold rounded-xl transition disabled:opacity-50"
+                                >
+                                  {isFetchingHints ? '⏳ جاري جلب التلميحات...' : '🤖 تلميحات AI'}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })()
+                      ) : (
+                        /* ─── Management List Screen ─── */
+                        <div className="space-y-4">
+                          {/* Header + filter */}
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex gap-1.5 flex-wrap">
+                              {(['all', 'unsolved', 'solved', 'expired'] as const).map(f => (
+                                <button
+                                  key={f}
+                                  onClick={() => setHomeworkFilter(f)}
+                                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition ${homeworkFilter === f ? 'bg-orange-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
+                                >
+                                  {f === 'all' ? 'الكل' : f === 'unsolved' ? 'غير محلول' : f === 'solved' ? 'محلول' : 'منتهي'}
+                                </button>
+                              ))}
+                            </div>
+                            <button
+                              onClick={handleExtractHomework}
+                              disabled={isExtractingHomework || !lecture}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition"
+                            >
+                              {isExtractingHomework ? '⏳ جاري الاستخراج...' : '🤖 استخراج واجبات المحاضرة'}
+                            </button>
+                          </div>
+
+                          {/* Manual add */}
+                          <button
+                            onClick={() => {
+                              const title = prompt("عنوان الواجب الجديد:");
+                              if (!title) return;
+                              const desc = prompt("وصف الواجب:") || "";
+                              const deadline = prompt("موعد التسليم (اختياري):") || "";
+                              const newHw: Assignment = {
+                                id: `hw-${Date.now()}`,
+                                lectureId: lecture?.id || "manual",
+                                subjectId: lecture?.subjectId || "manual",
+                                title, description: desc, deadline, grade: "",
+                                status: "unsolved", solution: "", hints: [],
+                                createdAt: new Date().toISOString()
+                              };
+                              setAssignments(prev => [...prev, newHw]);
+                            }}
+                            className="w-full py-2 border border-dashed border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-500 text-xs rounded-xl transition"
+                          >
+                            + إضافة واجب يدوياً
+                          </button>
+
+                          {/* Assignments list */}
+                          {(() => {
+                            const filtered = assignments.filter(a =>
+                              homeworkFilter === 'all' ? true : a.status === homeworkFilter
+                            ).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+                            if (filtered.length === 0) {
+                              return (
+                                <div className="text-center py-12 text-slate-500">
+                                  <p className="text-4xl mb-3">📋</p>
+                                  <p className="text-sm font-bold">لا توجد واجبات</p>
+                                  <p className="text-xs mt-1">استخرج الواجبات من محاضرتك أو أضفها يدوياً</p>
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <div className="space-y-3">
+                                {filtered.map(hw => {
+                                  const subjectName = appState.subjects.find(s => s.id === hw.subjectId)?.name || "غير محدد";
+                                  const lectureTitle = appState.lectures.find(l => l.id === hw.lectureId)?.title || "";
+                                  return (
+                                    <div key={hw.id} className={`bg-slate-950 border rounded-xl p-3.5 space-y-2 transition ${hw.status === 'solved' ? 'border-emerald-800/40' : hw.status === 'expired' ? 'border-slate-700/40 opacity-60' : 'border-orange-800/40'}`}>
+                                      <div className="flex items-start justify-between gap-2">
+                                        <div className="flex gap-1.5 items-center">
+                                          <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full ${hw.status === 'solved' ? 'bg-emerald-900/60 text-emerald-400' : hw.status === 'expired' ? 'bg-slate-800 text-slate-500' : 'bg-orange-900/50 text-orange-400'}`}>
+                                            {hw.status === 'solved' ? '✅ محلول' : hw.status === 'expired' ? '⏰ منتهي' : '📝 غير محلول'}
+                                          </span>
+                                          {hw.grade && <span className="text-[9px] text-amber-400 bg-amber-900/30 px-1.5 py-0.5 rounded">{hw.grade}</span>}
+                                        </div>
+                                        <button
+                                          onClick={() => setAssignments(prev => prev.filter(a => a.id !== hw.id))}
+                                          className="text-slate-600 hover:text-rose-400 text-xs transition"
+                                          title="حذف الواجب"
+                                        >✕</button>
+                                      </div>
+                                      <p className="text-xs font-extrabold text-slate-100 text-right">{hw.title}</p>
+                                      <p className="text-[10px] text-slate-400 leading-relaxed text-right line-clamp-2">{hw.description}</p>
+                                      <div className="flex gap-2 items-center justify-between flex-wrap text-[9px] text-slate-500">
+                                        <span>{subjectName} {lectureTitle ? `• ${lectureTitle}` : ''}</span>
+                                        {hw.deadline && <span className="text-amber-500">⏰ {hw.deadline}</span>}
+                                      </div>
+                                      <div className="flex gap-2 pt-1">
+                                        <button
+                                          onClick={() => {
+                                            setActiveHomeworkId(hw.id);
+                                            setHomeworkSolutionText(hw.solution || "");
+                                            setHomeworkHints(hw.hints || []);
+                                            setHomeworkSolveMode(true);
+                                          }}
+                                          className="flex-1 py-1.5 bg-orange-600/20 hover:bg-orange-600/40 border border-orange-600/30 text-orange-300 text-[10px] font-bold rounded-lg transition"
+                                        >
+                                          {hw.status === 'solved' ? '👁️ عرض الحل' : '✏️ ابدأ الحل'}
+                                        </button>
+                                        {hw.status !== 'solved' && (
+                                          <button
+                                            onClick={() => setAssignments(prev => prev.map(a => a.id === hw.id ? { ...a, status: 'expired' } : a))}
+                                            className="py-1.5 px-2.5 bg-slate-800 hover:bg-slate-700 text-slate-400 text-[10px] rounded-lg transition"
+                                          >
+                                            منتهي
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -5449,11 +5763,11 @@ export default function App() {
                     <div className={`relative transition-all duration-300 flex flex-col`} style={layoutMode === 'phone' ? { minHeight: "calc(100vh - 120px)", height: "calc(100vh - 120px)" } : { minHeight: "calc(100vh - 240px)", height: "calc(100vh - 240px)" }}>
 
                       <div className="flex flex-col flex-1 h-full">
-                        {/* Floating Speed Dial & Quick action buttons */}
+                        {/* Floating Speed Dial & Quick action buttons — موقع محدّث: يسار السفلي بعيداً عن أزرار القلم */}
                         {showFloatingQuickActions && lecture.pages.length > 0 && (
-                          <div className="absolute top-4 left-4 z-45 flex flex-col gap-2 p-1.5 bg-slate-950/85 backdrop-blur border border-slate-800 rounded-2xl shadow-2xl select-none text-right">
-                            <button onClick={() => setIsFloatingPanelCollapsed(!isFloatingPanelCollapsed)} className="text-[8px] text-indigo-400 font-extrabold text-center block pb-1 border-b border-slate-800 cursor-pointer hover:text-indigo-300 transition">
-                              {isFloatingPanelCollapsed ? '▶ تفريغ وميديا' : '▼ تفريغ وميديا'}
+                          <div className="absolute bottom-4 left-4 z-45 flex flex-col-reverse gap-2 p-1.5 bg-slate-950/85 backdrop-blur border border-slate-800 rounded-2xl shadow-2xl select-none text-right">
+                            <button onClick={() => setIsFloatingPanelCollapsed(!isFloatingPanelCollapsed)} className="text-[8px] text-indigo-400 font-extrabold text-center block pt-1 border-t border-slate-800 cursor-pointer hover:text-indigo-300 transition">
+                              {isFloatingPanelCollapsed ? '▲ تفريغ وميديا' : '▼ إخفاء'}
                             </button>
                             {!isFloatingPanelCollapsed && (<>
                             
