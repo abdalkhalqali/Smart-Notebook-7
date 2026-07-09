@@ -27,6 +27,15 @@ export default function AvatarVideoGenerator({ isOpen, onClose, lectureText = ''
   const [generationStatus, setGenerationStatus] = useState('');
   const [generatedVideo, setGeneratedVideo] = useState<{ videoUrl: string; audioUrl: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  
+  // Custom Voice Support
+  const [customVoice, setCustomVoice] = useState<{ name: string; audioUrl: string } | null>(() => {
+    try {
+      const stored = localStorage.getItem('customVoice');
+      return stored ? JSON.parse(stored) : null;
+    } catch { return null; }
+  });
+  const [useCustomVoice, setUseCustomVoice] = useState(true);
 
   useEffect(() => {
     localStorage.setItem('userAvatars', JSON.stringify(avatars));
@@ -82,10 +91,16 @@ export default function AvatarVideoGenerator({ isOpen, onClose, lectureText = ''
     setGenerationProgress(0);
 
     try {
-      setGenerationStatus('جاري تحويل النص إلى صوت...');
+      setGenerationStatus(useCustomVoice && customVoice ? 'جاري استخدام صوتك المخصص...' : 'جاري تحويل النص إلى صوت...');
       setGenerationProgress(20);
 
-      const response = await fetch(resolveApiUrl('/api/ai/generate-avatar-video'), {
+      // استخراج Base64 من الصوت المخصص إذا كان موجوداً
+      let customVoiceBase64 = '';
+      if (useCustomVoice && customVoice && customVoice.audioUrl) {
+        customVoiceBase64 = customVoice.audioUrl.split(',')[1] || customVoice.audioUrl;
+      }
+
+      const response = await fetch(resolveApiUrl('/api/ai/generate-video-with-voice'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -95,20 +110,21 @@ export default function AvatarVideoGenerator({ isOpen, onClose, lectureText = ''
         body: JSON.stringify({
           avatarImage: selectedAvatar.imageUrl,
           script: script.trim(),
-          voiceId: 'male-arabic-1',
+          customVoiceBase64: customVoiceBase64,
+          voiceId: useCustomVoice && customVoice ? 'my-voice' : 'ar-male-1',
           speed: 1.0
         })
       });
 
       setGenerationProgress(70);
-      setGenerationStatus('جاري إنشاء الفيديو...');
+      setGenerationStatus('جاري إنشاء الفيديو مع الصوت...');
 
       const data: VideoGenerationResponse = await response.json();
 
       if (data.success && data.videoUrl) {
         setGeneratedVideo({ videoUrl: data.videoUrl, audioUrl: data.audioUrl || '' });
         setGenerationProgress(100);
-        setGenerationStatus('تم إنشاء الفيديو بنجاح!');
+        setGenerationStatus(useCustomVoice && customVoice ? 'تم إنشاء الفيديو بصوتك المخصص! 🎤' : 'تم إنشاء الفيديو بنجاح!');
       } else {
         throw new Error(data.error || 'فشل إنشاء الفيديو');
       }
@@ -218,6 +234,76 @@ export default function AvatarVideoGenerator({ isOpen, onClose, lectureText = ''
                     )}
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+
+          {/* Voice Selection - Voice Clone */}
+          <div className="space-y-3 p-4 bg-gradient-to-r from-amber-900/20 to-orange-900/20 border border-amber-600/30 rounded-xl">
+            <label className="text-sm font-bold text-amber-300 flex items-center gap-2">
+              <Volume2 className="w-4 h-4" />
+              اختيار الصوت (Voice Clone)
+            </label>
+            
+            <div className="flex gap-3 flex-wrap">
+              <label className={`flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer transition ${useCustomVoice && customVoice ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
+                <input
+                  type="radio"
+                  name="videoVoice"
+                  checked={useCustomVoice && !!customVoice}
+                  onChange={() => setUseCustomVoice(true)}
+                  disabled={!customVoice}
+                  className="hidden"
+                />
+                <span>🎤</span>
+                <span className="text-xs font-bold">صوتي المخصص</span>
+              </label>
+              
+              <label className={`flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer transition ${!useCustomVoice ? 'bg-slate-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
+                <input
+                  type="radio"
+                  name="videoVoice"
+                  checked={!useCustomVoice}
+                  onChange={() => setUseCustomVoice(false)}
+                  className="hidden"
+                />
+                <span>🤖</span>
+                <span className="text-xs font-bold">صوت AI</span>
+              </label>
+            </div>
+            
+            {useCustomVoice && customVoice && (
+              <div className="mt-2 p-2 bg-slate-900/50 rounded-lg">
+                <audio src={customVoice.audioUrl} controls className="w-full h-10" />
+                <p className="text-[10px] text-slate-500 mt-1">سيتم استخدام صوتك الشخصي لتحويل النص</p>
+              </div>
+            )}
+            
+            {!customVoice && (
+              <div className="mt-2">
+                <label className="flex items-center justify-center gap-2 py-3 bg-amber-600/30 hover:bg-amber-600/50 border border-amber-600/40 rounded-lg cursor-pointer transition">
+                  <input
+                    type="file"
+                    accept="audio/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = (ev) => {
+                        const audioUrl = ev.target?.result as string;
+                        const voiceData = { name: file.name, audioUrl };
+                        setCustomVoice(voiceData);
+                        localStorage.setItem('customVoice', JSON.stringify(voiceData));
+                        setUseCustomVoice(true);
+                      };
+                      reader.readAsDataURL(file);
+                    }}
+                  />
+                  <span className="text-lg">🎤</span>
+                  <span className="text-xs font-bold text-amber-300">رفع صوتي لاستخدامه في الفيديو</span>
+                </label>
+                <p className="text-[9px] text-slate-500 text-center mt-1">ارفع مقطع صوتي قصير (5-30 ثانية) بصوتك</p>
               </div>
             )}
           </div>

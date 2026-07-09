@@ -154,6 +154,13 @@ export default function App() {
   const [generatedAudio, setGeneratedAudio] = useState<string | null>(null);
   const [forceUpdate, setForceUpdate] = useState(false);
   const [customText, setCustomText] = useState(''); // للنص الحر
+  const [customVoice, setCustomVoice] = useState<{ name: string; audioUrl: string } | null>(() => {
+    try {
+      const stored = localStorage.getItem('customVoice');
+      return stored ? JSON.parse(stored) : null;
+    } catch { return null; }
+  });
+  const [isCloningVoice, setIsCloningVoice] = useState(false);
 
   // Text-to-Speech function using Web Speech API
   const speakText = (text: string) => {
@@ -5180,6 +5187,26 @@ export default function App() {
                             <span>🎙️</span> نماذج الصوت (Voice Models)
                           </h3>
                           
+                          {/* Custom Voice Upload Section */}
+                          {customVoice && (
+                            <div className="p-2 bg-gradient-to-r from-amber-900/30 to-orange-900/30 border border-amber-600/40 rounded-lg">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-[10px] font-bold text-amber-400">🎤 صوتي المخصص (Voice Clone)</span>
+                                <button
+                                  onClick={() => {
+                                    setCustomVoice(null);
+                                    localStorage.removeItem('customVoice');
+                                    if (selectedVoiceModel === 'my-voice') setSelectedVoiceModel('ar-male-1');
+                                  }}
+                                  className="text-red-400 hover:text-red-300 text-[9px] transition"
+                                >
+                                  حذف
+                                </button>
+                              </div>
+                              <audio src={customVoice.audioUrl} controls className="w-full h-8 text-xs" />
+                            </div>
+                          )}
+                          
                           <div className="space-y-2">
                             {[
                               { id: 'ar-male-1', name: 'صوت male-عربي 1', lang: 'ar', gender: 'male', icon: '👨‍🏫' },
@@ -5188,23 +5215,64 @@ export default function App() {
                               { id: 'ar-female-2', name: 'صوت أنثوي-عربي 2', lang: 'ar', gender: 'female', icon: '👩‍🔬' },
                               { id: 'en-male-1', name: 'English Male Voice', lang: 'en', gender: 'male', icon: '👨‍🎓' },
                               { id: 'en-female-1', name: 'English Female Voice', lang: 'en', gender: 'female', icon: '👩‍🎓' },
-                            ].map(voice => (
-                              <label key={voice.id} className="flex items-center gap-3 p-2 bg-slate-900/50 hover:bg-slate-900 rounded-lg cursor-pointer transition">
-                                <input
-                                  type="radio"
-                                  name="voiceModel"
-                                  value={voice.id}
-                                  checked={selectedVoiceModel === voice.id}
-                                  onChange={(e) => setSelectedVoiceModel(e.target.value)}
-                                  className="w-4 h-4 accent-pink-500"
-                                />
-                                <span className="text-lg">{voice.icon}</span>
-                                <div className="flex-1 text-right">
-                                  <p className="text-xs font-bold text-slate-200">{voice.name}</p>
-                                  <p className="text-[9px] text-slate-500">{voice.lang.toUpperCase()} • {voice.gender === 'male' ? 'ذكر' : 'أنثوي'}</p>
-                                </div>
-                              </label>
-                            ))}
+                              { id: 'my-voice', name: 'صوتي المخصص 🎤', lang: 'custom', gender: 'custom', icon: '🎤', isCustom: true },
+                            ].map(voice => {
+                              const isDisabled = voice.id === 'my-voice' && !customVoice;
+                              return (
+                                <label key={voice.id} className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition ${isDisabled ? 'opacity-50 cursor-not-allowed' : 'bg-slate-900/50 hover:bg-slate-900'}`}>
+                                  <input
+                                    type="radio"
+                                    name="voiceModel"
+                                    value={voice.id}
+                                    checked={selectedVoiceModel === voice.id}
+                                    onChange={(e) => setSelectedVoiceModel(e.target.value)}
+                                    disabled={isDisabled}
+                                    className="w-4 h-4 accent-pink-500"
+                                  />
+                                  <span className="text-lg">{voice.icon}</span>
+                                  <div className="flex-1 text-right">
+                                    <p className={`text-xs font-bold ${voice.id === 'my-voice' && !customVoice ? 'text-amber-400' : 'text-slate-200'}`}>
+                                      {voice.name}
+                                    </p>
+                                    <p className="text-[9px] text-slate-500">
+                                      {voice.id === 'my-voice' && !customVoice ? 'ارفع صوتك أولاً' : `${voice.lang.toUpperCase()} • ${voice.gender === 'male' ? 'ذكر' : 'أنثوي'}`}
+                                    </p>
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                          
+                          {/* Upload Custom Voice Button */}
+                          <div className="pt-2">
+                            <label className="flex items-center justify-center gap-2 py-2 bg-gradient-to-r from-amber-600/30 to-orange-600/30 hover:from-amber-600/50 hover:to-orange-600/50 border border-amber-600/40 rounded-lg cursor-pointer transition">
+                              <input
+                                type="file"
+                                accept="audio/*"
+                                className="hidden"
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  if (!file) return;
+                                  
+                                  const reader = new FileReader();
+                                  reader.onload = (ev) => {
+                                    const audioUrl = ev.target?.result as string;
+                                    const voiceData = { name: file.name, audioUrl };
+                                    setCustomVoice(voiceData);
+                                    localStorage.setItem('customVoice', JSON.stringify(voiceData));
+                                    setSelectedVoiceModel('my-voice');
+                                  };
+                                  reader.readAsDataURL(file);
+                                }}
+                              />
+                              <span className="text-lg">🎤</span>
+                              <span className="text-xs font-bold text-amber-300">
+                                {customVoice ? 'تغيير صوتي' : 'رفع صوتي (Voice Clone)'}
+                              </span>
+                            </label>
+                            <p className="text-[9px] text-slate-500 text-center mt-1">
+                              ارفع مقطع صوتي قصير (5-30 ثانية) بصوتك لاستخدامه
+                            </p>
                           </div>
                         </div>
 
