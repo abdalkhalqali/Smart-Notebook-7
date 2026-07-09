@@ -146,6 +146,52 @@ export default function App() {
   const [showAppPINBarrier, setShowAppPINBarrier] = useState(false);
   const [pendingActiveSubjectId, setPendingActiveSubjectId] = useState<string | null>(null);
 
+  // Media Studio States (TTS & Avatar Video)
+  const [selectedVoiceModel, setSelectedVoiceModel] = useState('ar-male-1');
+  const [ttsSpeed, setTtsSpeed] = useState(1.0);
+  const [ttsPitch, setTtsPitch] = useState(1.0);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [generatedAudio, setGeneratedAudio] = useState<string | null>(null);
+  const [forceUpdate, setForceUpdate] = useState(false);
+
+  // Text-to-Speech function using Web Speech API
+  const speakText = (text: string) => {
+    if (!text || text.trim() === '') return;
+    
+    // Stop any current speech
+    window.speechSynthesis.cancel();
+    
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = selectedVoiceModel.startsWith('ar') ? 'ar-SA' : 'en-US';
+    utterance.rate = ttsSpeed;
+    utterance.pitch = ttsPitch;
+    
+    // Try to select a voice that matches the language
+    const voices = window.speechSynthesis.getVoices();
+    const targetLang = selectedVoiceModel.startsWith('ar') ? 'ar' : 'en';
+    const matchingVoice = voices.find(v => v.lang.startsWith(targetLang));
+    if (matchingVoice) {
+      utterance.voice = matchingVoice;
+    }
+    
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
+    
+    window.speechSynthesis.speak(utterance);
+  };
+
+  // Download audio function
+  const downloadAudio = () => {
+    if (!generatedAudio) return;
+    const link = document.createElement('a');
+    link.href = generatedAudio;
+    link.download = `lecture_audio_${Date.now()}.mp3`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   // States for verification and key checking
   const [isCheckingKey, setIsCheckingKey] = useState(false);
   const [keyValidationResult, setKeyValidationResult] = useState<{
@@ -318,7 +364,7 @@ export default function App() {
   const [activeMainTab, setActiveMainTab] = useState<'editor' | 'stats' | 'cloud' | 'security' | 'training' | 'handwriting-ai' | 'file-manager'>('editor');
 
   // Real-time floating overlay view modes
-  const [activeOverlay, setActiveOverlay] = useState<'materials' | 'lecture-hub' | 'stats' | 'training' | 'handwriting-ai' | 'cloud' | 'security' | 'file-manager' | 'settings' | 'ai-advisor' | 'changelog' | 'homework' | null>(null);
+  const [activeOverlay, setActiveOverlay] = useState<'materials' | 'lecture-hub' | 'stats' | 'training' | 'handwriting-ai' | 'cloud' | 'security' | 'file-manager' | 'settings' | 'ai-advisor' | 'changelog' | 'homework' | 'media-studio' | null>(null);
 
   // Homework / Assignments state
   const [assignments, setAssignments] = useState<Assignment[]>(() => {
@@ -3516,6 +3562,20 @@ export default function App() {
                     : 'HW'}
                 </span>
               </button>
+
+              {/* 🎬 Media Studio - Avatar & Voice Generation */}
+              <button
+                onClick={() => { setActiveOverlay('media-studio'); setIsAiAdvisorCollapsed(false); setIsSidebarOpen(false); }}
+                className={`w-full p-2 rounded-xl text-right text-xs font-black transition flex items-center justify-between gap-2 ${activeOverlay === 'media-studio' ? 'bg-gradient-to-l from-purple-600/25 to-pink-600/25 text-purple-200 border-r-4 border-purple-500 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
+              >
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 bg-gradient-to-br from-purple-500 to-pink-500 rounded flex items-center justify-center">
+                    <span className="text-[8px] text-white">🎬</span>
+                  </div>
+                  <span>استوديو الوسائط المتعددة</span>
+                </div>
+                <span className="text-[9px] text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded font-mono font-bold border border-purple-500/20">TTS+AI</span>
+              </button>
             </div>
 
             {/* Core Navigation Selector: Universities & Academic years */}
@@ -5029,6 +5089,178 @@ export default function App() {
                           })()}
                         </div>
                       )}
+                    </div>
+                  )}
+
+                  {/* 12. Media Studio - Avatar Video & Text-to-Speech */}
+                  {activeOverlay === 'media-studio' && (
+                    <div className="space-y-4" dir="rtl">
+                      <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                        <button
+                          onClick={() => { setActiveOverlay(null); }}
+                          className="text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1 transition"
+                        >
+                          ← العودة للدفتر
+                        </button>
+                        <span className="text-sm font-extrabold text-purple-300">🎬 استوديو الوسائط المتعددة</span>
+                      </div>
+
+                      {/* Media Studio Content */}
+                      <div className="bg-slate-950 border border-purple-900/30 rounded-xl p-4 space-y-4">
+                        
+                        {/* Avatar Section */}
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <h3 className="text-xs font-bold text-purple-300 flex items-center gap-2">
+                              <span>👤</span> الصور الشخصية (Avatars)
+                            </h3>
+                            <button
+                              onClick={() => setShowAvatarVideoGenerator(true)}
+                              className="px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white text-[10px] font-bold rounded-lg transition"
+                            >
+                              + إضافة صورة
+                            </button>
+                          </div>
+                          
+                          <div className="grid grid-cols-4 gap-2">
+                            {(() => {
+                              try {
+                                const avatars = JSON.parse(localStorage.getItem('userAvatars') || '[]');
+                                return avatars.length > 0 ? avatars.map((avatar: any) => (
+                                  <div key={avatar.id} className="relative group rounded-lg overflow-hidden border border-slate-700">
+                                    <img src={avatar.imageUrl} alt={avatar.name} className="w-full aspect-square object-cover" />
+                                    <button
+                                      onClick={() => {
+                                        const updated = avatars.filter((a: any) => a.id !== avatar.id);
+                                        localStorage.setItem('userAvatars', JSON.stringify(updated));
+                                        setForceUpdate(!forceUpdate);
+                                      }}
+                                      className="absolute top-1 right-1 p-1 bg-red-500/80 rounded-full opacity-0 group-hover:opacity-100 transition"
+                                    >
+                                      <Trash2 className="w-3 h-3 text-white" />
+                                    </button>
+                                  </div>
+                                )) : (
+                                  <div className="col-span-4 text-center py-4 text-slate-500 text-xs">
+                                    لم يتم رفع أي صورة شخصية بعد
+                                  </div>
+                                );
+                              } catch { return null; }
+                            })()}
+                          </div>
+                        </div>
+
+                        {/* Voice Models Section */}
+                        <div className="space-y-3 pt-3 border-t border-slate-800">
+                          <h3 className="text-xs font-bold text-pink-300 flex items-center gap-2">
+                            <span>🎙️</span> نماذج الصوت (Voice Models)
+                          </h3>
+                          
+                          <div className="space-y-2">
+                            {[
+                              { id: 'ar-male-1', name: 'صوت male-عربي 1', lang: 'ar', gender: 'male', icon: '👨‍🏫' },
+                              { id: 'ar-female-1', name: 'صوت أنثوي-عربي 1', lang: 'ar', gender: 'female', icon: '👩‍🏫' },
+                              { id: 'ar-male-2', name: 'صوت male-عربي 2', lang: 'ar', gender: 'male', icon: '👨‍💻' },
+                              { id: 'ar-female-2', name: 'صوت أنثوي-عربي 2', lang: 'ar', gender: 'female', icon: '👩‍🔬' },
+                              { id: 'en-male-1', name: 'English Male Voice', lang: 'en', gender: 'male', icon: '👨‍🎓' },
+                              { id: 'en-female-1', name: 'English Female Voice', lang: 'en', gender: 'female', icon: '👩‍🎓' },
+                            ].map(voice => (
+                              <label key={voice.id} className="flex items-center gap-3 p-2 bg-slate-900/50 hover:bg-slate-900 rounded-lg cursor-pointer transition">
+                                <input
+                                  type="radio"
+                                  name="voiceModel"
+                                  value={voice.id}
+                                  checked={selectedVoiceModel === voice.id}
+                                  onChange={(e) => setSelectedVoiceModel(e.target.value)}
+                                  className="w-4 h-4 accent-pink-500"
+                                />
+                                <span className="text-lg">{voice.icon}</span>
+                                <div className="flex-1 text-right">
+                                  <p className="text-xs font-bold text-slate-200">{voice.name}</p>
+                                  <p className="text-[9px] text-slate-500">{voice.lang.toUpperCase()} • {voice.gender === 'male' ? 'ذكر' : 'أنثوي'}</p>
+                                </div>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* TTS Settings */}
+                        <div className="space-y-3 pt-3 border-t border-slate-800">
+                          <h3 className="text-xs font-bold text-cyan-300 flex items-center gap-2">
+                            <span>⚙️</span> إعدادات تحويل النص إلى صوت
+                          </h3>
+                          
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-[10px] text-slate-400 block mb-1">السرعة (0.5 - 2.0)</label>
+                              <input
+                                type="range"
+                                min="0.5"
+                                max="2.0"
+                                step="0.1"
+                                value={ttsSpeed}
+                                onChange={(e) => setTtsSpeed(parseFloat(e.target.value))}
+                                className="w-full accent-cyan-500"
+                              />
+                              <span className="text-[10px] text-cyan-400">{ttsSpeed}x</span>
+                            </div>
+                            <div>
+                              <label className="text-[10px] text-slate-400 block mb-1">درجة الصوت</label>
+                              <input
+                                type="range"
+                                min="0.5"
+                                max="2.0"
+                                step="0.1"
+                                value={ttsPitch}
+                                onChange={(e) => setTtsPitch(parseFloat(e.target.value))}
+                                className="w-full accent-cyan-500"
+                              />
+                              <span className="text-[10px] text-cyan-400">{ttsPitch}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Generate Actions */}
+                        <div className="space-y-3 pt-3 border-t border-slate-800">
+                          <h3 className="text-xs font-bold text-emerald-300 flex items-center gap-2">
+                            <span>🚀</span> إجراءات التحويل
+                          </h3>
+                          
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              onClick={() => setShowAvatarVideoGenerator(true)}
+                              disabled={!lecture}
+                              className="py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 disabled:from-slate-700 disabled:to-slate-700 text-white text-xs font-bold rounded-xl transition flex flex-col items-center gap-1"
+                            >
+                              <span className="text-lg">🎬</span>
+                              <span>إنشاء فيديو Avatar</span>
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (lecture) {
+                                  const text = lecture.pages.map((p) => 
+                                    p.textboxes.map(tb => tb.text).filter(Boolean).join('\n')
+                                  ).join('\n\n');
+                                  speakText(text);
+                                }
+                              }}
+                              disabled={!lecture || isSpeaking}
+                              className="py-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:from-slate-700 disabled:to-slate-700 text-white text-xs font-bold rounded-xl transition flex flex-col items-center gap-1"
+                            >
+                              <span className="text-lg">{isSpeaking ? '🔊' : '🔈'}</span>
+                              <span>{isSpeaking ? 'جارٍ التشغيل...' : 'تشغيل الصوت'}</span>
+                            </button>
+                          </div>
+                          
+                          <button
+                            onClick={downloadAudio}
+                            disabled={!generatedAudio}
+                            className="w-full py-2.5 bg-emerald-600/20 hover:bg-emerald-600/40 border border-emerald-600/40 text-emerald-300 text-xs font-bold rounded-xl transition disabled:opacity-50"
+                          >
+                            📥 تحميل الصوت كملف MP3
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>
