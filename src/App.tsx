@@ -153,6 +153,7 @@ export default function App() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [generatedAudio, setGeneratedAudio] = useState<string | null>(null);
   const [forceUpdate, setForceUpdate] = useState(false);
+  const [customText, setCustomText] = useState(''); // للنص الحر
 
   // Text-to-Speech function using Web Speech API
   const speakText = (text: string) => {
@@ -5108,6 +5109,29 @@ export default function App() {
                       {/* Media Studio Content */}
                       <div className="bg-slate-950 border border-purple-900/30 rounded-xl p-4 space-y-4">
                         
+                        {/* 📝 Text Input Section - للنص الحر */}
+                        <div className="space-y-3">
+                          <h3 className="text-xs font-bold text-amber-300 flex items-center gap-2">
+                            <span>📝</span> إدخال النص للتحويل
+                          </h3>
+                          <textarea
+                            value={customText}
+                            onChange={(e) => setCustomText(e.target.value)}
+                            placeholder="اكتب أي نص هنا لتحويله إلى صوت أو فيديو... مثال: مرحباً، هذه محاضرة عن مادة الرياضيات..."
+                            className="w-full h-28 p-3 bg-slate-900 border border-slate-700 rounded-xl text-sm text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:border-amber-500"
+                            dir="rtl"
+                          />
+                          <div className="flex items-center justify-between text-[10px] text-slate-500">
+                            <span>{customText.length} حرف</span>
+                            <button
+                              onClick={() => setCustomText('')}
+                              className="text-amber-400 hover:text-amber-300 transition"
+                            >
+                              مسح النص
+                            </button>
+                          </div>
+                        </div>
+
                         {/* Avatar Section */}
                         <div className="space-y-3">
                           <div className="flex items-center justify-between">
@@ -5229,7 +5253,7 @@ export default function App() {
                           <div className="grid grid-cols-2 gap-2">
                             <button
                               onClick={() => setShowAvatarVideoGenerator(true)}
-                              disabled={!lecture}
+                              disabled={!customText.trim() && !lecture}
                               className="py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 disabled:from-slate-700 disabled:to-slate-700 text-white text-xs font-bold rounded-xl transition flex flex-col items-center gap-1"
                             >
                               <span className="text-lg">🎬</span>
@@ -5237,14 +5261,13 @@ export default function App() {
                             </button>
                             <button
                               onClick={() => {
-                                if (lecture) {
-                                  const text = lecture.pages.map((p) => 
-                                    p.textboxes.map(tb => tb.text).filter(Boolean).join('\n')
-                                  ).join('\n\n');
-                                  speakText(text);
-                                }
+                                // استخدام النص الحر أولاً، ثم نص المحاضرة
+                                const text = customText.trim() || (lecture ? lecture.pages.map((p) => 
+                                  p.textboxes.map(tb => tb.text).filter(Boolean).join('\n')
+                                ).join('\n\n') : '');
+                                if (text) speakText(text);
                               }}
-                              disabled={!lecture || isSpeaking}
+                              disabled={(!customText.trim() && !lecture) || isSpeaking}
                               className="py-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:from-slate-700 disabled:to-slate-700 text-white text-xs font-bold rounded-xl transition flex flex-col items-center gap-1"
                             >
                               <span className="text-lg">{isSpeaking ? '🔊' : '🔈'}</span>
@@ -5259,6 +5282,11 @@ export default function App() {
                           >
                             📥 تحميل الصوت كملف MP3
                           </button>
+
+                          {/* نص توضيحي */}
+                          <p className="text-[9px] text-slate-500 text-center">
+                            💡 النص الحر في الأعلى له الأولوية، وإذا كان فارغاً سيُستخدم نص المحاضرة
+                          </p>
                         </div>
                       </div>
                     </div>
