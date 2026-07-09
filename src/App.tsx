@@ -147,11 +147,12 @@ export default function App() {
   const [pendingActiveSubjectId, setPendingActiveSubjectId] = useState<string | null>(null);
 
   // Media Studio States (TTS & Avatar Video)
-  const [selectedVoiceModel, setSelectedVoiceModel] = useState('ar-male-1');
+  const [selectedVoiceModel, setSelectedVoiceModel] = useState('ar-SA-HamedNeural');
   const [ttsSpeed, setTtsSpeed] = useState(1.0);
   const [ttsPitch, setTtsPitch] = useState(1.0);
   const [ttsVolume, setTtsVolume] = useState(1.0);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [generatedAudio, setGeneratedAudio] = useState<string | null>(null);
   const [forceUpdate, setForceUpdate] = useState(false);
   const [customText, setCustomText] = useState(''); // للنص الحر
@@ -161,7 +162,6 @@ export default function App() {
       return stored ? JSON.parse(stored) : null;
     } catch { return null; }
   });
-  const [isCloningVoice, setIsCloningVoice] = useState(false);
   
   // Voice Recording States
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
@@ -171,10 +171,11 @@ export default function App() {
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [recordingTimer, setRecordingTimer] = useState<NodeJS.Timeout | null>(null);
   
-  // Advanced TTS States
-  const [previewText, setPreviewText] = useState('مرحباً، أنا أقرأ هذا النص بصوت عربي طبيعي.');
+  // TTS Generation State
   const [isGeneratingTTS, setIsGeneratingTTS] = useState(false);
-  const [ttsMethod, setTtsMethod] = useState<'browser' | 'edge' | 'elevenlabs'>('browser');
+  
+  // Audio element ref for playing generated audio
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   
   // Start Voice Recording
   const startVoiceRecording = async () => {
@@ -193,14 +194,12 @@ export default function App() {
         setRecordedBlob(blob);
         setRecordedUrl(url);
         
-        // Convert to base64 for storage
         const reader = new FileReader();
         reader.onload = () => {
           const base64 = reader.result as string;
-          const voiceData = { name: `صوتي المسجل ${Date.now()}`, audioUrl: url, base64 };
+          const voiceData = { name: `صوتي المسجل ${new Date().toLocaleTimeString()}`, audioUrl: url, base64 };
           setCustomVoice(voiceData);
           localStorage.setItem('customVoice', JSON.stringify(voiceData));
-          setSelectedVoiceModel('my-voice');
         };
         reader.readAsDataURL(blob);
         
@@ -231,111 +230,128 @@ export default function App() {
     }
   };
   
-  // Preview voice sample
-  const previewVoice = (voiceId: string) => {
-    const previewMap: Record<string, string> = {
-      'ar-male-1': 'مرحباً، أنا صوت معلم عربي.',
-      'ar-female-1': 'مرحباً، أنا معلمة عربية.',
-      'ar-male-2': 'أهلاً وسهلاً، هذا صوت ذكوري.',
-      'ar-female-2': 'أهلاً وسهلاً، هذا صوت أنثوي.',
-      'en-male-1': 'Hello, this is a male English voice.',
-      'en-female-1': 'Hello, this is a female English voice.',
-    };
-    speakText(previewMap[voiceId] || 'مرحباً', voiceId);
+  // Voice mapping for Edge TTS
+  const voiceNameMap: Record<string, string> = {
+    'ar-SA-HamedNeural': 'ar-SA-HamedNeural',
+    'ar-SA-ZariydaNeural': 'ar-SA-ZariydaNeural',
+    'ar-SA-ShakurRTLNeural': 'ar-SA-ShakurRTLNeural',
+    'ar-SA-SalehNeural': 'ar-SA-SalehNeural',
+    'en-US-GuyNeural': 'en-US-GuyNeural',
+    'en-US-JennyNeural': 'en-US-JennyNeural',
+    'my-voice': 'my-voice',
   };
   
-  // Advanced TTS using Edge TTS (Free & High Quality)
-  const generateAdvancedTTS = async (text: string, voiceId: string) => {
-    if (!text.trim()) return;
+  // Generate TTS using Edge TTS (Free & High Quality)
+  const generateTTS = async (text: string, voiceId?: string) => {
+    if (!text.trim()) {
+      alert('يرجى إدخال نص للتحويل');
+      return;
+    }
+    
+    // Stop any current playback
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    window.speechSynthesis.cancel();
     
     setIsGeneratingTTS(true);
+    setIsPlayingAudio(false);
+    
     try {
-      // Map voice IDs to Edge TTS voice names
-      const edgeVoiceMap: Record<string, { name: string; gender: string }> = {
-        'ar-male-1': { name: 'ar-SA-HamedNeural', gender: 'Male' },
-        'ar-female-1': { name: 'ar-SA-ZariydaNeural', gender: 'Female' },
-        'ar-male-2': { name: 'ar-SA-ShakurRTLNeural', gender: 'Male' },
-        'ar-female-2': { name: 'ar-SA-SalehNeural', gender: 'Male' },
-        'en-male-1': { name: 'en-US-GuyNeural', gender: 'Male' },
-        'en-female-1': { name: 'en-US-JennyNeural', gender: 'Female' },
-      };
+      const voiceName = voiceId || selectedVoiceModel;
       
-      const edgeVoice = edgeVoiceMap[voiceId] || edgeVoiceMap['ar-male-1'];
+      // If using custom voice (my-voice), use the recorded/uploaded audio directly
+      if (voiceName === 'my-voice' && customVoice?.audioUrl) {
+        setGeneratedAudio(customVoice.audioUrl);
+        return;
+      }
       
+      // Use Edge TTS API
       const response = await fetch(resolveApiUrl('/api/ai/tts-edge'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-custom-api-key': localStorage.getItem('customAiKey') || '',
-          'x-custom-provider': localStorage.getItem('aiProvider') || 'gemini'
         },
         body: JSON.stringify({
           text,
-          voiceName: edgeVoice.name,
-          rate: `${ttsSpeed >= 1 ? '+' : ''}${((ttsSpeed - 1) * 100).toFixed(0)}%`,
-          pitch: `${ttsPitch >= 1 ? '+' : ''}${((ttsPitch - 1) * 100).toFixed(0)}%`,
-          volume: `${ttsVolume >= 1 ? '+' : ''}${((ttsVolume - 1) * 100).toFixed(0)}%`
+          voiceName: voiceName,
+          rate: ttsSpeed,
+          pitch: ttsPitch,
+          volume: ttsVolume
         })
       });
       
       const data = await response.json();
+      
       if (data.success && data.audioUrl) {
         setGeneratedAudio(data.audioUrl);
       } else {
-        throw new Error(data.error);
+        throw new Error(data.error || 'فشل توليد الصوت');
       }
     } catch (err) {
       console.error('TTS generation error:', err);
-      speakText(text, voiceId);
+      alert('حدث خطأ أثناء توليد الصوت. يرجى المحاولة مرة أخرى.');
     } finally {
       setIsGeneratingTTS(false);
     }
   };
-
-  // Text-to-Speech function using Web Speech API
-  const speakText = (text: string, voiceId?: string) => {
-    if (!text || text.trim() === '') return;
+  
+  // Play generated audio
+  const playGeneratedAudio = () => {
+    if (!generatedAudio) return;
     
-    window.speechSynthesis.cancel();
+    if (audioRef.current) {
+      audioRef.current.pause();
+    }
     
-    const utterance = new SpeechSynthesisUtterance(text);
+    const audio = new Audio(generatedAudio);
+    audioRef.current = audio;
     
-    // Voice mapping
-    const voiceMap: Record<string, { lang: string; name?: string }> = {
-      'ar-male-1': { lang: 'ar-SA', name: 'Google' },
-      'ar-female-1': { lang: 'ar-SA', name: 'Google' },
-      'ar-male-2': { lang: 'ar-SA', name: 'Microsoft' },
-      'ar-female-2': { lang: 'ar-SA', name: 'Microsoft' },
-      'en-male-1': { lang: 'en-US', name: 'Google' },
-      'en-female-1': { lang: 'en-US', name: 'Google' },
+    audio.onplay = () => setIsPlayingAudio(true);
+    audio.onended = () => setIsPlayingAudio(false);
+    audio.onerror = () => {
+      setIsPlayingAudio(false);
+      alert('حدث خطأ أثناء تشغيل الصوت');
     };
     
-    const voiceConfig = voiceMap[voiceId || selectedVoiceModel] || { lang: 'ar-SA' };
-    utterance.lang = voiceConfig.lang;
-    utterance.rate = ttsSpeed;
-    utterance.pitch = ttsPitch;
-    utterance.volume = ttsVolume;
-    
-    // Try to find matching voice
-    const voices = window.speechSynthesis.getVoices();
-    let selectedVoice = voices.find(v => 
-      v.lang.startsWith(voiceConfig.lang.split('-')[0]) && 
-      v.name.toLowerCase().includes(voiceConfig.name?.toLowerCase() || '')
-    );
-    
-    if (!selectedVoice) {
-      selectedVoice = voices.find(v => v.lang.startsWith(voiceConfig.lang.split('-')[0]));
+    audio.play();
+  };
+  
+  // Stop playing audio
+  const stopPlayingAudio = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
     }
+    setIsPlayingAudio(false);
+  };
+  
+  // Download generated audio
+  const downloadGeneratedAudio = () => {
+    if (!generatedAudio) return;
     
-    if (selectedVoice) {
-      utterance.voice = selectedVoice;
-    }
+    const link = document.createElement('a');
+    link.href = generatedAudio;
+    link.download = `lecture_audio_${Date.now()}.mp3`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+  
+  // Preview voice with Edge TTS
+  const previewVoice = (voiceName: string) => {
+    const previewTexts: Record<string, string> = {
+      'ar-SA-HamedNeural': 'مرحباً، أنا صوت معلم عربي. هذه معاينة للصوت.',
+      'ar-SA-ZariydaNeural': 'مرحباً، أنا صوت معلمة عربية. هذه معاينة للصوت.',
+      'ar-SA-ShakurRTLNeural': 'أهلاً وسهلاً، أنا معلم عربي. هذه معاينة.',
+      'ar-SA-SalehNeural': 'السلام عليكم، أنا معلم. هذه معاينة للصوت.',
+      'en-US-GuyNeural': 'Hello, this is a male English voice preview.',
+      'en-US-JennyNeural': 'Hello, this is a female English voice preview.',
+    };
     
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
-    
-    window.speechSynthesis.speak(utterance);
+    const text = previewTexts[voiceName] || 'مرحباً، هذه معاينة للصوت';
+    generateTTS(text, voiceName);
   };
 
   // Download audio function
@@ -5389,15 +5405,15 @@ export default function App() {
                             </div>
                           )}
                           
-                          {/* Voice List with Preview */}
+                          {/* Voice List with Preview - Edge TTS Voices */}
                           <div className="space-y-2">
                             {[
-                              { id: 'ar-male-1', name: 'صوت معلم - عربي', lang: 'ar', gender: 'male', icon: '👨‍🏫', desc: 'صوت ذكوري طبيعي' },
-                              { id: 'ar-female-1', name: 'صوت معلمة - عربي', lang: 'ar', gender: 'female', icon: '👩‍🏫', desc: 'صوت أنثوي طبيعي' },
-                              { id: 'ar-male-2', name: 'صوت مدرس 2 - عربي', lang: 'ar', gender: 'male', icon: '👨‍💻', desc: 'صوت ذكوري بديل' },
-                              { id: 'ar-female-2', name: 'صوت أستاذة - عربي', lang: 'ar', gender: 'female', icon: '👩‍🔬', desc: 'صوت أكاديمي' },
-                              { id: 'en-male-1', name: 'Male Voice - English', lang: 'en', gender: 'male', icon: '👨‍🎓', desc: 'Natural male voice' },
-                              { id: 'en-female-1', name: 'Female Voice - English', lang: 'en', gender: 'female', icon: '👩‍🎓', desc: 'Natural female voice' },
+                              { id: 'ar-SA-HamedNeural', name: 'صوت معلم - عربي', lang: 'ar', gender: 'male', icon: '👨‍🏫', desc: 'صوت ذكوري طبيعي' },
+                              { id: 'ar-SA-ZariydaNeural', name: 'صوت معلمة - عربي', lang: 'ar', gender: 'female', icon: '👩‍🏫', desc: 'صوت أنثوي طبيعي' },
+                              { id: 'ar-SA-ShakurRTLNeural', name: 'صوت مدرس 2 - عربي', lang: 'ar', gender: 'male', icon: '👨‍💻', desc: 'صوت ذكوري بديل' },
+                              { id: 'ar-SA-SalehNeural', name: 'صوت أستاذ - عربي', lang: 'ar', gender: 'male', icon: '👩‍🔬', desc: 'صوت أكاديمي' },
+                              { id: 'en-US-GuyNeural', name: 'Male Voice - English', lang: 'en', gender: 'male', icon: '👨‍🎓', desc: 'Natural male voice' },
+                              { id: 'en-US-JennyNeural', name: 'Female Voice - English', lang: 'en', gender: 'female', icon: '👩‍🎓', desc: 'Natural female voice' },
                               { id: 'my-voice', name: 'صوتي المخصص 🎤', lang: 'custom', gender: 'custom', icon: '🎤', desc: 'صوتك المسجل', isCustom: true },
                             ].map(voice => {
                               const isDisabled = voice.id === 'my-voice' && !customVoice && !recordedUrl;
@@ -5424,12 +5440,12 @@ export default function App() {
                                   </div>
                                   {!isDisabled && (
                                     <button
-                                      onClick={() => voice.id === 'my-voice' ? null : previewVoice(voice.id)}
-                                      className="p-1.5 bg-slate-800 hover:bg-slate-700 rounded-full transition"
-                                      title="معاينة الصوت"
+                                      onClick={() => previewVoice(voice.id)}
+                                      className={`p-1.5 rounded-full transition ${isGeneratingTTS && isSelected ? 'bg-cyan-600 animate-pulse' : 'bg-slate-800 hover:bg-slate-700'}`}
+                                      title="اضغط للاستماع كيف سيقرأ النص"
                                     >
-                                      {isSpeaking && isSelected ? (
-                                        <span className="text-rose-400 animate-pulse">🔊</span>
+                                      {isGeneratingTTS && isSelected ? (
+                                        <span className="text-xs">⏳</span>
                                       ) : (
                                         <span>▶️</span>
                                       )}
@@ -5509,6 +5525,39 @@ export default function App() {
                           </div>
                         </div>
 
+                        {/* Audio Player Section */}
+                        {generatedAudio && (
+                          <div className="p-3 bg-gradient-to-r from-green-900/30 to-emerald-900/30 border border-green-600/40 rounded-xl">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-[10px] font-bold text-green-400">🎧 الصوت المولد</span>
+                              <button
+                                onClick={() => setGeneratedAudio(null)}
+                                className="text-red-400 hover:text-red-300 text-[9px] transition"
+                              >
+                                حذف
+                              </button>
+                            </div>
+                            <div className="flex gap-2 items-center">
+                              {!isPlayingAudio ? (
+                                <button
+                                  onClick={playGeneratedAudio}
+                                  className="w-10 h-10 bg-green-600 hover:bg-green-500 rounded-full flex items-center justify-center transition"
+                                >
+                                  <span className="text-lg">▶️</span>
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={stopPlayingAudio}
+                                  className="w-10 h-10 bg-red-600 hover:bg-red-500 rounded-full flex items-center justify-center animate-pulse transition"
+                                >
+                                  <span className="text-lg">⏹️</span>
+                                </button>
+                              )}
+                              <audio src={generatedAudio} className="flex-1 h-10" />
+                            </div>
+                          </div>
+                        )}
+
                         {/* Generate Actions */}
                         <div className="space-y-3 pt-3 border-t border-slate-800">
                           <h3 className="text-xs font-bold text-emerald-300 flex items-center gap-2">
@@ -5526,31 +5575,50 @@ export default function App() {
                             </button>
                             <button
                               onClick={() => {
-                                // استخدام النص الحر أولاً، ثم نص المحاضرة
                                 const text = customText.trim() || (lecture ? lecture.pages.map((p) => 
                                   p.textboxes.map(tb => tb.text).filter(Boolean).join('\n')
                                 ).join('\n\n') : '');
-                                if (text) speakText(text);
+                                if (text) generateTTS(text);
                               }}
-                              disabled={(!customText.trim() && !lecture) || isSpeaking}
+                              disabled={(!customText.trim() && !lecture) || isGeneratingTTS}
                               className="py-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:from-slate-700 disabled:to-slate-700 text-white text-xs font-bold rounded-xl transition flex flex-col items-center gap-1"
                             >
-                              <span className="text-lg">{isSpeaking ? '🔊' : '🔈'}</span>
-                              <span>{isSpeaking ? 'جارٍ التشغيل...' : 'تشغيل الصوت'}</span>
+                              {isGeneratingTTS ? (
+                                <>
+                                  <span className="text-lg animate-spin">⏳</span>
+                                  <span>جاري التوليد...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="text-lg">🎙️</span>
+                                  <span>تحويل إلى صوت</span>
+                                </>
+                              )}
                             </button>
                           </div>
                           
-                          <button
-                            onClick={downloadAudio}
-                            disabled={!generatedAudio}
-                            className="w-full py-2.5 bg-emerald-600/20 hover:bg-emerald-600/40 border border-emerald-600/40 text-emerald-300 text-xs font-bold rounded-xl transition disabled:opacity-50"
-                          >
-                            📥 تحميل الصوت كملف MP3
-                          </button>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              onClick={playGeneratedAudio}
+                              disabled={!generatedAudio || isPlayingAudio}
+                              className="py-2 bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-600/40 text-emerald-300 text-xs font-bold rounded-xl transition disabled:opacity-50 flex items-center justify-center gap-1"
+                            >
+                              <span>▶️</span>
+                              <span>تشغيل</span>
+                            </button>
+                            <button
+                              onClick={downloadGeneratedAudio}
+                              disabled={!generatedAudio}
+                              className="py-2 bg-blue-600/30 hover:bg-blue-600/50 border border-blue-600/40 text-blue-300 text-xs font-bold rounded-xl transition disabled:opacity-50 flex items-center justify-center gap-1"
+                            >
+                              <span>📥</span>
+                              <span>تحميل MP3</span>
+                            </button>
+                          </div>
 
                           {/* نص توضيحي */}
                           <p className="text-[9px] text-slate-500 text-center">
-                            💡 النص الحر في الأعلى له الأولوية، وإذا كان فارغاً سيُستخدم نص المحاضرة
+                            💡 اضغط على ▶️ بجوار كل صوت للاستماع كيف سيقرأ النص
                           </p>
                         </div>
                       </div>
