@@ -1430,6 +1430,86 @@ app.post("/api/ai/extract-homework", async (req, res) => {
   }
 });
 
+// ==========================================
+// Avatar Video Generation Endpoint
+// ==========================================
+app.post("/api/ai/generate-avatar-video", async (req, res) => {
+  const { avatarImage, script, voiceId = "male-arabic-1", speed = 1.0 } = req.body;
+  const customKey = req.headers["x-custom-api-key"] as string;
+
+  try {
+    if (!avatarImage || !script || script.trim() === "") {
+      return res.status(400).json({ success: false, error: "الصورة والنص مطلوبان" });
+    }
+
+    const hasKey = (customKey && customKey.trim() !== "") || getServerGeminiKey();
+    if (!hasKey) {
+      // Return mock response for demo
+      return res.json({
+        success: true,
+        videoUrl: avatarImage, // Fallback: just return the image
+        audioUrl: "",
+        message: "تم إنشاء فيديو تجريبي (الصوت غير متاح)"
+      });
+    }
+
+    // Step 1: Generate speech from text using Web Speech API simulation
+    // In production, you would use a TTS service like:
+    // - Google Cloud Text-to-Speech
+    // - AWS Polly
+    // - ElevenLabs API
+    // For now, we'll use a base64 encoded silent audio as placeholder
+    
+    // Create a simple WAV audio header (silent audio placeholder)
+    const sampleRate = 44100;
+    const duration = Math.min(script.length / 10, 60); // Max 60 seconds
+    const numSamples = Math.floor(sampleRate * duration);
+    const audioData = Buffer.alloc(numSamples * 2); // 16-bit samples
+    const wavBuffer = Buffer.concat([
+      Buffer.from('RIFF'),
+      Buffer.alloc(4),
+      Buffer.from('WAVE'),
+      Buffer.from('fmt '),
+      Buffer.from([16, 0, 0, 0, 1, 0, 1, 0]),
+      Buffer.from([0x44, 0xac, 0, 0]), // 44100 Hz
+      Buffer.from([0x88, 0x58, 0x01, 0]), // byte rate
+      Buffer.from([2, 0, 16, 0]),
+      Buffer.from('data'),
+      Buffer.alloc(4),
+    ]);
+    
+    // Update file size
+    const fileSize = 36 + audioData.length;
+    wavBuffer.writeUInt32LE(fileSize - 8, 4);
+    wavBuffer.writeUInt32LE(audioData.length, wavBuffer.length - 4);
+    
+    const fullWav = Buffer.concat([wavBuffer, audioData]);
+    const audioBase64 = `data:audio/wav;base64,${fullWav.toString('base64')}`;
+
+    // Step 2: For video generation, we return the avatar image as a "video frame"
+    // In production, you would use FFmpeg or a video generation service like:
+    // - HeyGen API
+    // - Synthesia API
+    // - D-ID API
+    // - Runway ML
+    
+    // Return success with the avatar image as video placeholder
+    res.json({
+      success: true,
+      videoUrl: avatarImage, // Return image as video placeholder
+      audioUrl: audioBase64,
+      message: "تم إنشاء فيديو تجريبي. للنسخة الكاملة، يرجى ربط خدمة TTS و FFmpeg."
+    });
+
+  } catch (error: any) {
+    console.error("Avatar video generation error:", error);
+    res.status(500).json({ 
+      success: false, 
+      error: "فشل إنشاء فيديو Avatar. تحقق من اتصالك بالإنترنت." 
+    });
+  }
+});
+
 // Configure Vite middleware in development or serve static distribution files in production
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {

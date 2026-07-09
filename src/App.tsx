@@ -8,6 +8,7 @@ import BackupDriveManager from "./components/BackupDriveManager";
 import PINActivationBarrier from "./PINActivationBarrier";
 import DailyTraining from "./DailyTraining";
 import HandwritingAI from "./components/HandwritingAI";
+import AvatarVideoGenerator from "./components/AvatarVideoGenerator";
 import { resolveApiUrl } from "./utils/apiBase";
 
 // Lucide icons
@@ -112,6 +113,7 @@ export default function App() {
   const [showWelcomeOverlay, setShowWelcomeOverlay] = useState(false);
   const [playingVideoId, setPlayingVideoId] = useState<string | null>(null);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
+  const [showAvatarVideoGenerator, setShowAvatarVideoGenerator] = useState(false);
   const [academicDetails, setAcademicDetails] = useState(() => {
     try {
       const stored = localStorage.getItem("academicDetails");
@@ -7186,9 +7188,41 @@ export default function App() {
                 <p className="text-[11px] text-slate-400">يفتح قائمة المشاركة أو ينسخ للحافظة</p>
               </div>
             </button>
+
+            {/* Avatar Video Generator */}
+            <button
+              onClick={() => {
+                setShowShareDialog(false);
+                const lec = getSelectedLecture();
+                const lectureText = lec?.pages.map((p) => 
+                  p.textboxes.map(tb => tb.text).filter(Boolean).join('\n')
+                ).join('\n\n') || '';
+                setShowAvatarVideoGenerator(true);
+              }}
+              className="w-full flex items-center gap-3 bg-gradient-to-r from-purple-600/20 to-pink-600/20 hover:from-purple-600/30 hover:to-pink-600/30 border border-purple-500/30 rounded-xl px-4 py-3.5 text-right transition"
+            >
+              <span className="text-2xl">🎬</span>
+              <div>
+                <p className="text-sm font-bold text-slate-100">إنشاء فيديو Avatar</p>
+                <p className="text-[11px] text-slate-400">حوّل المحاضرة إلى فيديو تعليمي مع معلم افتراضي</p>
+              </div>
+            </button>
           </div>
         </div>
       )}
+
+      {/* ─── Avatar Video Generator Modal ─── */}
+      <AvatarVideoGenerator
+        isOpen={showAvatarVideoGenerator}
+        onClose={() => setShowAvatarVideoGenerator(false)}
+        lectureText={(() => {
+          const lec = getSelectedLecture();
+          return lec?.pages.map((p) => 
+            p.textboxes.map(tb => tb.text).filter(Boolean).join('\n')
+          ).join('\n\n') || '';
+        })()}
+        lectureTitle={getSelectedLecture()?.title || ''}
+      />
 
       {/* ─── Developer Credit Footer ─── */}
       <div className="w-full bg-slate-950 border-t border-slate-800/60 py-3 px-4 flex flex-col items-center gap-1.5 text-center" dir="rtl">

@@ -237,3 +237,38 @@ export interface BackupRestoreConfig {
     lecturesCount: number;
   }[];
 }
+
+// Avatar & Video Generation
+export interface UserAvatar {
+  id: string;
+  name: string;
+  imageUrl: string; // Base64 أو رابط الصورة
+  createdAt: string;
+}
+
+export interface AvatarVideoProject {
+  id: string;
+  lectureId: string;
+  avatarId: string;
+  script: string; // النص الذي سيُقرأ
+  status: 'pending' | 'generating' | 'completed' | 'failed';
+  audioUrl?: string;
+  videoUrl?: string;
+  thumbnailUrl?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
+export interface VideoGenerationRequest {
+  avatarImage: string; // Base64
+  script: string; // النص للتحويل إلى صوت
+  voiceId?: string;
+  speed?: number;
+}
+
+export interface VideoGenerationResponse {
+  success: boolean;
+  videoUrl?: string;
+  audioUrl?: string;
+  error?: string;
+}
