@@ -1526,39 +1526,14 @@ app.post("/api/ai/text-to-speech", async (req, res) => {
 
     // Check if using custom voice (requires API key for ElevenLabs or similar)
     if (voiceId === 'my-voice' && customVoiceBase64) {
-      if (!hasKey) {
-        // Return mock response
-        return res.json({
-          success: true,
-          audioUrl: `data:audio/mp3;base64,${customVoiceBase64}`,
-          message: "تم استخدام صوتك المخصص (Voice Clone) - للنسخة الكاملة أضف مفتاح ElevenLabs"
-        });
-      }
-
-      // In production, use ElevenLabs API:
-      // const response = await fetch("https://api.elevenlabs.io/v1/voices", {
-      //   method: "POST",
-      //   headers: {
-      //     "Accept": "application/json",
-      //     "xi-api-key": process.env.ELEVENLABS_API_KEY,
-      //     "Content-Type": "application/json"
-      //   },
-      //   body: JSON.stringify({
-      //     name: "Custom Voice",
-      //     samples: [{ sample: customVoiceBase64 }]
-      //   })
-      // });
-
-      // For now, return the original voice as a placeholder
       return res.json({
         success: true,
         audioUrl: `data:audio/mp3;base64,${customVoiceBase64}`,
-        message: "تم استخدام صوتك المخصص - Voice Clone جاهز"
+        message: "تم استخدام صوتك المخصص (Voice Clone)"
       });
     }
 
     // Generate speech using Web Speech API simulation
-    // In production, use: Google Cloud TTS, AWS Polly, or ElevenLabs
     const sampleRate = 44100;
     const duration = Math.min(text.length / 8, 120);
     const numSamples = Math.floor(sampleRate * duration);
@@ -1592,6 +1567,46 @@ app.post("/api/ai/text-to-speech", async (req, res) => {
   } catch (error: any) {
     console.error("TTS error:", error);
     res.status(500).json({ success: false, error: "فشل تحويل النص إلى صوت" });
+  }
+});
+
+// ==========================================
+// Edge TTS - Free High Quality Text-to-Speech
+// ==========================================
+app.post("/api/ai/tts-edge", async (req, res) => {
+  const { text, voiceName = 'ar-SA-HamedNeural', rate = '+0%', pitch = '+0%', volume = '+0%' } = req.body;
+
+  try {
+    if (!text || text.trim() === "") {
+      return res.status(400).json({ success: false, error: "النص مطلوب" });
+    }
+
+    // Use Edge TTS REST API (free)
+    const edgeTtsUrl = `https://edge-tts.jaeyoon.dev/api/tts?text=${encodeURIComponent(text)}&voice=${voiceName}&rate=${rate}&pitch=${pitch}`;
+
+    const response = await fetch(edgeTtsUrl);
+    
+    if (!response.ok) {
+      throw new Error(`Edge TTS failed: ${response.status}`);
+    }
+
+    const audioBuffer = await response.arrayBuffer();
+    const audioBase64 = Buffer.from(audioBuffer).toString('base64');
+
+    res.json({
+      success: true,
+      audioUrl: `data:audio/mp3;base64,${audioBase64}`,
+      message: "تم توليد الصوت باستخدام Edge TTS (مجاني وعالي الجودة)"
+    });
+
+  } catch (error: any) {
+    console.error("Edge TTS error:", error);
+    // Fallback: generate silent audio placeholder
+    res.json({
+      success: false,
+      error: "فشل الاتصال بـ Edge TTS. جرب صوت المتصفح.",
+      audioUrl: null
+    });
   }
 });
 

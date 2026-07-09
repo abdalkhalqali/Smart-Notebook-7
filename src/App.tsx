@@ -150,36 +150,185 @@ export default function App() {
   const [selectedVoiceModel, setSelectedVoiceModel] = useState('ar-male-1');
   const [ttsSpeed, setTtsSpeed] = useState(1.0);
   const [ttsPitch, setTtsPitch] = useState(1.0);
+  const [ttsVolume, setTtsVolume] = useState(1.0);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [generatedAudio, setGeneratedAudio] = useState<string | null>(null);
   const [forceUpdate, setForceUpdate] = useState(false);
   const [customText, setCustomText] = useState(''); // للنص الحر
-  const [customVoice, setCustomVoice] = useState<{ name: string; audioUrl: string } | null>(() => {
+  const [customVoice, setCustomVoice] = useState<{ name: string; audioUrl: string; base64?: string } | null>(() => {
     try {
       const stored = localStorage.getItem('customVoice');
       return stored ? JSON.parse(stored) : null;
     } catch { return null; }
   });
   const [isCloningVoice, setIsCloningVoice] = useState(false);
+  
+  // Voice Recording States
+  const [isRecordingVoice, setIsRecordingVoice] = useState(false);
+  const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
+  const [recordedUrl, setRecordedUrl] = useState<string | null>(null);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
+  const [recordingTimer, setRecordingTimer] = useState<NodeJS.Timeout | null>(null);
+  
+  // Advanced TTS States
+  const [previewText, setPreviewText] = useState('مرحباً، أنا أقرأ هذا النص بصوت عربي طبيعي.');
+  const [isGeneratingTTS, setIsGeneratingTTS] = useState(false);
+  const [ttsMethod, setTtsMethod] = useState<'browser' | 'edge' | 'elevenlabs'>('browser');
+  
+  // Start Voice Recording
+  const startVoiceRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      const chunks: BlobPart[] = [];
+      
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunks.push(e.data);
+      };
+      
+      recorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'audio/webm' });
+        const url = URL.createObjectURL(blob);
+        setRecordedBlob(blob);
+        setRecordedUrl(url);
+        
+        // Convert to base64 for storage
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64 = reader.result as string;
+          const voiceData = { name: `صوتي المسجل ${Date.now()}`, audioUrl: url, base64 };
+          setCustomVoice(voiceData);
+          localStorage.setItem('customVoice', JSON.stringify(voiceData));
+          setSelectedVoiceModel('my-voice');
+        };
+        reader.readAsDataURL(blob);
+        
+        stream.getTracks().forEach(track => track.stop());
+      };
+      
+      recorder.start(100);
+      setMediaRecorder(recorder);
+      setIsRecordingVoice(true);
+      setRecordingDuration(0);
+      
+      const timer = setInterval(() => {
+        setRecordingDuration(prev => prev + 1);
+      }, 1000);
+      setRecordingTimer(timer);
+      
+    } catch (err) {
+      console.error('Microphone access denied:', err);
+      alert('يرجى السماح بالوصول إلى الميكروفون');
+    }
+  };
+  
+  const stopVoiceRecording = () => {
+    if (mediaRecorder && isRecordingVoice) {
+      mediaRecorder.stop();
+      setIsRecordingVoice(false);
+      if (recordingTimer) clearInterval(recordingTimer);
+    }
+  };
+  
+  // Preview voice sample
+  const previewVoice = (voiceId: string) => {
+    const previewMap: Record<string, string> = {
+      'ar-male-1': 'مرحباً، أنا صوت معلم عربي.',
+      'ar-female-1': 'مرحباً، أنا معلمة عربية.',
+      'ar-male-2': 'أهلاً وسهلاً، هذا صوت ذكوري.',
+      'ar-female-2': 'أهلاً وسهلاً، هذا صوت أنثوي.',
+      'en-male-1': 'Hello, this is a male English voice.',
+      'en-female-1': 'Hello, this is a female English voice.',
+    };
+    speakText(previewMap[voiceId] || 'مرحباً', voiceId);
+  };
+  
+  // Advanced TTS using Edge TTS (Free & High Quality)
+  const generateAdvancedTTS = async (text: string, voiceId: string) => {
+    if (!text.trim()) return;
+    
+    setIsGeneratingTTS(true);
+    try {
+      // Map voice IDs to Edge TTS voice names
+      const edgeVoiceMap: Record<string, { name: string; gender: string }> = {
+        'ar-male-1': { name: 'ar-SA-HamedNeural', gender: 'Male' },
+        'ar-female-1': { name: 'ar-SA-ZariydaNeural', gender: 'Female' },
+        'ar-male-2': { name: 'ar-SA-ShakurRTLNeural', gender: 'Male' },
+        'ar-female-2': { name: 'ar-SA-SalehNeural', gender: 'Male' },
+        'en-male-1': { name: 'en-US-GuyNeural', gender: 'Male' },
+        'en-female-1': { name: 'en-US-JennyNeural', gender: 'Female' },
+      };
+      
+      const edgeVoice = edgeVoiceMap[voiceId] || edgeVoiceMap['ar-male-1'];
+      
+      const response = await fetch(resolveApiUrl('/api/ai/tts-edge'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-custom-api-key': localStorage.getItem('customAiKey') || '',
+          'x-custom-provider': localStorage.getItem('aiProvider') || 'gemini'
+        },
+        body: JSON.stringify({
+          text,
+          voiceName: edgeVoice.name,
+          rate: `${ttsSpeed >= 1 ? '+' : ''}${((ttsSpeed - 1) * 100).toFixed(0)}%`,
+          pitch: `${ttsPitch >= 1 ? '+' : ''}${((ttsPitch - 1) * 100).toFixed(0)}%`,
+          volume: `${ttsVolume >= 1 ? '+' : ''}${((ttsVolume - 1) * 100).toFixed(0)}%`
+        })
+      });
+      
+      const data = await response.json();
+      if (data.success && data.audioUrl) {
+        setGeneratedAudio(data.audioUrl);
+      } else {
+        throw new Error(data.error);
+      }
+    } catch (err) {
+      console.error('TTS generation error:', err);
+      speakText(text, voiceId);
+    } finally {
+      setIsGeneratingTTS(false);
+    }
+  };
 
   // Text-to-Speech function using Web Speech API
-  const speakText = (text: string) => {
+  const speakText = (text: string, voiceId?: string) => {
     if (!text || text.trim() === '') return;
     
-    // Stop any current speech
     window.speechSynthesis.cancel();
     
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = selectedVoiceModel.startsWith('ar') ? 'ar-SA' : 'en-US';
+    
+    // Voice mapping
+    const voiceMap: Record<string, { lang: string; name?: string }> = {
+      'ar-male-1': { lang: 'ar-SA', name: 'Google' },
+      'ar-female-1': { lang: 'ar-SA', name: 'Google' },
+      'ar-male-2': { lang: 'ar-SA', name: 'Microsoft' },
+      'ar-female-2': { lang: 'ar-SA', name: 'Microsoft' },
+      'en-male-1': { lang: 'en-US', name: 'Google' },
+      'en-female-1': { lang: 'en-US', name: 'Google' },
+    };
+    
+    const voiceConfig = voiceMap[voiceId || selectedVoiceModel] || { lang: 'ar-SA' };
+    utterance.lang = voiceConfig.lang;
     utterance.rate = ttsSpeed;
     utterance.pitch = ttsPitch;
+    utterance.volume = ttsVolume;
     
-    // Try to select a voice that matches the language
+    // Try to find matching voice
     const voices = window.speechSynthesis.getVoices();
-    const targetLang = selectedVoiceModel.startsWith('ar') ? 'ar' : 'en';
-    const matchingVoice = voices.find(v => v.lang.startsWith(targetLang));
-    if (matchingVoice) {
-      utterance.voice = matchingVoice;
+    let selectedVoice = voices.find(v => 
+      v.lang.startsWith(voiceConfig.lang.split('-')[0]) && 
+      v.name.toLowerCase().includes(voiceConfig.name?.toLowerCase() || '')
+    );
+    
+    if (!selectedVoice) {
+      selectedVoice = voices.find(v => v.lang.startsWith(voiceConfig.lang.split('-')[0]));
+    }
+    
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
     }
     
     utterance.onstart = () => setIsSpeaking(true);
@@ -5187,14 +5336,47 @@ export default function App() {
                             <span>🎙️</span> نماذج الصوت (Voice Models)
                           </h3>
                           
+                          {/* Voice Recording Section */}
+                          <div className="p-3 bg-gradient-to-r from-rose-900/30 to-red-900/30 border border-rose-600/40 rounded-xl">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-[10px] font-bold text-rose-400">🎙️ تسجيل صوتي مباشر</span>
+                              <span className="text-[9px] text-slate-500">{recordingDuration}s</span>
+                            </div>
+                            <div className="flex gap-2">
+                              {!isRecordingVoice ? (
+                                <button
+                                  onClick={startVoiceRecording}
+                                  className="flex-1 flex items-center justify-center gap-2 py-2 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold rounded-lg transition"
+                                >
+                                  <span>⏺</span>
+                                  <span>بدء التسجيل</span>
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={stopVoiceRecording}
+                                  className="flex-1 flex items-center justify-center gap-2 py-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold rounded-lg animate-pulse transition"
+                                >
+                                  <span>⏹</span>
+                                  <span>إيقاف التسجيل</span>
+                                </button>
+                              )}
+                              {recordedUrl && (
+                                <audio src={recordedUrl} controls className="h-8 flex-1 text-xs" />
+                              )}
+                            </div>
+                            <p className="text-[9px] text-slate-500 mt-1">سجّل صوتك (5-30 ثانية) لاستخدامه كنموذج</p>
+                          </div>
+                          
                           {/* Custom Voice Upload Section */}
-                          {customVoice && (
+                          {(customVoice || recordedUrl) && (
                             <div className="p-2 bg-gradient-to-r from-amber-900/30 to-orange-900/30 border border-amber-600/40 rounded-lg">
                               <div className="flex items-center justify-between mb-2">
                                 <span className="text-[10px] font-bold text-amber-400">🎤 صوتي المخصص (Voice Clone)</span>
                                 <button
                                   onClick={() => {
                                     setCustomVoice(null);
+                                    setRecordedUrl(null);
+                                    setRecordedBlob(null);
                                     localStorage.removeItem('customVoice');
                                     if (selectedVoiceModel === 'my-voice') setSelectedVoiceModel('ar-male-1');
                                   }}
@@ -5203,31 +5385,33 @@ export default function App() {
                                   حذف
                                 </button>
                               </div>
-                              <audio src={customVoice.audioUrl} controls className="w-full h-8 text-xs" />
+                              <audio src={customVoice?.audioUrl || recordedUrl || ''} controls className="w-full h-8 text-xs" />
                             </div>
                           )}
                           
+                          {/* Voice List with Preview */}
                           <div className="space-y-2">
                             {[
-                              { id: 'ar-male-1', name: 'صوت male-عربي 1', lang: 'ar', gender: 'male', icon: '👨‍🏫' },
-                              { id: 'ar-female-1', name: 'صوت أنثوي-عربي 1', lang: 'ar', gender: 'female', icon: '👩‍🏫' },
-                              { id: 'ar-male-2', name: 'صوت male-عربي 2', lang: 'ar', gender: 'male', icon: '👨‍💻' },
-                              { id: 'ar-female-2', name: 'صوت أنثوي-عربي 2', lang: 'ar', gender: 'female', icon: '👩‍🔬' },
-                              { id: 'en-male-1', name: 'English Male Voice', lang: 'en', gender: 'male', icon: '👨‍🎓' },
-                              { id: 'en-female-1', name: 'English Female Voice', lang: 'en', gender: 'female', icon: '👩‍🎓' },
-                              { id: 'my-voice', name: 'صوتي المخصص 🎤', lang: 'custom', gender: 'custom', icon: '🎤', isCustom: true },
+                              { id: 'ar-male-1', name: 'صوت معلم - عربي', lang: 'ar', gender: 'male', icon: '👨‍🏫', desc: 'صوت ذكوري طبيعي' },
+                              { id: 'ar-female-1', name: 'صوت معلمة - عربي', lang: 'ar', gender: 'female', icon: '👩‍🏫', desc: 'صوت أنثوي طبيعي' },
+                              { id: 'ar-male-2', name: 'صوت مدرس 2 - عربي', lang: 'ar', gender: 'male', icon: '👨‍💻', desc: 'صوت ذكوري بديل' },
+                              { id: 'ar-female-2', name: 'صوت أستاذة - عربي', lang: 'ar', gender: 'female', icon: '👩‍🔬', desc: 'صوت أكاديمي' },
+                              { id: 'en-male-1', name: 'Male Voice - English', lang: 'en', gender: 'male', icon: '👨‍🎓', desc: 'Natural male voice' },
+                              { id: 'en-female-1', name: 'Female Voice - English', lang: 'en', gender: 'female', icon: '👩‍🎓', desc: 'Natural female voice' },
+                              { id: 'my-voice', name: 'صوتي المخصص 🎤', lang: 'custom', gender: 'custom', icon: '🎤', desc: 'صوتك المسجل', isCustom: true },
                             ].map(voice => {
-                              const isDisabled = voice.id === 'my-voice' && !customVoice;
+                              const isDisabled = voice.id === 'my-voice' && !customVoice && !recordedUrl;
+                              const isSelected = selectedVoiceModel === voice.id;
                               return (
-                                <label key={voice.id} className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition ${isDisabled ? 'opacity-50 cursor-not-allowed' : 'bg-slate-900/50 hover:bg-slate-900'}`}>
+                                <div key={voice.id} className={`flex items-center gap-2 p-2 rounded-lg transition ${isSelected ? 'bg-purple-900/40 border border-purple-500/50' : 'bg-slate-900/50 hover:bg-slate-900'}`}>
                                   <input
                                     type="radio"
                                     name="voiceModel"
                                     value={voice.id}
-                                    checked={selectedVoiceModel === voice.id}
+                                    checked={isSelected}
                                     onChange={(e) => setSelectedVoiceModel(e.target.value)}
                                     disabled={isDisabled}
-                                    className="w-4 h-4 accent-pink-500"
+                                    className="w-4 h-4 accent-purple-500"
                                   />
                                   <span className="text-lg">{voice.icon}</span>
                                   <div className="flex-1 text-right">
@@ -5235,10 +5419,23 @@ export default function App() {
                                       {voice.name}
                                     </p>
                                     <p className="text-[9px] text-slate-500">
-                                      {voice.id === 'my-voice' && !customVoice ? 'ارفع صوتك أولاً' : `${voice.lang.toUpperCase()} • ${voice.gender === 'male' ? 'ذكر' : 'أنثوي'}`}
+                                      {voice.id === 'my-voice' && !customVoice ? 'سجّل صوتك أولاً' : voice.desc}
                                     </p>
                                   </div>
-                                </label>
+                                  {!isDisabled && (
+                                    <button
+                                      onClick={() => voice.id === 'my-voice' ? null : previewVoice(voice.id)}
+                                      className="p-1.5 bg-slate-800 hover:bg-slate-700 rounded-full transition"
+                                      title="معاينة الصوت"
+                                    >
+                                      {isSpeaking && isSelected ? (
+                                        <span className="text-rose-400 animate-pulse">🔊</span>
+                                      ) : (
+                                        <span>▶️</span>
+                                      )}
+                                    </button>
+                                  )}
+                                </div>
                               );
                             })}
                           </div>
@@ -5265,13 +5462,13 @@ export default function App() {
                                   reader.readAsDataURL(file);
                                 }}
                               />
-                              <span className="text-lg">🎤</span>
+                              <span className="text-lg">📁</span>
                               <span className="text-xs font-bold text-amber-300">
-                                {customVoice ? 'تغيير صوتي' : 'رفع صوتي (Voice Clone)'}
+                                {customVoice ? 'تغيير الملف الصوتي' : 'رفع ملف صوتي (Voice Clone)'}
                               </span>
                             </label>
                             <p className="text-[9px] text-slate-500 text-center mt-1">
-                              ارفع مقطع صوتي قصير (5-30 ثانية) بصوتك لاستخدامه
+                              أو سجّل صوتك مباشرة بالأعلى
                             </p>
                           </div>
                         </div>
