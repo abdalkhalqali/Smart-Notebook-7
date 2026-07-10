@@ -1641,6 +1641,79 @@ app.post("/api/ai/generate-video-with-voice", async (req, res) => {
   }
 });
 
+// ==========================================
+// AI Chat Endpoint
+// ==========================================
+app.post("/api/ai/chat", async (req, res) => {
+  const { message, context = '', history = [] } = req.body;
+  const customKey = req.headers["x-custom-api-key"] as string;
+
+  try {
+    if (!message || message.trim() === "") {
+      return res.status(400).json({ error: "الرسالة مطلوبة" });
+    }
+
+    const hasKey = (customKey && customKey.trim() !== "") || getServerGeminiKey();
+
+    if (!hasKey) {
+      const mockResponses = [
+        "سؤال ممتاز! دعني أوضح لك هذه النقطة بطريقة بسيطة...",
+        "بناءً على ما ذكرته، أعتقد أنك تقصد...",
+        "هذا موضوع مهم جداً في مجالنا. إليك الشرح...",
+        "أفهم سؤالك. دعني أساعدك في فهم هذا المفهوم..."
+      ];
+      const randomResponse = mockResponses[Math.floor(Math.random() * mockResponses.length)];
+      return res.json({
+        response: `${randomResponse}\n\n(هذه إجابة تجريبية. أضف مفتاح Gemini للحصول على إجابات ذكية حقيقية)`,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    let systemPrompt = `أنت معلم ذكي متخصص في التعليم. مهمتك:
+- شرح المفاهيم بطريقة بسيطة وواضحة
+- استخدام أمثلة عملية
+- تشجيع الطالب على التعلم
+- الإجابة بالعربية الفصحى
+- كن ودوداً ومتحمساً للتعليم`;
+
+    if (context) {
+      systemPrompt += `\n\nسياق المحاضرة:\n${context}`;
+    }
+
+    const contents: any[] = [];
+    history.slice(-6).forEach((msg: any) => {
+      if (msg.role === 'user') {
+        contents.push({ role: 'user', parts: [{ text: msg.content }] });
+      } else {
+        contents.push({ role: 'model', parts: [{ text: msg.content }] });
+      }
+    });
+    contents.push({ role: 'user', parts: [{ text: message }] });
+
+    const ai = getAI(req);
+    const response = await generateContentWithRetryAndFallback(ai, {
+      model: "gemini-2.5-flash",
+      contents: contents,
+      config: {
+        systemInstruction: systemPrompt,
+        thinkingConfig: { thinkingBudget: 0 }
+      }
+    });
+
+    res.json({
+      response: response.text || "عذراً، لم أستطع صياغة إجابة مناسبة.",
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error: any) {
+    console.error("Chat error:", error);
+    res.status(500).json({ 
+      response: "عذراً، حدث خطأ. حاول مرة أخرى.",
+      error: error.message 
+    });
+  }
+});
+
 // Configure Vite middleware in development or serve static distribution files in production
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
