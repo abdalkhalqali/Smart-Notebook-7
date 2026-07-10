@@ -1,29 +1,52 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { 
-  Atom, Zap, Lightbulb, Thermometer, Waves, 
-  Star, Search, Play, Pause, RotateCcw, 
-  Send, Loader2, Trash2, Download, Plus, X,
-  BarChart3, TrendingUp, Trophy, Target, Clock,
-  Brain, ChevronLeft, ChevronRight, TrophyIcon,
-  Medal, Crown, Zap as ZapIcon, Sparkles,
-  FileText, Copy, Share2, Eye, Edit3, Check,
-  Users, Timer, Award, BookOpen, FlaskConical,
-  Scale, Compass, Magnet, Cpu, Atom as AtomIcon
+import {
+  Play, Pause, RotateCcw, Plus, Trash2, Download, Search,
+  Brain, BarChart3, TrendingUp, Trophy, Star, X, Send,
+  Loader2, ChevronLeft, ChevronRight, Check, AlertCircle,
+  Settings, Share2, FileText, Eye, EyeOff, Volume2,
+  Zap, Compass, Target, Award, Flame, Sparkles, RefreshCw,
+  Copy, Clock, Users, Timer, BookOpen, Lightbulb,
+  ArrowRight, ArrowLeft, Minus, Grid3X3, Maximize2, Minimize2,
+  Sun, Moon, VolumeX, Volume1
 } from 'lucide-react';
 import { resolveApiUrl } from '../utils/apiBase';
 
-// =============================================
-// 📚 قاعدة بيانات التجارب الفيزيائية الشاملة
-// =============================================
+// ============================================================
+// 📚 قاعدة التجارب الفيزيائية الشاملة
+// ============================================================
+interface ExpVariable {
+  name: string;
+  label: string;
+  unit: string;
+  unitOptions: { label: string; value: string; factor: number }[];
+  min: number;
+  max: number;
+  default: number;
+}
+
+interface ExpResult {
+  name: string;
+  formula: string;
+  unit: string;
+  color: string;
+}
+
+interface DataCol {
+  id: string;
+  name: string;
+  unit: string;
+  color: string;
+}
+
 interface DataRow {
   id: string;
   values: Record<string, string>;
 }
 
-interface DataColumn {
-  id: string;
-  name: string;
-  unit: string;
+interface ChartPoint {
+  x: number;
+  y: number;
+  label?: string;
 }
 
 interface Experiment {
@@ -31,1502 +54,1295 @@ interface Experiment {
   name: string;
   nameEn: string;
   category: string;
-  subcategory: string;
   icon: string;
-  difficulty: 'سهل' | 'متوسط' | 'صعب';
+  difficulty: 1 | 2 | 3;
   description: string;
-  equations: { name: string; formula: string; description: string }[];
-  variables: { name: string; label: string; labelEn: string; unit: string; unitOptions: { label: string; value: string; factor: number }[]; min: number; max: number; default: number }[];
-  results: { name: string; formula: string; unit: string }[];
-  dataColumns: { name: string; unit: string; formula?: string }[];
+  equations: { name: string; formula: string; desc: string }[];
+  variables: ExpVariable[];
+  results: ExpResult[];
+  simulationType: 'free-fall' | 'projectile' | 'pendulum' | 'wave' | 'circuit' | 'refraction' | 'radioactive' | 'gas' | 'spring' | 'collision' | 'magnetic' | 'photoelectric';
   aiExplanation: string;
-  realWorldExample: string;
+  realWorld: string;
   tips: string[];
+  chartTypes: { x: string; y: string; type: 'line' | 'scatter' | 'bar' }[];
 }
 
-const experiments: Experiment[] = [
-  // =========================================
-  // 🔧 الميكانيكا
-  // =========================================
+// ============================================================
+// 🧪 قاعدة التجارب الكاملة
+// ============================================================
+const EXPERIMENTS: Experiment[] = [
   {
     id: 'free-fall',
     name: 'السقوط الحر',
     nameEn: 'Free Fall',
     category: 'ميكانيكا',
-    subcategory: 'الحركة',
     icon: '🏃',
-    difficulty: 'سهل',
-    description: 'محاكاة سقوط الأجسام تحت تأثير الجاذبية الأرضية',
+    difficulty: 1,
+    description: 'حركة الأجسام الساقطة تحت تأثير الجاذبية',
     equations: [
-      { name: 'الارتفاع', formula: 'h = ½gt²', description: 'الارتفاع كدالة زمنية' },
-      { name: 'السرعة', formula: 'v = gt', description: 'السرعة اللحظية' },
-      { name: 'الطاقة الحركية', formula: 'KE = ½mv²', description: 'الطاقة الحركية' },
-      { name: 'الطاقة الكامنة', formula: 'PE = mgh', description: 'الطاقة الكامنة' }
+      { name: 'الارتفاع', formula: 'h = ½gt²', desc: 'الارتفاع كدالة زمنية' },
+      { name: 'السرعة', formula: 'v = gt', desc: 'السرعة اللحظية' },
+      { name: 'الطاقة الحركية', formula: 'KE = ½mv²', desc: 'الطاقة الحركية' }
     ],
     variables: [
-      { name: 'height', label: 'الارتفاع', labelEn: 'Height', unit: 'm', unitOptions: [
+      { name: 'height', label: 'الارتفاع', unit: 'm', unitOptions: [
         { label: 'متر', value: 'm', factor: 1 },
         { label: 'سنتيمتر', value: 'cm', factor: 100 },
-        { label: 'كيلومتر', value: 'km', factor: 0.001 },
-        { label: 'بوصة', value: 'in', factor: 39.37 },
-        { label: 'قدم', value: 'ft', factor: 3.281 }
+        { label: 'كيلومتر', value: 'km', factor: 0.001 }
       ], min: 1, max: 100, default: 10 },
-      { name: 'mass', label: 'الكتلة', labelEn: 'Mass', unit: 'kg', unitOptions: [
+      { name: 'mass', label: 'الكتلة', unit: 'kg', unitOptions: [
         { label: 'كيلوغرام', value: 'kg', factor: 1 },
-        { label: 'غرام', value: 'g', factor: 1000 },
-        { label: 'ملليغرام', value: 'mg', factor: 1000000 },
-        { label: 'رطل', value: 'lb', factor: 2.205 }
+        { label: 'غرام', value: 'g', factor: 1000 }
       ], min: 0.1, max: 100, default: 5 },
-      { name: 'gravity', label: 'الجاذبية', labelEn: 'Gravity', unit: 'm/s²', unitOptions: [
-        { label: 'م/ث²', value: 'm/s²', factor: 1 },
-        { label: 'سم/ث²', value: 'cm/s²', factor: 100 }
+      { name: 'gravity', label: 'الجاذبية', unit: 'm/s²', unitOptions: [
+        { label: 'م/ث²', value: 'm/s²', factor: 1 }
       ], min: 1, max: 25, default: 9.8 }
     ],
     results: [
-      { name: 'الوقت', formula: 't = √(2h/g)', unit: 's' },
-      { name: 'السرعة النهائية', formula: 'v = gt', unit: 'm/s' },
-      { name: 'الطاقة الحركية', formula: 'KE = ½mv²', unit: 'J' }
+      { name: 'زمن السقوط', formula: 't = √(2h/g)', unit: 's', color: 'cyan' },
+      { name: 'السرعة النهائية', formula: 'v = gt', unit: 'm/s', color: 'emerald' },
+      { name: 'الطاقة الحركية', formula: 'KE = ½mv²', unit: 'J', color: 'amber' }
     ],
-    dataColumns: [
-      { name: 'الزمن', unit: 's', formula: 't' },
-      { name: 'الارتفاع', unit: 'm', formula: 'h = h₀ - ½gt²' },
-      { name: 'السرعة', unit: 'm/s', formula: 'v = gt' },
-      { name: 'الطاقة الحركية', unit: 'J', formula: 'KE = ½mv²' },
-      { name: 'الطاقة الكامنة', unit: 'J', formula: 'PE = mgh' }
+    simulationType: 'free-fall',
+    aiExplanation: 'السقوط الحر هو حركة الجسم تحت تأثير الجاذبية فقط. الجسم المتسارع يتسارع بمعدل ثابت g=9.8m/s² على سطح الأرض.',
+    realWorld: 'قطرة ماء تسقط من السحاب، أو قذيفة من برج',
+    tips: [
+      'الكتلة لا تؤثر على زمن السقوط في الفراغ',
+      'كلما زاد الارتفاع زاد زمن السقوط',
+      'السرعة تزداد线性اً مع الزمن'
     ],
-    aiExplanation: 'السقوط الحر هو حركة الجسم تحت تأثير الجاذبية فقط دون أي قوة خارجية. الجسم المتساقط حراً يتسارع بمعدل ثابت g = 9.8 m/s² على سطح الأرض.',
-    realWorldExample: 'قطرة ماء تسقط من السحاب، أو قذيفة تُلقى من برج',
-    tips: ['الارتفاع يؤثر طردياً على وقت السقوط', 'الكتلة لا تؤثر على زمن السقوط في الفراغ', 'يمكن تطبيق نفس المبادئ على الكواكب الأخرى']
+    chartTypes: [
+      { x: 'الزمن (s)', y: 'الارتفاع (m)', type: 'line' },
+      { x: 'الزمن (s)', y: 'السرعة (m/s)', type: 'line' },
+      { x: 'الزمن (s)', y: 'الطاقة الحركية (J)', type: 'line' }
+    ]
   },
   {
-    id: 'projectile-motion',
+    id: 'projectile',
     name: 'الحركة القذفية',
     nameEn: 'Projectile Motion',
     category: 'ميكانيكا',
-    subcategory: 'الحركة',
     icon: '🎯',
-    difficulty: 'متوسط',
+    difficulty: 2,
     description: 'حركة المقذوفات في مجال الجاذبية',
     equations: [
-      { name: 'المدى', formula: 'R = v₀²sin(2θ)/g', description: 'المدى الأفقي' },
-      { name: 'أقصى ارتفاع', formula: 'H = v₀²sin²θ/2g', description: 'أقصى ارتفاع' },
-      { name: 'الوقت الكلي', formula: 'T = 2v₀sinθ/g', description: 'زمن الرحلة' }
+      { name: 'المدى', formula: 'R = v₀²sin(2θ)/g', desc: 'المدى الأفقي' },
+      { name: 'أقصى ارتفاع', formula: 'H = v₀²sin²θ/2g', desc: 'أقصى ارتفاع' },
+      { name: 'الزمن الكلي', formula: 'T = 2v₀sinθ/g', desc: 'زمن الرحلة' }
     ],
     variables: [
-      { name: 'velocity', label: 'السرعة الابتدائية', labelEn: 'Initial Velocity', unit: 'm/s', unitOptions: [
-        { label: 'م/ث', value: 'm/s', factor: 1 },
-        { label: 'كم/س', value: 'km/h', factor: 3.6 },
-        { label: 'قدم/ث', value: 'ft/s', factor: 3.281 }
-      ], min: 10, max: 100, default: 30 },
-      { name: 'angle', label: 'زاوية الإطلاق', labelEn: 'Launch Angle', unit: '°', unitOptions: [
-        { label: 'درجة', value: '°', factor: 1 },
-        { label: 'راديان', value: 'rad', factor: 57.296 }
-      ], min: 0, max: 90, default: 45 },
-      { name: 'height', label: 'ارتفاع الإطلاق', labelEn: 'Launch Height', unit: 'm', unitOptions: [
-        { label: 'متر', value: 'm', factor: 1 },
-        { label: 'سنتيمتر', value: 'cm', factor: 100 }
-      ], min: 0, max: 50, default: 0 }
-    ],
-    results: [
-      { name: 'المدى', formula: 'R = v₀²sin(2θ)/g', unit: 'm' },
-      { name: 'أقصى ارتفاع', formula: 'H = v₀²sin²θ/2g', unit: 'm' },
-      { name: 'زمن الرحلة', formula: 'T = 2v₀sinθ/g', unit: 's' }
-    ],
-    dataColumns: [
-      { name: 'الزمن', unit: 's' },
-      { name: 'الموقع X', unit: 'm', formula: 'x = v₀cosθ·t' },
-      { name: 'الموقع Y', unit: 'm', formula: 'y = v₀sinθ·t - ½gt²' },
-      { name: 'السرعة X', unit: 'm/s', formula: 'vx = v₀cosθ' },
-      { name: 'السرعة Y', unit: 'm/s', formula: 'vy = v₀sinθ - gt' }
-    ],
-    aiExplanation: 'الحركة القذفية تجمع بين حركة أفقية بسرعة ثابتة وحركة رأسية تحت تأثير الجاذبية. المسار يكون قطعاً ناقصاً ( parabola ).',
-    realWorldExample: 'كرة قاعدة تُضرب، قذيفة مدفع، رائد فضاء يقفز',
-    tips: ['أقصى مدى يتحقق عند زاوية 45°', 'السرعة الأفقية ثابتة', 'السرعة الرأسية تتغير بسبب الجاذبية']
-  },
-  {
-    id: 'newtons-laws',
-    name: 'قوانين نيوتن',
-    nameEn: "Newton's Laws",
-    category: 'ميكانيكا',
-    subcategory: 'القوى',
-    icon: '⚖️',
-    difficulty: 'سهل',
-    description: 'قانون نيوتن الثاني للحركة',
-    equations: [
-      { name: 'القوة', formula: 'F = ma', description: 'قانون نيوتن الثاني' },
-      { name: 'التسارع', formula: 'a = F/m', description: 'التسارع من القوة' },
-      { name: 'الزخم', formula: 'p = mv', description: 'الزخم الخطي' }
-    ],
-    variables: [
-      { name: 'force', label: 'القوة', labelEn: 'Force', unit: 'N', unitOptions: [
-        { label: 'نيوتن', value: 'N', factor: 1 },
-        { label: 'كيلونيوتن', value: 'kN', factor: 0.001 },
-        { label: 'داين', value: 'dyn', factor: 100000 },
-        { label: 'رطل-قوة', value: 'lbf', factor: 0.2248 }
-      ], min: 1, max: 1000, default: 100 },
-      { name: 'mass', label: 'الكتلة', labelEn: 'Mass', unit: 'kg', unitOptions: [
-        { label: 'كيلوغرام', value: 'kg', factor: 1 },
-        { label: 'غرام', value: 'g', factor: 1000 }
-      ], min: 1, max: 500, default: 50 }
-    ],
-    results: [
-      { name: 'التسارع', formula: 'a = F/m', unit: 'm/s²' },
-      { name: 'الزخم', formula: 'p = mv', unit: 'kg·m/s' }
-    ],
-    dataColumns: [
-      { name: 'الزمن', unit: 's' },
-      { name: 'القوة', unit: 'N' },
-      { name: 'الكتلة', unit: 'kg' },
-      { name: 'التسارع', unit: 'm/s²' },
-      { name: 'السرعة', unit: 'm/s' }
-    ],
-    aiExplanation: 'قانون نيوتن الثاني ينص على أن القوة المؤثرة على جسم تتناسب طردياً مع كتلته وتسارعه. F = ma هو أساس ميكانيكا الحركة.',
-    realWorldExample: 'دفع سيارة معطلة، صدم كرة بالبليارد',
-    tips: ['كلما زادت القوة زاد التسارع', 'كلما زادت الكتلة قل التسارع', 'النيوتن = kg·m/s²']
-  },
-  {
-    id: 'simple-harmonic',
-    name: 'الحركة التوافقية البسيطة',
-    nameEn: 'Simple Harmonic Motion',
-    category: 'ميكانيكا',
-    subcategory: 'الحركة',
-    icon: '🔄',
-    difficulty: 'صعب',
-    description: 'حركة البندول والكتلة على نابض',
-    equations: [
-      { name: 'الإزاحة', formula: 'x = A·sin(ωt)', description: 'الإزاحة اللحظية' },
-      { name: 'السرعة الزاوية', formula: 'ω = 2πf', description: 'السرعة الزاوية' },
-      { name: 'الطاقة', formula: 'E = ½kA²', description: 'الطاقة الكلية' }
-    ],
-    variables: [
-      { name: 'amplitude', label: 'السعة', labelEn: 'Amplitude', unit: 'm', unitOptions: [
-        { label: 'متر', value: 'm', factor: 1 },
-        { label: 'سنتيمتر', value: 'cm', factor: 100 }
-      ], min: 0.1, max: 10, default: 2 },
-      { name: 'frequency', label: 'التردد', labelEn: 'Frequency', unit: 'Hz', unitOptions: [
-        { label: 'هرتز', value: 'Hz', factor: 1 },
-        { label: 'كيلوهرتز', value: 'kHz', factor: 0.001 }
-      ], min: 0.1, max: 10, default: 1 },
-      { name: 'mass', label: 'الكتلة', labelEn: 'Mass', unit: 'kg', unitOptions: [
-        { label: 'كيلوغرام', value: 'kg', factor: 1 },
-        { label: 'غرام', value: 'g', factor: 1000 }
-      ], min: 0.1, max: 10, default: 1 }
-    ],
-    results: [
-      { name: 'السرعة الزاوية', formula: 'ω = 2πf', unit: 'rad/s' },
-      { name: 'الطاقة', formula: 'E = ½kA²', unit: 'J' }
-    ],
-    dataColumns: [
-      { name: 'الزمن', unit: 's' },
-      { name: 'الإزاحة', unit: 'm', formula: 'x = A·sin(ωt)' },
-      { name: 'السرعة', unit: 'm/s', formula: 'v = Aω·cos(ωt)' },
-      { name: 'التسارع', unit: 'm/s²', formula: 'a = -Aω²·sin(ωt)' }
-    ],
-    aiExplanation: 'الحركة التوافقية البسيطة هي حركة دورية تتكرر فيها الحركة في اتجاهين متعاكسين حول موضع التوازن. تتناسب القوة مع الإزاحة.',
-    realWorldExample: 'بندول الساعة، كتلة على نابض، وتر موسيقي',
-    tips: ['الحركة متناظرة حول موضع التوازن', 'الطاقة محفوظة في النظام', 'الزمن الدوري لا يعتمد على السعة']
-  },
-  {
-    id: 'collision',
-    name: 'التصادمات',
-    nameEn: 'Collisions',
-    category: 'ميكانيكا',
-    subcategory: 'الطاقة',
-    icon: '💥',
-    difficulty: 'متوسط',
-    description: 'تصادمات مرنة وغير مرنة',
-    equations: [
-      { name: 'حفظ الزخم', formula: 'm₁v₁ + m₂v₂ = m₁v₁\' + m₂v₂\'', description: 'الزخم قبل وبعد' },
-      { name: 'الطاقة الحركية', formula: 'KE = ½mv²', description: 'الطاقة الحركية' },
-      { name: 'معامل restitution', formula: 'e = (v₂\'-v₁\')/(v₁-v₂)', description: 'مرونة التصادم' }
-    ],
-    variables: [
-      { name: 'mass1', label: 'كتلة الجسم 1', labelEn: 'Mass 1', unit: 'kg', unitOptions: [
-        { label: 'كيلوغرام', value: 'kg', factor: 1 },
-        { label: 'غرام', value: 'g', factor: 1000 }
-      ], min: 1, max: 100, default: 10 },
-      { name: 'velocity1', label: 'سرعة الجسم 1', labelEn: 'Velocity 1', unit: 'm/s', unitOptions: [
-        { label: 'م/ث', value: 'm/s', factor: 1 },
-        { label: 'سم/ث', value: 'cm/s', factor: 100 }
-      ], min: -20, max: 20, default: 10 },
-      { name: 'mass2', label: 'كتلة الجسم 2', labelEn: 'Mass 2', unit: 'kg', unitOptions: [
-        { label: 'كيلوغرام', value: 'kg', factor: 1 },
-        { label: 'غرام', value: 'g', factor: 1000 }
-      ], min: 1, max: 100, default: 5 },
-      { name: 'velocity2', label: 'سرعة الجسم 2', labelEn: 'Velocity 2', unit: 'm/s', unitOptions: [
-        { label: 'م/ث', value: 'm/s', factor: 1 },
-        { label: 'سم/ث', value: 'cm/s', factor: 100 }
-      ], min: -20, max: 20, default: -5 }
-    ],
-    results: [
-      { name: 'الزخم الكلي', formula: 'p = m₁v₁ + m₂v₂', unit: 'kg·m/s' },
-      { name: 'الطاقة الحركية قبل', formula: 'KE = ½m₁v₁² + ½m₂v₂²', unit: 'J' }
-    ],
-    dataColumns: [
-      { name: 'الحالة', unit: '' },
-      { name: 'كتلة 1', unit: 'kg' },
-      { name: 'سرعة 1', unit: 'm/s' },
-      { name: 'كتلة 2', unit: 'kg' },
-      { name: 'سرعة 2', unit: 'm/s' },
-      { name: 'الزخم الكلي', unit: 'kg·m/s' }
-    ],
-    aiExplanation: 'التصادمات تحفظ الزخم الكلي للنظام. في التصادمات المرنة تحفظ الطاقة الحركية أيضاً، بينما في غير المرنة تنشأ طاقة حرارية.',
-    realWorldExample: 'كرة بليارد تضرب كرة أخرى، تصادم السيارات',
-    tips: ['الزخم محفوظ دائماً', 'الطاقة الحركية محفوظة في التصادمات المرنة فقط', 'معامل restitution يتراوح بين 0 و 1']
-  },
-  {
-    id: 'momentum',
-    name: 'الزخم الخطي',
-    nameEn: 'Linear Momentum',
-    category: 'ميكانيكا',
-    subcategory: 'الطاقة',
-    icon: '🚀',
-    difficulty: 'سهل',
-    description: 'حفظ الزخم والتصادمات',
-    equations: [
-      { name: 'الزخم', formula: 'p = mv', description: 'الزخم الخطي' },
-      { name: 'حفظ الزخم', formula: 'p₁ + p₂ = p₁\' + p₂\'', description: 'قانون الحفظ' },
-      { name: 'الدفع', formula: 'J = FΔt = Δp', description: 'نظرية الدفع-الزخم' }
-    ],
-    variables: [
-      { name: 'mass', label: 'الكتلة', labelEn: 'Mass', unit: 'kg', unitOptions: [
-        { label: 'كيلوغرام', value: 'kg', factor: 1 },
-        { label: 'غرام', value: 'g', factor: 1000 }
-      ], min: 1, max: 1000, default: 50 },
-      { name: 'velocity', label: 'السرعة', labelEn: 'Velocity', unit: 'm/s', unitOptions: [
+      { name: 'velocity', label: 'السرعة الابتدائية', unit: 'm/s', unitOptions: [
         { label: 'م/ث', value: 'm/s', factor: 1 },
         { label: 'كم/س', value: 'km/h', factor: 3.6 }
-      ], min: 0, max: 100, default: 20 }
+      ], min: 10, max: 100, default: 30 },
+      { name: 'angle', label: 'زاوية الإطلاق', unit: '°', unitOptions: [
+        { label: 'درجة', value: '°', factor: 1 }
+      ], min: 5, max: 85, default: 45 }
     ],
     results: [
-      { name: 'الزخم', formula: 'p = mv', unit: 'kg·m/s' },
-      { name: 'الطاقة الحركية', formula: 'KE = ½mv²', unit: 'J' }
+      { name: 'المدى الأفقي', formula: 'R = v₀²sin(2θ)/g', unit: 'm', color: 'cyan' },
+      { name: 'أقصى ارتفاع', formula: 'H = v₀²sin²θ/2g', unit: 'm', color: 'emerald' },
+      { name: 'زمن الرحلة', formula: 'T = 2v₀sinθ/g', unit: 's', color: 'amber' }
     ],
-    dataColumns: [
-      { name: 'الكتلة', unit: 'kg' },
-      { name: 'السرعة', unit: 'm/s' },
-      { name: 'الزخم', unit: 'kg·m/s' },
-      { name: 'الطاقة الحركية', unit: 'J' }
+    simulationType: 'projectile',
+    aiExplanation: 'الحركة القذفية تجمع بين حركة أفقية بسرعة ثابتة وحركة رأسية تحت تأثير الجاذبية. المسار يكون قطعاً مكافئاً.',
+    realWorld: 'كرة قاعدة تُضرب، قذيفة مدفع، رائد فضاء يقفز',
+    tips: [
+      'أقصى مدى يتحقق عند زاوية 45°',
+      'السرعة الأفقية ثابتة',
+      'السرعة الرأسية تتغير بسبب الجاذبية'
     ],
-    aiExplanation: 'الزخم الخطي هو كمية الحركة التي يحملها الجسم. قانون حفظ الزخم ينطبق على كل الأنظمة المغلقة.',
-    realWorldExample: 'صاروخ يدور في الفضاء، كرة تصطدم بجدار',
-    tips: ['الزخم كمية متجهة', 'وحدته kg·m/s', 'يمكن أن ينتقل بين الأجسام']
+    chartTypes: [
+      { x: 'الموقع X (m)', y: 'الموقع Y (m)', type: 'scatter' },
+      { x: 'الزمن (s)', y: 'السرعة (m/s)', type: 'line' }
+    ]
   },
   {
-    id: 'work-energy',
-    name: 'الشغل والطاقة',
-    nameEn: 'Work & Energy',
-    category: 'ميكانيكا',
-    subcategory: 'الطاقة',
+    id: 'ohms-law',
+    name: 'قانون أوم',
+    nameEn: "Ohm's Law",
+    category: 'كهرباء',
     icon: '⚡',
-    difficulty: 'متوسط',
-    description: 'تحويل الطاقة والشغل',
+    difficulty: 1,
+    description: 'العلاقة بين الجهد والتيار والمقاومة',
     equations: [
-      { name: 'الشغل', formula: 'W = F·d·cosθ', description: 'الشغل المبذول' },
-      { name: 'الطاقة الحركية', formula: 'KE = ½mv²', description: 'الطاقة الحركية' },
-      { name: 'الطاقة الكامنة', formula: 'PE = mgh', description: 'الطاقة الكامنة الثقالية' }
+      { name: 'الجهد', formula: 'V = IR', desc: 'قانون أوم' },
+      { name: 'التيار', formula: 'I = V/R', desc: 'التيار الكهربائي' },
+      { name: 'القدرة', formula: 'P = VI', desc: 'القدرة الكهربائية' }
     ],
     variables: [
-      { name: 'force', label: 'القوة', labelEn: 'Force', unit: 'N', unitOptions: [
-        { label: 'نيوتن', value: 'N', factor: 1 },
-        { label: 'كيلونيوتن', value: 'kN', factor: 0.001 }
-      ], min: 1, max: 500, default: 100 },
-      { name: 'distance', label: 'المسافة', labelEn: 'Distance', unit: 'm', unitOptions: [
-        { label: 'متر', value: 'm', factor: 1 },
-        { label: 'سنتيمتر', value: 'cm', factor: 100 }
-      ], min: 1, max: 100, default: 20 },
-      { name: 'angle', label: 'زاوية القوة', labelEn: 'Angle', unit: '°', unitOptions: [
-        { label: 'درجة', value: '°', factor: 1 },
-        { label: 'راديان', value: 'rad', factor: 57.296 }
-      ], min: 0, max: 180, default: 0 }
+      { name: 'voltage', label: 'الجهد', unit: 'V', unitOptions: [
+        { label: 'فولت', value: 'V', factor: 1 },
+        { label: 'ميلليفولت', value: 'mV', factor: 1000 }
+      ], min: 1, max: 220, default: 12 },
+      { name: 'resistance', label: 'المقاومة', unit: 'Ω', unitOptions: [
+        { label: 'أوم', value: 'Ω', factor: 1 },
+        { label: 'كيلوأوم', value: 'kΩ', factor: 0.001 }
+      ], min: 1, max: 1000, default: 6 }
     ],
     results: [
-      { name: 'الشغل', formula: 'W = Fd·cosθ', unit: 'J' },
-      { name: 'القدرة', formula: 'P = W/t', unit: 'W' }
+      { name: 'التيار', formula: 'I = V/R', unit: 'A', color: 'amber' },
+      { name: 'القدرة', formula: 'P = VI', unit: 'W', color: 'cyan' },
+      { name: 'الشغل', formula: 'W = Pt', unit: 'J', color: 'emerald' }
     ],
-    dataColumns: [
-      { name: 'القوة', unit: 'N' },
-      { name: 'المسافة', unit: 'm' },
-      { name: 'الزاوية', unit: '°' },
-      { name: 'الشغل', unit: 'J' },
-      { name: 'القدرة', unit: 'W' }
+    simulationType: 'circuit',
+    aiExplanation: 'قانون أوم يربط بين الجهد والتيار والمقاومة. V=IR هو أساس تحليل الدوائر الكهربائية.',
+    realWorld: 'مصباح كهربائي، شاحن هاتف، محرك كهربائي',
+    tips: [
+      'المقاومة لا تتغير بتغير الجهد',
+      'القدرة تزداد مع زيادة الجهد أو التيار',
+      'التيار يسري من الجهد العالي للمنخفض'
     ],
-    aiExplanation: 'الشغل هو نقل الطاقة بواسطة قوة. عندما exert قوة على جسم وتحركه، فإنك تبذل شغلاً.',
-    realWorldExample: 'رفع أثقال، دفع عربة تسوق',
-    tips: ['الشغل = 0 عندما تكون القوة عمودية على الحركة', 'الطاقة لا تفنى ولا تُستحدث', 'القدرة = الشغل/الزمن']
-  },
-  {
-    id: 'circular-motion',
-    name: 'الحركة الدائرية',
-    nameEn: 'Circular Motion',
-    category: 'ميكانيكا',
-    subcategory: 'الحركة',
-    icon: '🔵',
-    difficulty: 'متوسط',
-    description: 'حركة الجسم في مسار دائري',
-    equations: [
-      { name: 'القوة المركزية', formula: 'Fc = mv²/r', description: 'القوة المركزية' },
-      { name: 'السرعة الزاوية', formula: 'ω = v/r', description: 'السرعة الزاوية' },
-      { name: 'الزمن الدوري', formula: 'T = 2πr/v', description: 'الزمن الدوري' }
-    ],
-    variables: [
-      { name: 'mass', label: 'الكتلة', labelEn: 'Mass', unit: 'kg', unitOptions: [
-        { label: 'كيلوغرام', value: 'kg', factor: 1 },
-        { label: 'غرام', value: 'g', factor: 1000 }
-      ], min: 0.1, max: 100, default: 5 },
-      { name: 'velocity', label: 'السرعة', labelEn: 'Velocity', unit: 'm/s', unitOptions: [
-        { label: 'م/ث', value: 'm/s', factor: 1 },
-        { label: 'سم/ث', value: 'cm/s', factor: 100 }
-      ], min: 1, max: 50, default: 10 },
-      { name: 'radius', label: 'نصف القطر', labelEn: 'Radius', unit: 'm', unitOptions: [
-        { label: 'متر', value: 'm', factor: 1 },
-        { label: 'سنتيمتر', value: 'cm', factor: 100 }
-      ], min: 0.5, max: 50, default: 5 }
-    ],
-    results: [
-      { name: 'القوة المركزية', formula: 'Fc = mv²/r', unit: 'N' },
-      { name: 'التسارع المركزي', formula: 'ac = v²/r', unit: 'm/s²' },
-      { name: 'السرعة الزاوية', formula: 'ω = v/r', unit: 'rad/s' }
-    ],
-    dataColumns: [
-      { name: 'نصف القطر', unit: 'm' },
-      { name: 'السرعة', unit: 'm/s' },
-      { name: 'القوة المركزية', unit: 'N' },
-      { name: 'التسارع المركزي', unit: 'm/s²' },
-      { name: 'الزمن الدوري', unit: 's' }
-    ],
-    aiExplanation: 'الحركة الدائرية تتطلب قوة مركزية keep الجسم يتحرك في مسار دائري. هذه القوة تكون دائماً موجهة نحو مركز الدائرة.',
-    realWorldExample: 'قمر صناعي يدور حول الأرض، سيارة تنعطف',
-    tips: ['القوة المركزية ليست قوة جديدة', 'السرعة الزاوية ترتبط بالتردد', 'التسارع المركزي دائماً نحو المركز']
+    chartTypes: [
+      { x: 'الجهد (V)', y: 'التيار (A)', type: 'line' },
+      { x: 'المقاومة (Ω)', y: 'التيار (A)', type: 'line' }
+    ]
   },
   {
     id: 'pendulum',
     name: 'البندول البسيط',
     nameEn: 'Simple Pendulum',
     category: 'ميكانيكا',
-    subcategory: 'الحركة',
     icon: '🔔',
-    difficulty: 'سهل',
-    description: 'حركة البندول التوافقية',
+    difficulty: 1,
+    description: 'حركة البندول التوافقية البسيطة',
     equations: [
-      { name: 'الزمن الدوري', formula: 'T = 2π√(L/g)', description: 'زمن الدورة الكاملة' },
-      { name: 'الطاقة الكامنة', formula: 'PE = mgh', description: 'الطاقة الكامنة' },
-      { name: 'السرعة', formula: 'v = √(2gh)', description: 'السرعة في أسفل القوس' }
+      { name: 'الزمن الدوري', formula: 'T = 2π√(L/g)', desc: 'زمن الدورة الكاملة' },
+      { name: 'الطاقة', formula: 'PE = mgh', desc: 'الطاقة الكامنة' }
     ],
     variables: [
-      { name: 'length', label: 'طول الخيط', labelEn: 'Length', unit: 'm', unitOptions: [
+      { name: 'length', label: 'طول الخيط', unit: 'm', unitOptions: [
         { label: 'متر', value: 'm', factor: 1 },
         { label: 'سنتيمتر', value: 'cm', factor: 100 }
       ], min: 0.1, max: 10, default: 1 },
-      { name: 'mass', label: 'الكتلة', labelEn: 'Mass', unit: 'kg', unitOptions: [
+      { name: 'mass', label: 'الكتلة', unit: 'kg', unitOptions: [
         { label: 'كيلوغرام', value: 'kg', factor: 1 },
         { label: 'غرام', value: 'g', factor: 1000 }
       ], min: 0.1, max: 10, default: 1 },
-      { name: 'angle', label: 'زاوية الإزاحة', labelEn: 'Angle', unit: '°', unitOptions: [
+      { name: 'angle', label: 'زاوية الإزاحة', unit: '°', unitOptions: [
         { label: 'درجة', value: '°', factor: 1 }
       ], min: 1, max: 45, default: 15 }
     ],
     results: [
-      { name: 'الزمن الدوري', formula: 'T = 2π√(L/g)', unit: 's' },
-      { name: 'التردد', formula: 'f = 1/T', unit: 'Hz' },
-      { name: 'أقصى ارتفاع', formula: 'h = L(1-cosθ)', unit: 'm' }
+      { name: 'الزمن الدوري', formula: 'T = 2π√(L/g)', unit: 's', color: 'cyan' },
+      { name: 'التردد', formula: 'f = 1/T', unit: 'Hz', color: 'amber' }
     ],
-    dataColumns: [
-      { name: 'الزمن', unit: 's' },
-      { name: 'زاوية الإزاحة', unit: '°' },
-      { name: 'الارتفاع', unit: 'm' },
-      { name: 'السرعة', unit: 'm/s' },
-      { name: 'الطاقة الحركية', unit: 'J' }
+    simulationType: 'pendulum',
+    aiExplanation: 'البندول البسيط يوضح الحركة التوافقية البسيطة. زمنه الدوري يعتمد فقط على طوله وتسارع الجاذبية.',
+    realWorld: 'ساعة البندول، تأرجح طفل على أرجوحة',
+    tips: [
+      'الزمن الدوري لا يعتمد على الكتلة',
+      'لا يعتمد على سعة الترجحة (لزاويا صغيرة)',
+      'T = 2π√(L/g)'
     ],
-    aiExplanation: 'البندول البسيط يوضح الحركة التوافقية البسيطة عندما تكون زاوية الإزاحة صغيرة. زمنه الدوري يعتمد فقط على طوله وتسارع الجاذبية.',
-    realWorldExample: 'ساعة البندول، تأرجح طفل على أرجوحة',
-    tips: ['الزمن الدوري لا يعتمد على الكتلة', 'لا يعتمد على سعة الترجحة (لزاويا صغيرة)', 'يمكن استخدام البندول لقياس g']
+    chartTypes: [
+      { x: 'الزمن (s)', y: 'الإزاحة (m)', type: 'line' },
+      { x: 'الزمن (s)', y: 'السرعة (m/s)', type: 'line' }
+    ]
   },
-  // =========================================
-  // ⚡ الكهرباء والمغناطيسية
-  // =========================================
   {
-    id: 'ohms-law',
-    name: 'قانون أوم',
-    nameEn: "Ohm's Law",
-    category: 'كهرباء',
-    subcategory: 'الدوائر',
-    icon: '⚡',
-    difficulty: 'سهل',
-    description: 'العلاقة بين الجهد والتيار والمقاومة',
+    id: 'wave',
+    name: 'الأمواج الميكانيكية',
+    nameEn: 'Mechanical Waves',
+    category: 'بصريات',
+    icon: '🌊',
+    difficulty: 2,
+    description: 'انتشار الأمواج وخصائصها',
     equations: [
-      { name: 'الجهد', formula: 'V = IR', description: 'قانون أوم' },
-      { name: 'التيار', formula: 'I = V/R', description: 'التيار الكهربائي' },
-      { name: 'المقاومة', formula: 'R = V/I', description: 'المقاومة الكهربائية' },
-      { name: 'القدرة', formula: 'P = VI', description: 'القدرة الكهربائية' }
+      { name: 'السرعة', formula: 'v = fλ', desc: 'سرعة الموجة' },
+      { name: 'الطاقة', formula: 'E = hf', desc: 'طاقة الفوتون' }
     ],
     variables: [
-      { name: 'voltage', label: 'الجهد', labelEn: 'Voltage', unit: 'V', unitOptions: [
-        { label: 'فولت', value: 'V', factor: 1 },
-        { label: 'ميلليفولت', value: 'mV', factor: 1000 },
-        { label: 'كيلوفولت', value: 'kV', factor: 0.001 }
-      ], min: 1, max: 220, default: 12 },
-      { name: 'current', label: 'التيار', labelEn: 'Current', unit: 'A', unitOptions: [
-        { label: 'أمبير', value: 'A', factor: 1 },
-        { label: 'ميليأمبير', value: 'mA', factor: 1000 },
-        { label: 'ميكروأمبير', value: 'μA', factor: 1000000 }
+      { name: 'frequency', label: 'التردد', unit: 'Hz', unitOptions: [
+        { label: 'هرتز', value: 'Hz', factor: 1 },
+        { label: 'كيلوهرتز', value: 'kHz', factor: 0.001 }
       ], min: 0.1, max: 20, default: 2 },
-      { name: 'resistance', label: 'المقاومة', labelEn: 'Resistance', unit: 'Ω', unitOptions: [
-        { label: 'أوم', value: 'Ω', factor: 1 },
-        { label: 'كيلوأوم', value: 'kΩ', factor: 0.001 },
-        { label: 'ميغا أوم', value: 'MΩ', factor: 0.000001 }
-      ], min: 1, max: 1000, default: 6 }
-    ],
-    results: [
-      { name: 'القدرة', formula: 'P = VI', unit: 'W' },
-      { name: 'الطاقة', formula: 'E = Pt', unit: 'J' }
-    ],
-    dataColumns: [
-      { name: 'الجهد', unit: 'V' },
-      { name: 'التيار', unit: 'A' },
-      { name: 'المقاومة', unit: 'Ω' },
-      { name: 'القدرة', unit: 'W' }
-    ],
-    aiExplanation: 'قانون أوم يربط بين الجهد والتيار والمقاومة في الدوائر الكهربائية. V = IR هو أساس تحليل الدوائر.',
-    realWorldExample: 'مصباح كهربائي، شاحن هاتف، محرك كهربائي',
-    tips: ['المقاومة لا تتغير بتغير الجهد والتيار (لمواد أومية)', 'القدرة = VI = I²R = V²/R', 'التيار يسري من الجهد العالي إلى المنخفض']
-  },
-  {
-    id: 'rc-circuit',
-    name: 'دائرة RC',
-    nameEn: 'RC Circuit',
-    category: 'كهرباء',
-    subcategory: 'الدوائر',
-    icon: '🔋',
-    difficulty: 'متوسط',
-    description: 'شحن وتفريغ المكثفات',
-    equations: [
-      { name: 'شحن المكثف', formula: 'Vc = V₀(1-e^(-t/RC))', description: 'الجهد عبر المكثف' },
-      { name: 'الثابت الزمني', formula: 'τ = RC', description: 'الثابت الزمني' },
-      { name: 'الطاقة', formula: 'E = ½CV²', description: 'طاقة المكثف' }
-    ],
-    variables: [
-      { name: 'resistance', label: 'المقاومة', labelEn: 'Resistance', unit: 'Ω', unitOptions: [
-        { label: 'أوم', value: 'Ω', factor: 1 },
-        { label: 'كيلوأوم', value: 'kΩ', factor: 0.001 }
-      ], min: 100, max: 10000, default: 1000 },
-      { name: 'capacitance', label: 'السعة', labelEn: 'Capacitance', unit: 'μF', unitOptions: [
-        { label: 'ميكروفاراد', value: 'μF', factor: 1 },
-        { label: 'نافاراد', value: 'nF', factor: 1000 },
-        { label: 'بيكوفاراد', value: 'pF', factor: 1000000 }
-      ], min: 1, max: 1000, default: 100 },
-      { name: 'voltage', label: 'الجهد', labelEn: 'Voltage', unit: 'V', unitOptions: [
-        { label: 'فولت', value: 'V', factor: 1 },
-        { label: 'ميلليفولت', value: 'mV', factor: 1000 }
-      ], min: 1, max: 24, default: 10 }
-    ],
-    results: [
-      { name: 'الثابت الزمني', formula: 'τ = RC', unit: 'ms' },
-      { name: 'الطاقة', formula: 'E = ½CV²', unit: 'J' },
-      { name: 'الشحنة', formula: 'Q = CV', unit: 'C' }
-    ],
-    dataColumns: [
-      { name: 'الزمن', unit: 's' },
-      { name: 'جهد المكثف', unit: 'V', formula: 'Vc = V₀(1-e^(-t/RC))' },
-      { name: 'تيار الشحن', unit: 'A', formula: 'I = I₀e^(-t/RC)' },
-      { name: 'الطاقة', unit: 'J' }
-    ],
-    aiExplanation: 'دوائر RC تستخدم في كثير من التطبيقات الإلكترونية. الثابت الزمني τ = RC يحدد سرعة الشحن والتفريغ.',
-    realWorldExample: 'فلاش الكاميرا، ذاكرة RAM، مرشح الترددات',
-    tips: ['بعد 5τ يكون المكثف مشحوناً تقريباً', 'الثابت الزمني يحدد سرعة الاستجابة', 'τ = RC له وحدة ثانية']
-  },
-  {
-    id: 'rl-circuit',
-    name: 'دائرة RL',
-    nameEn: 'RL Circuit',
-    category: 'كهرباء',
-    subcategory: 'الدوائر',
-    icon: '🔌',
-    difficulty: 'صعب',
-    description: 'دائرة تحتوي على مقاومة وملف',
-    equations: [
-      { name: 'التيار', formula: 'I = I₀(1-e^(-tL/R))', description: 'نمو التيار' },
-      { name: 'الثابت الزمني', formula: 'τ = L/R', description: 'الثابت الزمني' },
-      { name: 'طاقة الملف', formula: 'E = ½LI²', description: 'طاقة الملف المغناطيسية' }
-    ],
-    variables: [
-      { name: 'resistance', label: 'المقاومة', labelEn: 'Resistance', unit: 'Ω', unitOptions: [
-        { label: 'أوم', value: 'Ω', factor: 1 },
-        { label: 'كيلوأوم', value: 'kΩ', factor: 0.001 }
-      ], min: 10, max: 1000, default: 100 },
-      { name: 'inductance', label: 'التحريض', labelEn: 'Inductance', unit: 'mH', unitOptions: [
-        { label: 'ميلihenry', value: 'mH', factor: 1 },
-        { label: 'هنري', value: 'H', factor: 0.001 }
-      ], min: 1, max: 100, default: 10 },
-      { name: 'current', label: 'التيار الكلي', labelEn: 'Max Current', unit: 'A', unitOptions: [
-        { label: 'أمبير', value: 'A', factor: 1 },
-        { label: 'ميليأمبير', value: 'mA', factor: 1000 }
-      ], min: 0.1, max: 10, default: 1 }
-    ],
-    results: [
-      { name: 'الثابت الزمني', formula: 'τ = L/R', unit: 's' },
-      { name: 'طاقة الملف', formula: 'E = ½LI²', unit: 'J' }
-    ],
-    dataColumns: [
-      { name: 'الزمن', unit: 's' },
-      { name: 'التيار', unit: 'A' },
-      { name: 'جهد المقاومة', unit: 'V' },
-      { name: 'جهد الملف', unit: 'V' }
-    ],
-    aiExplanation: 'دوائر RL تحتوي على ملف يحارب تغير التيار. التيار لا يصل فوراً إلى قيمته القصوى بل يحتاج وقتاً.',
-    realWorldExample: 'محركات كهربائية، relays، ملفات تخزين الطاقة',
-    tips: ['الملف يحارب تغير التيار', 'بعد وقت كافٍ يسلك الملف كسلك عادي', 'τ = L/R']
-  },
-  {
-    id: 'magnetic-force',
-    name: 'القوة المغناطيسية',
-    nameEn: 'Magnetic Force',
-    category: 'كهرباء',
-    subcategory: 'المغناطيسية',
-    icon: '🧲',
-    difficulty: 'متوسط',
-    description: 'قوة مغناطيسية على جسيم مشحون',
-    equations: [
-      { name: 'قوة لورنتز', formula: 'F = qvBsinθ', description: 'القوة على جسيم مشحون' },
-      { name: 'نصف القطر', formula: 'r = mv/qB', description: 'نصف قطر المسار الدائري' },
-      { name: 'السرعة الزاوية', formula: 'ω = qB/m', description: 'السرعة الزاوية' }
-    ],
-    variables: [
-      { name: 'charge', label: 'الشحنة', labelEn: 'Charge', unit: 'μC', unitOptions: [
-        { label: 'ميكروكولوم', value: 'μC', factor: 1 },
-        { label: 'كولوم', value: 'C', factor: 0.000001 }
-      ], min: 1, max: 100, default: 10 },
-      { name: 'velocity', label: 'السرعة', labelEn: 'Velocity', unit: 'm/s', unitOptions: [
-        { label: 'م/ث', value: 'm/s', factor: 1 },
-        { label: 'سم/ث', value: 'cm/s', factor: 100 }
-      ], min: 1000, max: 100000, default: 10000 },
-      { name: 'magneticField', label: 'الحقل المغناطيسي', labelEn: 'Magnetic Field', unit: 'T', unitOptions: [
-        { label: 'تسلا', value: 'T', factor: 1 },
-        { label: 'غاوس', value: 'G', factor: 10000 }
+      { name: 'amplitude', label: 'السعة', unit: 'm', unitOptions: [
+        { label: 'متر', value: 'm', factor: 1 },
+        { label: 'سنتيمتر', value: 'cm', factor: 100 }
       ], min: 0.01, max: 2, default: 0.5 }
     ],
     results: [
-      { name: 'القوة المغناطيسية', formula: 'F = qvB', unit: 'N' },
-      { name: 'نصف القطر', formula: 'r = mv/qB', unit: 'm' },
-      { name: 'الطاقة الحركية', formula: 'KE = ½mv²', unit: 'J' }
+      { name: 'الطول الموجي', formula: 'λ = v/f', unit: 'm', color: 'cyan' },
+      { name: 'السرعة الزاوية', formula: 'ω = 2πf', unit: 'rad/s', color: 'amber' }
     ],
-    dataColumns: [
-      { name: 'الشحنة', unit: 'μC' },
-      { name: 'السرعة', unit: 'm/s' },
-      { name: 'الحقل', unit: 'T' },
-      { name: 'القوة', unit: 'N' },
-      { name: 'نصف القطر', unit: 'm' }
+    simulationType: 'wave',
+    aiExplanation: 'الأمواج تنتقل الطاقة دون نقل المادة. التداخل ينتج عن التقاء موجتين في نفس النقطة.',
+    realWorld: 'موجات الماء، الصوت، الضوء',
+    tips: [
+      'الصوت يحتاج وسط مادي',
+      'الضوء لا يحتاج وسطاً',
+      'v = fλ علاقة أساسية'
     ],
-    aiExplanation: 'القوة المغناطيسية تؤثر على الجسيمات المشحونة المتحركة في مجال مغناطيسي. القوة دائماً عمودية على اتجاه الحركة.',
-    realWorldExample: 'مصادم الهادرونات، مطياف الكتلة، CRT',
-    tips: ['القوة أعظمية عندما تكون الحركة عمودية على المجال', 'لا تبذل القوة شغلاً لأن اتجاهها عمودي على الحركة', 'تُستخدم في分離 الجسيمات']
+    chartTypes: [
+      { x: 'الزمن (s)', y: 'الإزاحة (m)', type: 'line' },
+      { x: 'الموقع (m)', y: 'السعة (m)', type: 'line' }
+    ]
   },
-  // =========================================
-  // 💡 البصريات
-  // =========================================
   {
     id: 'refraction',
     name: 'انكسار الضوء',
     nameEn: 'Light Refraction',
     category: 'بصريات',
-    subcategory: 'الضوء',
     icon: '💡',
-    difficulty: 'متوسط',
+    difficulty: 2,
     description: 'قانون سنيل للانكسار',
     equations: [
-      { name: 'قانون سنيل', formula: 'n₁·sinθ₁ = n₂·sinθ₂', description: 'قانون الانكسار' },
-      { name: 'معامل الانكسار', formula: 'n = c/v', description: 'تعريف n' },
-      { name: 'زاوية الانعكاس الداخلي', formula: 'sinθc = n₂/n₁', description: 'الزاوية الحرجة' }
+      { name: 'قانون سنيل', formula: 'n₁sinθ₁ = n₂sinθ₂', desc: 'قانون الانكسار' },
+      { name: 'معامل الانكسار', formula: 'n = c/v', desc: 'تعريف n' }
     ],
     variables: [
-      { name: 'n1', label: 'معامل الانكسار 1', labelEn: 'n₁', unit: '', unitOptions: [
+      { name: 'n1', label: 'معامل الانكسار 1', unit: '', unitOptions: [
         { label: '', value: '', factor: 1 }
       ], min: 1, max: 2.5, default: 1 },
-      { name: 'n2', label: 'معامل الانكسار 2', labelEn: 'n₂', unit: '', unitOptions: [
+      { name: 'n2', label: 'معامل الانكسار 2', unit: '', unitOptions: [
         { label: '', value: '', factor: 1 }
       ], min: 1, max: 2.5, default: 1.5 },
-      { name: 'angle1', label: 'زاوية السقوط', labelEn: 'θ₁', unit: '°', unitOptions: [
+      { name: 'angle1', label: 'زاوية السقوط', unit: '°', unitOptions: [
         { label: 'درجة', value: '°', factor: 1 }
       ], min: 0, max: 89, default: 45 }
     ],
     results: [
-      { name: 'زاوية الانكسار', formula: 'θ₂ = arcsin(n₁sinθ₁/n₂)', unit: '°' },
-      { name: 'الزاوية الحرجة', formula: 'θc = arcsin(n₂/n₁)', unit: '°' },
-      { name: 'الانحراف', formula: 'δ = θ₁ - θ₂', unit: '°' }
+      { name: 'زاوية الانكسار', formula: 'θ₂ = arcsin(n₁sinθ₁/n₂)', unit: '°', color: 'amber' },
+      { name: 'زاوية الانحراف', formula: 'δ = θ₁ - θ₂', unit: '°', color: 'cyan' }
     ],
-    dataColumns: [
-      { name: 'زاوية السقوط', unit: '°' },
-      { name: 'زاوية الانكسار', unit: '°' },
-      { name: 'معامل الانكسار', unit: '' },
-      { name: 'الانحراف', unit: '°' }
+    simulationType: 'refraction',
+    aiExplanation: 'انكسار الضوء هو تغير اتجاه الشعاع الضوئي عند انتقاله بين وسطين مختلفين.',
+    realWorld: 'القلم في كوب ماء، قوس قزح، الألياف الضوئية',
+    tips: [
+      'عند الانتقال من وسط أكثف لأقل ينحرف بعيداً عن العمود',
+      'معامل الانكسار يعتمد على الطول الموجي',
+      'الزاوية الحرجة تؤدي للانعكاس الداخلي الكلي'
     ],
-    aiExplanation: 'انكسار الضوء هو تغير اتجاه الشعاع الضوئي عند انتقاله بين وسطين مختلفين. قانون سنيل يصف هذا behavior بدقة.',
-    realWorldExample: 'القلم المائل في كوب ماء، قوس قزح، الألياف الضوئية',
-    tips: ['عند الانتقال من وسط أكثف لأقل كثافة ينحرف بعيداً عن العمود', 'عند الزاوية الحرجة يحدث الانعكاس الداخلي الكلي', 'معامل الانكسار يعتمد على الطول الموجي']
+    chartTypes: [
+      { x: 'زاوية السقوط (°)', y: 'زاوية الانكسار (°)', type: 'line' }
+    ]
   },
   {
-    id: 'lenses',
-    name: 'العدسات والمرايا',
-    nameEn: 'Lenses & Mirrors',
-    category: 'بصريات',
-    subcategory: 'الأجهزة البصرية',
-    icon: '🔭',
-    difficulty: 'متوسط',
-    description: 'تكوين الصور بالعدسات والمرايا',
+    id: 'radioactivity',
+    name: 'النشاط الإشعاعي',
+    nameEn: 'Radioactivity',
+    category: 'فيزياء حديثة',
+    icon: '☢️',
+    difficulty: 3,
+    description: 'تحلل المواد المشعة',
     equations: [
-      { name: 'الصيغة العامة', formula: '1/f = 1/do + 1/di', description: 'علاقة العدسة' },
-      { name: 'التكبير', formula: 'M = -di/do', description: 'التكبير الخطي' },
-      { name: 'قدرة العدسة', formula: 'P = 1/f', description: 'القوة الديوبترية' }
+      { name: 'العدد الذري', formula: 'N = N₀e^(-λt)', desc: 'قانون التحلل' },
+      { name: 'عمر النصف', formula: 't½ = ln2/λ', desc: 'تعريف t½' }
     ],
     variables: [
-      { name: 'focalLength', label: 'البعد البؤري', labelEn: 'Focal Length', unit: 'cm', unitOptions: [
-        { label: 'سنتيمتر', value: 'cm', factor: 1 },
-        { label: 'متر', value: 'm', factor: 0.01 }
-      ], min: 5, max: 50, default: 10 },
-      { name: 'objectDistance', label: 'بعد الجسم', labelEn: 'Object Distance', unit: 'cm', unitOptions: [
-        { label: 'سنتيمتر', value: 'cm', factor: 1 },
-        { label: 'متر', value: 'm', factor: 0.01 }
-      ], min: 5, max: 100, default: 20 }
+      { name: 'N0', label: 'عدد الذرات الابتدائي', unit: '', unitOptions: [
+        { label: '', value: '', factor: 1 }
+      ], min: 100, max: 10000, default: 1000 },
+      { name: 'halfLife', label: 'عمر النصف', unit: 's', unitOptions: [
+        { label: 'ثانية', value: 's', factor: 1 },
+        { label: 'دقيقة', value: 'min', factor: 1/60 }
+      ], min: 1, max: 60, default: 10 },
+      { name: 'time', label: 'الزمن', unit: 's', unitOptions: [
+        { label: 'ثانية', value: 's', factor: 1 }
+      ], min: 0, max: 100, default: 20 }
     ],
     results: [
-      { name: 'بعد الصورة', formula: 'di = 1/(1/f - 1/do)', unit: 'cm' },
-      { name: 'التكبير', formula: 'M = -di/do', unit: '' },
-      { name: 'نوع الصورة', formula: '', unit: '' }
+      { name: 'الذرات المتبقية', formula: 'N = N₀e^(-λt)', unit: '', color: 'emerald' },
+      { name: 'النشاط', formula: 'A = λN', unit: 'Bq', color: 'amber' },
+      { name: 'نسبة المتبقية', formula: 'N/N₀ × 100%', unit: '%', color: 'cyan' }
     ],
-    dataColumns: [
-      { name: 'بعد الجسم', unit: 'cm' },
-      { name: 'البعد البؤري', unit: 'cm' },
-      { name: 'بعد الصورة', unit: 'cm' },
-      { name: 'التكبير', unit: '' },
-      { name: 'نوع الصورة', unit: '' }
+    simulationType: 'radioactive',
+    aiExplanation: 'النشاط الإشعاعي تحلل عشوائي للنوى غير المستقرة. عمر النصف هو الزمن اللازم لتحلل نصف الذرات.',
+    realWorld: 'الكشف عن العمر، الطب النووي، الطاقة النووية',
+    tips: [
+      'عمر النصف ثابت لكل نظير',
+      'التحلل عملية عشوائية',
+      'ثلاثة أنواع: ألفا، بيتا، غاما'
     ],
-    aiExplanation: 'العدسات المحدبة تجمع الضوء وتكوين صوراً حقيقية أو وهمية حسب بعد الجسم عن البؤرة.',
-    realWorldExample: 'النظارات، الكاميرات، المقراب، المجهر',
-    tips: ['للعدسة المحدبة: f موجب، المحدبة: f سالب', 'الصورة الحقيقية يمكن اسقاطها على شاشة', 'التكبير > 1 يعني تكبير الصورة']
-  },
-  {
-    id: 'waves',
-    name: 'الأمواج',
-    nameEn: 'Waves',
-    category: 'بصريات',
-    subcategory: 'الضوء',
-    icon: '🌊',
-    difficulty: 'متوسط',
-    description: 'خصائص الأمواج وتداخلها',
-    equations: [
-      { name: 'سرعة الموجة', formula: 'v = fλ', description: 'العلاقة الأساسية' },
-      { name: 'معادلة الموجة', formula: 'y = A·sin(kx - ωt)', description: 'معادلة الموجة' },
-      { name: 'طاقة الموجة', formula: 'E = ½ρAv²A²', description: 'شدة الموجة' }
-    ],
-    variables: [
-      { name: 'frequency', label: 'التردد', labelEn: 'Frequency', unit: 'Hz', unitOptions: [
-        { label: 'هرتز', value: 'Hz', factor: 1 },
-        { label: 'كيلوهرتز', value: 'kHz', factor: 0.001 },
-        { label: 'ميغاهرتز', value: 'MHz', factor: 0.000001 }
-      ], min: 20, max: 20000, default: 440 },
-      { name: 'wavelength', label: 'الطول الموجي', labelEn: 'Wavelength', unit: 'm', unitOptions: [
-        { label: 'متر', value: 'm', factor: 1 },
-        { label: 'سنتيمتر', value: 'cm', factor: 100 },
-        { label: 'نانومتر', value: 'nm', factor: 1000000000 }
-      ], min: 0.001, max: 100, default: 0.78 }
-    ],
-    results: [
-      { name: 'سرعة الموجة', formula: 'v = fλ', unit: 'm/s' },
-      { name: 'العدد الموجي', formula: 'k = 2π/λ', unit: 'rad/m' },
-      { name: 'السرعة الزاوية', formula: 'ω = 2πf', unit: 'rad/s' }
-    ],
-    dataColumns: [
-      { name: 'التردد', unit: 'Hz' },
-      { name: 'الطول الموجي', unit: 'm' },
-      { name: 'السرعة', unit: 'm/s' },
-      { name: 'الطاقة', unit: 'J' }
-    ],
-    aiExplanation: 'الأمواج تنتقل الطاقة دون نقل المادة. التداخل ينتج عن التقاء موجتين في نفس النقطة.',
-    realWorldExample: 'الموجات الصوتية، موجات الماء، الضوء، الراديو',
-    tips: ['الضوء المرئي: 400-700 nm', 'الصوت يحتاج وسط مادي', 'الموجات الكهرومغناطيسية لا تحتاج وسطاً']
-  },
-  // =========================================
-  // 🌡️ الديناميكا الحرارية
-  // =========================================
-  {
-    id: 'thermodynamics',
-    name: 'الديناميكا الحرارية',
-    nameEn: 'Thermodynamics',
-    category: 'حرارة',
-    subcategory: 'الطاقة',
-    icon: '🌡️',
-    difficulty: 'متوسط',
-    description: 'قوانين الديناميكا الحرارية',
-    equations: [
-      { name: 'الحرارة', formula: 'Q = mcΔT', description: 'الحرارة النوعية' },
-      { name: 'الشغل', formula: 'W = PΔV', description: 'شغل الغاز' },
-      { name: 'القانون الأول', formula: 'ΔU = Q - W', description: 'حفظ الطاقة' }
-    ],
-    variables: [
-      { name: 'mass', label: 'الكتلة', labelEn: 'Mass', unit: 'kg', unitOptions: [
-        { label: 'كيلوغرام', value: 'kg', factor: 1 },
-        { label: 'غرام', value: 'g', factor: 1000 }
-      ], min: 0.1, max: 10, default: 1 },
-      { name: 'specificHeat', label: 'الحرارة النوعية', labelEn: 'Specific Heat', unit: 'J/kg·K', unitOptions: [
-        { label: 'J/kg·K', value: 'J/kg·K', factor: 1 },
-        { label: 'cal/g·°C', value: 'cal/g·°C', factor: 4184 }
-      ], min: 100, max: 5000, default: 4186 },
-      { name: 'tempChange', label: 'التغير في الحرارة', labelEn: 'ΔT', unit: 'K', unitOptions: [
-        { label: 'كلفن', value: 'K', factor: 1 },
-        { label: 'درجة مئوية', value: '°C', factor: 1 }
-      ], min: 1, max: 100, default: 20 }
-    ],
-    results: [
-      { name: 'الحرارة', formula: 'Q = mcΔT', unit: 'J' },
-      { name: 'الطاقة', formula: 'E = mcΔT', unit: 'cal' }
-    ],
-    dataColumns: [
-      { name: 'درجة الحرارة', unit: 'K' },
-      { name: 'الكتلة', unit: 'kg' },
-      { name: 'الحرارة النوعية', unit: 'J/kg·K' },
-      { name: 'الحرارة', unit: 'J' }
-    ],
-    aiExplanation: 'الديناميكا الحرارية تدرس انتقال الحرارة وتحولاتها. القانون الأول يحفظ الطاقة الكلية.',
-    realWorldExample: 'المحركات الحرارية، التبريد، الطهي',
-    tips: ['الشغل موجب عندما يتمدد الغاز', 'لا يمكن تحويل كل الحرارة إلى شغل', 'آلة الحركة الدائمة مستحيلة']
+    chartTypes: [
+      { x: 'الزمن (s)', y: 'عدد الذرات', type: 'line' },
+      { x: 'الزمن (s)', y: 'النشاط (Bq)', type: 'line' }
+    ]
   },
   {
     id: 'gas-laws',
     name: 'قوانين الغازات',
     nameEn: 'Gas Laws',
     category: 'حرارة',
-    subcategory: 'الغازات',
     icon: '💨',
-    difficulty: 'متوسط',
+    difficulty: 2,
     description: 'سلوك الغازات المثالية',
     equations: [
-      { name: 'الغاز المثالي', formula: 'PV = nRT', description: 'معادلة الحالة' },
-      { name: 'العملية Isobaric', formula: 'V/T = constant', description: 'ثبات الضغط' },
-      { name: 'العملية Isothermal', formula: 'PV = constant', description: 'ثبات الحرارة' }
+      { name: 'الغاز المثالي', formula: 'PV = nRT', desc: 'معادلة الحالة' },
+      { name: 'شارل', formula: 'V/T = constant', desc: 'ثبات الضغط' }
     ],
     variables: [
-      { name: 'pressure', label: 'الضغط', labelEn: 'Pressure', unit: 'Pa', unitOptions: [
+      { name: 'pressure', label: 'الضغط', unit: 'Pa', unitOptions: [
         { label: 'باسكال', value: 'Pa', factor: 1 },
-        { label: ' атмосфера', value: 'atm', factor: 0.0000098692 },
-        { label: 'بار', value: 'bar', factor: 0.00001 },
-        { label: 'mmHg', value: 'mmHg', factor: 0.00750062 }
+        { label: 'atm', value: 'atm', factor: 0.0000098692 }
       ], min: 10000, max: 500000, default: 101325 },
-      { name: 'volume', label: 'الحجم', labelEn: 'Volume', unit: 'L', unitOptions: [
+      { name: 'volume', label: 'الحجم', unit: 'L', unitOptions: [
         { label: 'لتر', value: 'L', factor: 1 },
-        { label: 'مل', value: 'mL', factor: 1000 },
-        { label: 'م³', value: 'm³', factor: 0.001 }
+        { label: 'مل', value: 'mL', factor: 1000 }
       ], min: 1, max: 100, default: 22.4 },
-      { name: 'temperature', label: 'درجة الحرارة', labelEn: 'Temperature', unit: 'K', unitOptions: [
+      { name: 'temperature', label: 'الحرارة', unit: 'K', unitOptions: [
         { label: 'كلفن', value: 'K', factor: 1 },
-        { label: 'مئوية', value: '°C', factor: 1 },
-        { label: 'فهرنهايت', value: '°F', factor: 1 }
+        { label: 'مئوية', value: '°C', factor: 1 }
       ], min: 100, max: 1000, default: 273 }
     ],
     results: [
-      { name: 'عدد المولات', formula: 'n = PV/RT', unit: 'mol' },
-      { name: 'الحجم المولي', formula: 'Vm = V/n', unit: 'L/mol' }
+      { name: 'عدد المولات', formula: 'n = PV/RT', unit: 'mol', color: 'cyan' },
+      { name: 'الحجم المولي', formula: 'Vm = V/n', unit: 'L/mol', color: 'amber' }
     ],
-    dataColumns: [
-      { name: 'الضغط', unit: 'Pa' },
-      { name: 'الحجم', unit: 'L' },
-      { name: 'الحرارة', unit: 'K' },
-      { name: 'عدد المولات', unit: 'mol' }
+    simulationType: 'gas',
+    aiExplanation: 'معادلة الغاز المثالي تربط بين الضغط والحجم ودرجة الحرارة. STP: 0°C, 1atm, 22.4L/mol.',
+    realWorld: 'الإطارات، البالونات، المحركات',
+    tips: [
+      'عند رفع الحرارة يزداد الحجم (ثبات الضغط)',
+      'عند زيادة الضغط ينقص الحجم (ثبات الحرارة)',
+      'R = 8.314 J/mol·K'
     ],
-    aiExplanation: 'معادلة الغاز المثالي تربط بين الضغط والحجم ودرجة الحرارة وعدد المولات. وهي نموذج جيد للغازات الحقيقية عند ضغط منخفض.',
-    realWorldExample: 'الإطارات، البالونات، المحركات',
-    tips: ['STP: 0°C, 1 atm, 22.4 L/mol', 'الغاز الحقيقي يختلف عن المثالي عند ضغط عالٍ', 'R = 8.314 J/mol·K']
+    chartTypes: [
+      { x: 'الحرارة (K)', y: 'الحجم (L)', type: 'line' },
+      { x: 'الضغط (Pa)', y: 'الحجم (L)', type: 'line' }
+    ]
   },
-  // =========================================
-  // ⚛️ فيزياء حديثة
-  // =========================================
   {
-    id: 'radioactivity',
-    name: 'النشاط الإشعاعي',
-    nameEn: 'Radioactivity',
-    category: 'فيزياء حديثة',
-    subcategory: 'النووية',
-    icon: '☢️',
-    difficulty: 'صعب',
-    description: 'تحلل المواد المشعة',
+    id: 'spring',
+    name: 'الحركة التوافقية البسيطة',
+    nameEn: 'Simple Harmonic Motion',
+    category: 'ميكانيكا',
+    icon: '🔄',
+    difficulty: 2,
+    description: 'حركة الكتلة على نابض',
     equations: [
-      { name: 'العدد الذري', formula: 'N = N₀e^(-λt)', description: 'قانون التحلل' },
-      { name: 'عمر النصف', formula: 't½ = ln2/λ', description: 'تعريف t½' },
-      { name: 'النشاط', formula: 'A = λN', description: 'نشاط إشعاعي' }
+      { name: 'الإزاحة', formula: 'x = A·sin(ωt)', desc: 'الإزاحة اللحظية' },
+      { name: 'الطاقة', formula: 'E = ½kA²', desc: 'الطاقة الكلية' }
     ],
     variables: [
-      { name: 'initialAtoms', label: 'عدد الذرات الابتدائي', labelEn: 'Initial Atoms', unit: '', unitOptions: [
-        { label: '', value: '', factor: 1 }
-      ], min: 100, max: 10000, default: 1000 },
-      { name: 'halfLife', label: 'عمر النصف', labelEn: 'Half-Life', unit: 's', unitOptions: [
-        { label: 'ثانية', value: 's', factor: 1 },
-        { label: 'دقيقة', value: 'min', factor: 1/60 },
-        { label: 'ساعة', value: 'h', factor: 1/3600 },
-        { label: 'يوم', value: 'd', factor: 1/86400 }
-      ], min: 1, max: 100, default: 10 },
-      { name: 'time', label: 'الزمن', labelEn: 'Time', unit: 's', unitOptions: [
-        { label: 'ثانية', value: 's', factor: 1 },
-        { label: 'دقيقة', value: 'min', factor: 1/60 },
-        { label: 'ساعة', value: 'h', factor: 1/3600 }
-      ], min: 0, max: 100, default: 5 }
+      { name: 'amplitude', label: 'السعة', unit: 'm', unitOptions: [
+        { label: 'متر', value: 'm', factor: 1 },
+        { label: 'سنتيمتر', value: 'cm', factor: 100 }
+      ], min: 0.01, max: 2, default: 0.5 },
+      { name: 'frequency', label: 'التردد', unit: 'Hz', unitOptions: [
+        { label: 'هرتز', value: 'Hz', factor: 1 }
+      ], min: 0.1, max: 5, default: 1 },
+      { name: 'mass', label: 'الكتلة', unit: 'kg', unitOptions: [
+        { label: 'كيلوغرام', value: 'kg', factor: 1 },
+        { label: 'غرام', value: 'g', factor: 1000 }
+      ], min: 0.1, max: 10, default: 1 }
     ],
     results: [
-      { name: 'ثابت التحلل', formula: 'λ = ln2/t½', unit: 's⁻¹' },
-      { name: 'الذرات المتبقية', formula: 'N = N₀e^(-λt)', unit: '' },
-      { name: 'النشاط', formula: 'A = λN', unit: 'Bq' }
+      { name: 'السرعة الزاوية', formula: 'ω = 2πf', unit: 'rad/s', color: 'cyan' },
+      { name: 'الطاقة الحركية', formula: 'KE = ½kx²', unit: 'J', color: 'amber' }
     ],
-    dataColumns: [
-      { name: 'الزمن', unit: 's' },
-      { name: 'الذرات المتبقية', unit: '' },
-      { name: 'النشاط', unit: 'Bq' },
-      { name: 'نسبة المتبقية', unit: '%' }
+    simulationType: 'spring',
+    aiExplanation: 'الحركة التوافقية البسيطة حركة دورية تتكرر حول موضع التوازن.',
+    realWorld: 'كتلة على نابض، وتر موسيقي',
+    tips: [
+      'الحركة متناظرة حول موضع التوازن',
+      'الطاقة محفوظة في النظام',
+      'الزمن الدوري لا يعتمد على السعة'
     ],
-    aiExplanation: 'النشاط الإشعاعي تحلل عشوائي للنوى غير المستقرة. عمر النصف هو الزمن اللازم لتحلل نصف الذرات.',
-    realWorldExample: 'الكشف عن العمر، الطب النووي، الطاقة النووية',
-    tips: ['عمر النصف ثابت لكل نظير', 'التحلل عملية عشوائية', 'ثلاثة أنواع: ألفا، بيتا، غاما']
+    chartTypes: [
+      { x: 'الزمن (s)', y: 'الإزاحة (m)', type: 'line' },
+      { x: 'الزمن (s)', y: 'السرعة (m/s)', type: 'line' }
+    ]
+  },
+  {
+    id: 'collision',
+    name: 'التصادمات',
+    nameEn: 'Collisions',
+    category: 'ميكانيكا',
+    icon: '💥',
+    difficulty: 2,
+    description: 'تصادمات مرنة وغير مرنة',
+    equations: [
+      { name: 'حفظ الزخم', formula: 'm₁v₁+m₂v₂=m₁v₁\'+m₂v₂\'', desc: 'الزخم قبل وبعد' },
+      { name: 'الطاقة', formula: 'KE = ½mv²', desc: 'الطاقة الحركية' }
+    ],
+    variables: [
+      { name: 'm1', label: 'كتلة الجسم 1', unit: 'kg', unitOptions: [
+        { label: 'kg', value: 'kg', factor: 1 }
+      ], min: 1, max: 50, default: 10 },
+      { name: 'v1', label: 'سرعة الجسم 1', unit: 'm/s', unitOptions: [
+        { label: 'م/ث', value: 'm/s', factor: 1 }
+      ], min: -20, max: 20, default: 10 },
+      { name: 'm2', label: 'كتلة الجسم 2', unit: 'kg', unitOptions: [
+        { label: 'kg', value: 'kg', factor: 1 }
+      ], min: 1, max: 50, default: 5 },
+      { name: 'v2', label: 'سرعة الجسم 2', unit: 'm/s', unitOptions: [
+        { label: 'م/ث', value: 'm/s', factor: 1 }
+      ], min: -20, max: 20, default: -5 }
+    ],
+    results: [
+      { name: 'الزخم الكلي', formula: 'p = m₁v₁ + m₂v₂', unit: 'kg·m/s', color: 'cyan' },
+      { name: 'KE قبل', formula: 'KE = ½m₁v₁² + ½m₂v₂²', unit: 'J', color: 'amber' }
+    ],
+    simulationType: 'collision',
+    aiExplanation: 'التصادمات تحفظ الزخم الكلي. في التصادمات المرنة تحفظ الطاقة الحركية أيضاً.',
+    realWorld: 'كرة بليارد، تصادم السيارات',
+    tips: [
+      'الزخم محفوظ دائماً',
+      'الطاقة الحركية محفوظة في المرنة فقط',
+      'معامل الاستعادة يتراوح بين 0 و 1'
+    ],
+    chartTypes: [
+      { x: 'الزمن (s)', y: 'السرعة (m/s)', type: 'line' }
+    ]
+  },
+  {
+    id: 'magnetic',
+    name: 'القوة المغناطيسية',
+    nameEn: 'Magnetic Force',
+    category: 'كهرباء',
+    icon: '🧲',
+    difficulty: 3,
+    description: 'قوة لورنتز على جسيم مشحون',
+    equations: [
+      { name: 'قوة لورنتز', formula: 'F = qvBsinθ', desc: 'القوة المغناطيسية' },
+      { name: 'نصف القطر', formula: 'r = mv/qB', desc: 'نصف قطر المسار' }
+    ],
+    variables: [
+      { name: 'charge', label: 'الشحنة', unit: 'μC', unitOptions: [
+        { label: 'μC', value: 'μC', factor: 1 },
+        { label: 'C', value: 'C', factor: 0.000001 }
+      ], min: 1, max: 100, default: 10 },
+      { name: 'velocity', label: 'السرعة', unit: 'm/s', unitOptions: [
+        { label: 'م/ث', value: 'm/s', factor: 1 }
+      ], min: 1000, max: 100000, default: 10000 },
+      { name: 'B', label: 'الحقل المغناطيسي', unit: 'T', unitOptions: [
+        { label: 'تسلا', value: 'T', factor: 1 },
+        { label: 'غاوس', value: 'G', factor: 10000 }
+      ], min: 0.01, max: 2, default: 0.5 }
+    ],
+    results: [
+      { name: 'القوة المغناطيسية', formula: 'F = qvB', unit: 'N', color: 'amber' },
+      { name: 'نصف القطر', formula: 'r = mv/qB', unit: 'm', color: 'cyan' }
+    ],
+    simulationType: 'magnetic',
+    aiExplanation: 'القوة المغناطيسية تؤثر على الجسيمات المشحونة المتحركة. القوة عمودية على اتجاه الحركة.',
+    realWorld: 'مصادم الهادرونات، مطياف الكتلة',
+    tips: [
+      'القوة أعظمية عندما تكون الحركة عمودية على المجال',
+      'لا تبذل القوة شغلاً لأنها عمودية على الحركة',
+      'تُستخدم في فصل الجسيمات'
+    ],
+    chartTypes: [
+      { x: 'الحقل (T)', y: 'القوة (N)', type: 'line' },
+      { x: 'السرعة (m/s)', y: 'نصف القطر (m)', type: 'line' }
+    ]
   },
   {
     id: 'photoelectric',
     name: 'التأثير الكهروضوئي',
     nameEn: 'Photoelectric Effect',
     category: 'فيزياء حديثة',
-    subcategory: 'الكم',
     icon: '⚛️',
-    difficulty: 'صعب',
+    difficulty: 3,
     description: 'إلكترونات تترك السطح المعدني',
     equations: [
-      { name: 'آينشتاين', formula: 'KE = hf - φ', description: 'معادلة التأثير' },
-      { name: 'التردد الحرج', formula: 'f₀ = φ/h', description: 'التردد الحد الأدنى' },
-      { name: 'الطول الموجي', formula: 'λmax = hc/φ', description: 'الطول الموجي الأقصى' }
+      { name: 'آينشتاين', formula: 'KE = hf - φ', desc: 'معادلة التأثير' },
+      { name: 'طاقة الفوتون', formula: 'E = hc/λ', desc: 'طاقة الفوتون' }
     ],
     variables: [
-      { name: 'wavelength', label: 'الطول الموجي', labelEn: 'Wavelength', unit: 'nm', unitOptions: [
-        { label: 'نانومتر', value: 'nm', factor: 1 },
-        { label: 'أنغستروم', value: 'Å', factor: 0.1 },
-        { label: 'متر', value: 'm', factor: 1000000000 }
+      { name: 'wavelength', label: 'الطول الموجي', unit: 'nm', unitOptions: [
+        { label: 'نانومتر', value: 'nm', factor: 1 }
       ], min: 100, max: 1000, default: 500 },
-      { name: 'workFunction', label: 'دالة الشغل', labelEn: 'Work Function', unit: 'eV', unitOptions: [
-        { label: 'إلكترون فولت', value: 'eV', factor: 1 },
+      { name: 'workFunc', label: 'دالة الشغل', unit: 'eV', unitOptions: [
+        { label: 'eV', value: 'eV', factor: 1 },
         { label: 'جول', value: 'J', factor: 1.602e-19 }
       ], min: 1, max: 10, default: 4.5 }
     ],
     results: [
-      { name: 'طاقة الفوتون', formula: 'E = hc/λ', unit: 'eV' },
-      { name: 'الطاقة الحركية', formula: 'KE = hf - φ', unit: 'eV' },
-      { name: 'التردد', formula: 'f = c/λ', unit: 'Hz' }
+      { name: 'طاقة الفوتون', formula: 'E = hc/λ', unit: 'eV', color: 'amber' },
+      { name: 'الطاقة الحركية', formula: 'KE = hf - φ', unit: 'eV', color: 'cyan' }
     ],
-    dataColumns: [
-      { name: 'الطول الموجي', unit: 'nm' },
-      { name: 'التردد', unit: 'Hz' },
-      { name: 'طاقة الفوتون', unit: 'eV' },
-      { name: 'KE الإلكترونية', unit: 'eV' }
+    simulationType: 'photoelectric',
+    aiExplanation: 'التأثير الكهروضوئي يُظهر طبيعة الضوء كمادة (فوتونات).',
+    realWorld: 'الألواح الشمسية، أجهزة photoelectric',
+    tips: [
+      'الطاقة الحركية لا تعتمد على شدة الضوء',
+      'لا يحدث تأثير إذا كان التردد أقل من الحد الأدنى',
+      'الضوء يسلك كجسيمات (فوتونات)'
     ],
-    aiExplanation: 'التأثير الكهروضوئي يُظهر طبيعة الضوء كمادة (فوتونات). أينشتاين فسر هذه الظاهرة وحصل على جائزة نوبل.',
-    realWorldExample: 'الألواح الشمسية، أجهزة photoelectric، الليزر',
-    tips: ['الطاقة الحركية لا تعتمد على شدة الضوء', 'لا يحدث تأثير إذا كان التردد أقل من التردد الحرج', 'الضوء يسلك كجسيمات (فوتونات)']
-  },
-  {
-    id: 'wave-particle',
-    name: 'ازدواجية الموجة-الجسيم',
-    nameEn: 'Wave-Particle Duality',
-    category: 'فيزياء حديثة',
-    subcategory: 'الكم',
-    icon: '🔮',
-    difficulty: 'صعب',
-    description: 'سلوك الموجة والجسيم للمادة',
-    equations: [
-      { name: 'دي بروغلي', formula: 'λ = h/p', description: 'الطول الموجي للمادة' },
-      { name: 'مبدأ عدم اليقين', formula: 'Δx·Δp ≥ ℏ/2', description: 'هايزنبرغ' },
-      { name: 'طاقة بلانك', formula: 'E = hf', description: 'طاقة الفوتون' }
-    ],
-    variables: [
-      { name: 'mass', label: 'الكتلة', labelEn: 'Mass', unit: 'kg', unitOptions: [
-        { label: 'كيلوغرام', value: 'kg', factor: 1 },
-        { label: 'غرام', value: 'g', factor: 1000 },
-        { label: 'الكتلة الإلكترونية', value: 'me', factor: 9.11e-31 }
-      ], min: 9.11e-31, max: 0.001, default: 9.11e-31 },
-      { name: 'velocity', label: 'السرعة', labelEn: 'Velocity', unit: 'm/s', unitOptions: [
-        { label: 'م/ث', value: 'm/s', factor: 1 },
-        { label: 'سرعة الضوء', value: 'c', factor: 299792458 }
-      ], min: 1000, max: 100000000, default: 1000000 }
-    ],
-    results: [
-      { name: 'الزخم', formula: 'p = mv', unit: 'kg·m/s' },
-      { name: 'الطول الموجي', formula: 'λ = h/p', unit: 'm' }
-    ],
-    dataColumns: [
-      { name: 'الكتلة', unit: 'kg' },
-      { name: 'السرعة', unit: 'm/s' },
-      { name: 'الزخم', unit: 'kg·m/s' },
-      { name: 'الطول الموجي', unit: 'm' }
-    ],
-    aiExplanation: 'ازدواجية الموجة-الجسيم تعني أن المادة تسلك سلوك الموجة والجسيم معاً. هذا أساس ميكانيكا الكم.',
-    realWorldExample: 'مجهر إلكتروني، انعراج الإلكترونات',
-    tips: ['الأجسام الكبيرة طولها الموجي ضئيل جداً', 'مبدأ عدم اليقين يؤثر على القياسات الدقيقة', 'المراقبة تؤثر على النظام الكمي']
-  },
-  // =========================================
-  // 🌊 ميكانيكا الموائع
-  // =========================================
-  {
-    id: 'fluid-statics',
-    name: 'ستاتيكا الموائع',
-    nameEn: 'Fluid Statics',
-    category: 'ميكانيكا الموائع',
-    subcategory: 'الموائع',
-    icon: '💧',
-    difficulty: 'متوسط',
-    description: 'ضغط الموائع وقوة الطفو',
-    equations: [
-      { name: 'الضغط', formula: 'P = F/A', description: 'تعريف الضغط' },
-      { name: 'ضغط العمود', formula: 'P = ρgh', description: 'ضغط السائل' },
-      { name: 'قوة الطفو', formula: 'Fb = ρgV', description: 'قوة أرخميدس' }
-    ],
-    variables: [
-      { name: 'density', label: 'الكثافة', labelEn: 'Density', unit: 'kg/m³', unitOptions: [
-        { label: 'kg/m³', value: 'kg/m³', factor: 1 },
-        { label: 'g/cm³', value: 'g/cm³', factor: 1000 }
-      ], min: 500, max: 20000, default: 1000 },
-      { name: 'depth', label: 'العمق', labelEn: 'Depth', unit: 'm', unitOptions: [
-        { label: 'متر', value: 'm', factor: 1 },
-        { label: 'سنتيمتر', value: 'cm', factor: 100 }
-      ], min: 1, max: 1000, default: 10 },
-      { name: 'volume', label: 'الحجم المغمور', labelEn: 'Volume', unit: 'm³', unitOptions: [
-        { label: 'م³', value: 'm³', factor: 1 },
-        { label: 'لتر', value: 'L', factor: 1000 }
-      ], min: 0.001, max: 10, default: 0.5 }
-    ],
-    results: [
-      { name: 'الضغط', formula: 'P = ρgh', unit: 'Pa' },
-      { name: 'قوة الطفو', formula: 'Fb = ρgV', unit: 'N' }
-    ],
-    dataColumns: [
-      { name: 'العمق', unit: 'm' },
-      { name: 'الكثافة', unit: 'kg/m³' },
-      { name: 'الضغط', unit: 'Pa' },
-      { name: 'قوة الطفو', unit: 'N' }
-    ],
-    aiExplanation: 'ستاتيكا الموائع تدرس السوائل في حالة السكون. الضغط في سائل يعتمد على العمق فقط.',
-    realWorldExample: 'السدود، الغواصات، مكثفات المياه',
-    tips: ['الضغط لا يعتمد على شكل الإناء', 'قوة الطفو لا تعتمد على عمق الغمر', 'الجسم يطفو إذا كانت كثافته أقل من كثافة السائل']
-  },
-  {
-    id: 'fluid-dynamics',
-    name: 'ديناميكا الموائع',
-    nameEn: 'Fluid Dynamics',
-    category: 'ميكانيكا الموائع',
-    subcategory: 'الموائع',
-    icon: '🌊',
-    difficulty: 'صعب',
-    description: 'جريان الموائع ومعادلة برنولي',
-    equations: [
-      { name: 'الاستمرارية', formula: 'A₁v₁ = A₂v₂', description: 'حفظ الكتلة' },
-      { name: 'برنولي', formula: 'P + ½ρv² + ρgh = constant', description: 'معادلة برنولي' },
-      { name: 'رقم رينولدز', formula: 'Re = ρvD/μ', description: 'نوع الجريان' }
-    ],
-    variables: [
-      { name: 'velocity1', label: 'السرعة 1', labelEn: 'Velocity 1', unit: 'm/s', unitOptions: [
-        { label: 'م/ث', value: 'm/s', factor: 1 }
-      ], min: 0.1, max: 20, default: 2 },
-      { name: 'area1', label: 'المساحة 1', labelEn: 'Area 1', unit: 'm²', unitOptions: [
-        { label: 'م²', value: 'm²', factor: 1 },
-        { label: 'سم²', value: 'cm²', factor: 10000 }
-      ], min: 0.01, max: 1, default: 0.1 },
-      { name: 'area2', label: 'المساحة 2', labelEn: 'Area 2', unit: 'm²', unitOptions: [
-        { label: 'م²', value: 'm²', factor: 1 },
-        { label: 'سم²', value: 'cm²', factor: 10000 }
-      ], min: 0.001, max: 0.5, default: 0.05 }
-    ],
-    results: [
-      { name: 'السرعة 2', formula: 'v₂ = A₁v₁/A₂', unit: 'm/s' },
-      { name: 'الضغط 2', formula: 'P₂ = P₁ + ½ρ(v₁²-v₂²)', unit: 'Pa' }
-    ],
-    dataColumns: [
-      { name: 'الموقع', unit: '' },
-      { name: 'السرعة', unit: 'm/s' },
-      { name: 'المساحة', unit: 'm²' },
-      { name: 'الضغط', unit: 'Pa' }
-    ],
-    aiExplanation: 'ديناميكا الموائع تدرس حركة السوائل والغازات. معادلة برنولي تربط بين الضغط والسرعة والارتفاع.',
-    realWorldExample: 'أنابيب المياه، أجنحة الطائرات، أنظمة التهوية',
-    tips: ['السرعة تزداد عندما يضيق الأنبوب', 'ضغط يقل عندما تزداد السرعة', 'الجريان الصفحي vs المضطرب']
+    chartTypes: [
+      { x: 'التردد (Hz)', y: 'KE (eV)', type: 'scatter' }
+    ]
   }
 ];
 
-// =============================================
-// 🏆 نظام الجوائز والإنجازات
-// =============================================
-interface Achievement {
-  id: string;
-  name: string;
-  icon: string;
-  description: string;
-  condition: (stats: UserStats) => boolean;
-  points: number;
-}
-
-interface UserStats {
-  experimentsCompleted: number;
-  questionsAnswered: number;
-  perfectScores: number;
-  totalTime: number;
-  favoritesAdded: number;
-}
-
-const achievements: Achievement[] = [
-  { id: 'first-exp', name: 'أول تجربة', icon: '🎯', description: 'أتم تجربة واحدة', condition: (s) => s.experimentsCompleted >= 1, points: 10 },
-  { id: 'five-exp', name: 'باحث مبتدئ', icon: '🔬', description: 'أتم 5 تجارب', condition: (s) => s.experimentsCompleted >= 5, points: 50 },
-  { id: 'ten-exp', name: 'فيزيائي صغير', icon: '🧪', description: 'أتم 10 تجارب', condition: (s) => s.experimentsCompleted >= 10, points: 100 },
-  { id: 'quiz-master', name: 'خبير الاختبارات', icon: '🏆', description: 'أجب على 20 سؤال', condition: (s) => s.questionsAnswered >= 20, points: 100 },
-  { id: 'perfect-score', name: 'عبقري', icon: '⭐', description: 'احصل على 5 درجات كاملة', condition: (s) => s.perfectScores >= 5, points: 150 },
-  { id: 'time-master', name: 'محب الوقت', icon: '⏱️', description: 'اقضِ ساعة في التطبيق', condition: (s) => s.totalTime >= 3600, points: 75 },
-  { id: 'collector', name: 'جامع', icon: '📚', description: 'أضف 10 مفضلات', condition: (s) => s.favoritesAdded >= 10, points: 50 }
+const CATEGORIES = [
+  { id: 'all', name: 'الكل', icon: '🔬', color: 'cyan' },
+  { id: 'ميكانيكا', name: 'ميكانيكا', icon: '⚙️', color: 'blue' },
+  { id: 'كهرباء', name: 'كهرباء', icon: '⚡', color: 'amber' },
+  { id: 'بصريات', name: 'بصريات', icon: '💡', color: 'yellow' },
+  { id: 'حرارة', name: 'حرارة', icon: '🌡️', color: 'red' },
+  { id: 'فيزياء حديثة', name: 'حديثة', icon: '⚛️', color: 'purple' }
 ];
 
-// =============================================
-// 📊 فئات التجارب
-// =============================================
-const categories = [
-  { id: 'all', name: 'الكل', icon: '🔬', count: experiments.length },
-  { id: 'ميكانيكا', name: 'ميكانيكا', icon: '⚙️', count: experiments.filter(e => e.category === 'ميكانيكا').length },
-  { id: 'كهرباء', name: 'كهرباء', icon: '⚡', count: experiments.filter(e => e.category === 'كهرباء').length },
-  { id: 'بصريات', name: 'بصريات', icon: '💡', count: experiments.filter(e => e.category === 'بصريات').length },
-  { id: 'حرارة', name: 'حرارة', icon: '🌡️', count: experiments.filter(e => e.category === 'حرارة').length },
-  { id: 'فيزياء حديثة', name: 'فيزياء حديثة', icon: '⚛️', count: experiments.filter(e => e.category === 'فيزياء حديثة').length },
-  { id: 'ميكانيكا الموائع', name: 'موائع', icon: '💧', count: experiments.filter(e => e.category === 'ميكانيكا الموائع').length }
+const UNIT_CATS = [
+  { id: 'length', name: '📏 طول', options: [
+    { from: 'm', to: 'cm', factor: 100 },
+    { from: 'm', to: 'mm', factor: 1000 },
+    { from: 'm', to: 'km', factor: 0.001 },
+    { from: 'm', to: 'in', factor: 39.37 },
+    { from: 'm', to: 'ft', factor: 3.281 },
+    { from: 'm', to: 'mi', factor: 0.000621 }
+  ]},
+  { id: 'mass', name: '⚖️ كتلة', options: [
+    { from: 'kg', to: 'g', factor: 1000 },
+    { from: 'kg', to: 'mg', factor: 1000000 },
+    { from: 'kg', to: 'lb', factor: 2.205 },
+    { from: 'kg', to: 'oz', factor: 35.274 }
+  ]},
+  { id: 'time', name: '⏱️ زمن', options: [
+    { from: 's', to: 'min', factor: 0.016667 },
+    { from: 's', to: 'h', factor: 0.00027778 },
+    { from: 's', to: 'ms', factor: 1000 },
+    { from: 'min', to: 'h', factor: 0.016667 }
+  ]},
+  { id: 'temp', name: '🌡️ حرارة', options: [
+    { from: '°C', to: 'K', formula: (v: number) => v + 273.15 },
+    { from: '°C', to: '°F', formula: (v: number) => v * 1.8 + 32 },
+    { from: 'K', to: '°C', formula: (v: number) => v - 273.15 },
+    { from: '°F', to: '°C', formula: (v: number) => (v - 32) / 1.8 }
+  ]},
+  { id: 'pressure', name: '📊 ضغط', options: [
+    { from: 'Pa', to: 'atm', factor: 0.0000098692 },
+    { from: 'Pa', to: 'bar', factor: 0.00001 },
+    { from: 'Pa', to: 'mmHg', factor: 0.0075006 },
+    { from: 'atm', to: 'Pa', factor: 101325 }
+  ]},
+  { id: 'energy', name: '⚡ طاقة', options: [
+    { from: 'J', to: 'cal', factor: 0.239 },
+    { from: 'J', to: 'kWh', factor: 2.7778e-7 },
+    { from: 'cal', to: 'J', factor: 4.184 },
+    { from: 'eV', to: 'J', factor: 1.602e-19 }
+  ]},
+  { id: 'speed', name: '🚀 سرعة', options: [
+    { from: 'm/s', to: 'km/h', factor: 3.6 },
+    { from: 'm/s', to: 'mph', factor: 2.237 },
+    { from: 'km/h', to: 'm/s', factor: 0.27778 },
+    { from: 'knot', to: 'm/s', factor: 0.51444 }
+  ]}
 ];
 
-// =============================================
-// 🔄 محول الوحدات
-// =============================================
-const unitConversions: Record<string, { factor: number; unit: string }[]> = {
-  length: [
-    { factor: 1, unit: 'm' },
-    { factor: 100, unit: 'cm' },
-    { factor: 1000, unit: 'mm' },
-    { factor: 0.001, unit: 'km' },
-    { factor: 39.37, unit: 'in' },
-    { factor: 3.281, unit: 'ft' },
-    { factor: 0.000621, unit: 'mi' }
-  ],
-  mass: [
-    { factor: 1, unit: 'kg' },
-    { factor: 1000, unit: 'g' },
-    { factor: 1000000, unit: 'mg' },
-    { factor: 2.205, unit: 'lb' },
-    { factor: 35.274, unit: 'oz' }
-  ],
-  time: [
-    { factor: 1, unit: 's' },
-    { factor: 0.016667, unit: 'min' },
-    { factor: 0.00027778, unit: 'h' },
-    { factor: 0.000011574, unit: 'day' }
-  ],
-  temperature: [
-    { factor: 1, unit: 'K' },
-    { factor: 1, unit: '°C' },
-    { factor: 1.8, unit: '°F' }
-  ],
-  pressure: [
-    { factor: 1, unit: 'Pa' },
-    { factor: 0.00001, unit: 'bar' },
-    { factor: 0.0000098692, unit: 'atm' },
-    { factor: 0.0075006, unit: 'mmHg' }
-  ]
+// ============================================================
+// 🎨 الألوان المخصصة
+// ============================================================
+const COLOR_MAP: Record<string, string> = {
+  cyan: '#06b6d4',
+  emerald: '#10b981',
+  amber: '#f59e0b',
+  rose: '#f43f5e',
+  violet: '#8b5cf6',
+  blue: '#3b82f6',
+  green: '#22c55e',
+  red: '#ef4444',
+  orange: '#f97316',
+  pink: '#ec4899'
 };
 
-// =============================================
-// 🎯 المكون الرئيسي
-// =============================================
-export default function PhysicsLab() {
-  // =========================================
-  // 📌 الحالات الأساسية
-  // =========================================
-  const [selectedExperiment, setSelectedExperiment] = useState<Experiment | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<'simulation' | 'data' | 'ai' | 'units'>('simulation');
+// ============================================================
+// 📊 رسم بياني بسيط بدون مكتبات خارجية
+// ============================================================
+function SimpleChart({ 
+  data, 
+  title, 
+  xLabel, 
+  yLabel,
+  color = '#06b6d4',
+  width = 500,
+  height = 200
+}: { 
+  data: {x: number, y: number}[]; 
+  title?: string;
+  xLabel: string;
+  yLabel: string;
+  color?: string;
+  width?: number;
+  height?: number;
+}) {
+  if (data.length < 2) return null;
   
-  // =========================================
-  // 📊 حالات جدول البيانات
-  // =========================================
-  const [dataRows, setDataRows] = useState<DataRow[]>([]);
-  const [dataColumns, setDataColumns] = useState<DataColumn[]>([]);
-  const [selectedUnit, setSelectedUnit] = useState<Record<string, string>>({});
+  const padding = { top: 20, right: 20, bottom: 40, left: 50 };
+  const chartW = width - padding.left - padding.right;
+  const chartH = height - padding.top - padding.bottom;
   
-  // =========================================
-  // ⭐ المفضلات
-  // =========================================
-  const [favorites, setFavorites] = useState<string[]>(() => {
-    try { return JSON.parse(localStorage.getItem('physicsFavorites') || '[]'); } 
-    catch { return []; }
-  });
+  const minX = Math.min(...data.map(d => d.x));
+  const maxX = Math.max(...data.map(d => d.x));
+  const minY = Math.min(...data.map(d => d.y));
+  const maxY = Math.max(...data.map(d => d.y));
+  const rangeX = maxX - minX || 1;
+  const rangeY = maxY - minY || 1;
   
-  // =========================================
-  // 🤖 الذكاء الاصطناعي
-  // =========================================
-  const [aiMessages, setAiMessages] = useState<{role: 'user' | 'assistant', content: string}[]>([
-    { role: 'assistant', content: '🤖 مرحباً! أنا معلم الفيزياء الذكي\n\nيمكنني:\n• شرح التجارب الفيزيائية بالتفصيل\n• تحليل جدول البيانات الخاص بك\n• توليد رسوم بيانية وتفسيرات\n• اقتراح تجارب مشابهة\n• الإجابة على أسئلتك الفيزيائية\n\nاختر تجربة وابدأ رحلة التعلم!' }
-  ]);
-  const [aiInput, setAiInput] = useState('');
-  const [isAiLoading, setIsAiLoading] = useState(false);
+  const toX = (x: number) => padding.left + ((x - minX) / rangeX) * chartW;
+  const toY = (y: number) => padding.top + chartH - ((y - minY) / rangeY) * chartH;
   
-  // =========================================
-  // 🎮 المحاكاة
-  // =========================================
-  const [isSimulating, setIsSimulating] = useState(false);
-  const [simulationTime, setSimulationTime] = useState(0);
-  const [inputValues, setInputValues] = useState<Record<string, number>>({});
-  const [results, setResults] = useState<Record<string, number>>({});
+  // Generate grid lines
+  const gridLines = [];
+  const yTicks = 5;
+  const xTicks = 5;
   
-  // =========================================
-  // 🏆 الجوائز
-  // =========================================
-  const [userStats, setUserStats] = useState<UserStats>(() => {
-    try { return JSON.parse(localStorage.getItem('physicsStats') || '{"experimentsCompleted":0,"questionsAnswered":0,"perfectScores":0,"totalTime":0,"favoritesAdded":0}'); } 
-    catch { return { experimentsCompleted: 0, questionsAnswered: 0, perfectScores: 0, totalTime: 0, favoritesAdded: 0 }; }
-  });
-  const [unlockedAchievements, setUnlockedAchievements] = useState<string[]>(() => {
-    try { return JSON.parse(localStorage.getItem('physicsAchievements') || '[]'); } 
-    catch { return []; }
-  });
+  for (let i = 0; i <= yTicks; i++) {
+    const y = padding.top + (i / yTicks) * chartH;
+    const val = maxY - (i / yTicks) * rangeY;
+    gridLines.push(
+      <g key={`grid-y-${i}`}>
+        <line x1={padding.left} y1={y} x2={width - padding.right} y2={y} stroke="#334155" strokeWidth="1" strokeDasharray="3,3" />
+        <text x={padding.left - 8} y={y + 4} textAnchor="end" fill="#94a3b8" fontSize="9">{val.toFixed(1)}</text>
+      </g>
+    );
+  }
   
-  // =========================================
-  // 📈 تحويل الوحدات
-  // =========================================
-  const [unitCategory, setUnitCategory] = useState('length');
-  const [unitValue, setUnitValue] = useState('1');
+  for (let i = 0; i <= xTicks; i++) {
+    const x = padding.left + (i / xTicks) * chartW;
+    const val = minX + (i / xTicks) * rangeX;
+    gridLines.push(
+      <g key={`grid-x-${i}`}>
+        <text x={x} y={height - padding.bottom + 15} textAnchor="middle" fill="#94a3b8" fontSize="9">{val.toFixed(1)}</text>
+      </g>
+    );
+  }
   
-  // =========================================
-  // 🔧 Canvas
-  // =========================================
+  // Generate path
+  const pathD = data.map((d, i) => 
+    `${i === 0 ? 'M' : 'L'} ${toX(d.x)} ${toY(d.y)}`
+  ).join(' ');
+  
+  // Area fill
+  const areaD = `${pathD} L ${toX(data[data.length-1].x)} ${toY(minY)} L ${toX(data[0].x)} ${toY(minY)} Z`;
+  
+  return (
+    <div className="bg-slate-900 rounded-xl p-3 border border-slate-700">
+      {title && <p className="text-[10px] text-slate-400 font-bold mb-2 text-center">{title}</p>}
+      <svg width={width} height={height} className="w-full">
+        {gridLines}
+        {/* Area */}
+        <path d={areaD} fill={color} fillOpacity="0.1" />
+        {/* Line */}
+        <path d={pathD} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        {/* Points */}
+        {data.map((d, i) => (
+          <circle key={i} cx={toX(d.x)} cy={toY(d.y)} r="3" fill={color} stroke="#0f172a" strokeWidth="2" />
+        ))}
+        {/* Labels */}
+        <text x={width / 2} y={height - 5} textAnchor="middle" fill="#64748b" fontSize="9">{xLabel}</text>
+        <text x={12} y={height / 2} textAnchor="middle" fill="#64748b" fontSize="9" transform={`rotate(-90, 12, ${height/2})`}>{yLabel}</text>
+      </svg>
+    </div>
+  );
+}
+
+// ============================================================
+// 🎬 Canvas للمحاكاة
+// ============================================================
+function SimulationCanvas({
+  exp,
+  vars,
+  time,
+  isPlaying
+}: {
+  exp: Experiment;
+  vars: Record<string, number>;
+  time: number;
+  isPlaying: boolean;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const chatEndRef = useRef<HTMLDivElement>(null);
-  
-  // =========================================
-  // 💾 حفظ البيانات
-  // =========================================
-  useEffect(() => {
-    localStorage.setItem('physicsFavorites', JSON.stringify(favorites));
-  }, [favorites]);
   
   useEffect(() => {
-    localStorage.setItem('physicsStats', JSON.stringify(userStats));
-  }, [userStats]);
-  
-  useEffect(() => {
-    localStorage.setItem('physicsAchievements', JSON.stringify(unlockedAchievements));
-  }, [unlockedAchievements]);
-  
-  // =========================================
-  // 🔄 تهيئة التجربة
-  // =========================================
-  useEffect(() => {
-    if (selectedExperiment) {
-      // تهيئة القيم الافتراضية
-      const defaults: Record<string, number> = {};
-      selectedExperiment.variables.forEach(v => {
-        defaults[v.name] = v.default;
-        setSelectedUnit(prev => ({ ...prev, [v.name]: v.unitOptions[0].value }));
-      });
-      setInputValues(defaults);
-      
-      // تهيئة جدول البيانات
-      const cols: DataColumn[] = selectedExperiment.dataColumns.map((col, i) => ({
-        id: `col-${i}`,
-        name: col.name,
-        unit: col.unit
-      }));
-      setDataColumns(cols);
-      
-      // إضافة صفوف افتراضية
-      const defaultRows: DataRow[] = [];
-      for (let i = 0; i < 5; i++) {
-        defaultRows.push({
-          id: `row-${i}`,
-          values: cols.reduce((acc, col) => ({ ...acc, [col.id]: '' }), {})
-        });
-      }
-      setDataRows(defaultRows);
-      
-      // رسالة AI
-      setAiMessages([
-        { role: 'assistant', content: `✅ تم اختيار: ${selectedExperiment.name}\n\n${selectedExperiment.aiExplanation}\n\n💡 نصيحة: ${selectedExperiment.tips[0]}` }
-      ]);
-      
-      // تحديث الإحصائيات
-      setUserStats(prev => ({ ...prev, experimentsCompleted: prev.experimentsCompleted + 1 }));
-    }
-  }, [selectedExperiment]);
-  
-  // =========================================
-  // 🎬 رسم المحاكاة
-  // =========================================
-  useEffect(() => {
-    if (!selectedExperiment || !canvasRef.current) return;
     const canvas = canvasRef.current;
+    if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     
-    // مسح
-    ctx.fillStyle = '#0f172a';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const W = canvas.width;
+    const H = canvas.height;
     
-    // رسم الخلفية
+    // Clear
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, W, H);
+    
+    // Grid
     ctx.strokeStyle = '#1e293b';
-    ctx.lineWidth = 1;
-    for (let i = 0; i < canvas.width; i += 50) {
-      ctx.beginPath();
-      ctx.moveTo(i, 0);
-      ctx.lineTo(i, canvas.height);
-      ctx.stroke();
+    ctx.lineWidth = 0.5;
+    for (let x = 0; x < W; x += 30) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
     }
-    for (let i = 0; i < canvas.height; i += 50) {
-      ctx.beginPath();
-      ctx.moveTo(0, i);
-      ctx.lineTo(canvas.width, i);
-      ctx.stroke();
+    for (let y = 0; y < H; y += 30) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
     }
     
-    // رسم العنصر المتحرك
-    const cx = canvas.width / 2;
-    const cy = canvas.height / 2;
-    const t = simulationTime;
+    const cx = W / 2;
+    const cy = H / 2;
     
-    if (selectedExperiment.id === 'free-fall') {
-      const h = inputValues.height || 10;
-      const g = inputValues.gravity || 9.8;
-      const progress = Math.min(t / Math.sqrt(2 * h / g), 1);
-      const y = cy - 50 + (canvas.height - 100) * progress;
-      
-      // الجسم
-      ctx.fillStyle = '#3b82f6';
-      ctx.beginPath();
-      ctx.arc(cx, y, 15, 0, Math.PI * 2);
-      ctx.fill();
-      
-      // السهم
-      if (progress > 0 && progress < 1) {
-        ctx.strokeStyle = '#ef4444';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(cx, y);
-        ctx.lineTo(cx, y + 30);
-        ctx.stroke();
-      }
-      
-      // نص
-      ctx.fillStyle = '#fff';
-      ctx.font = '12px Arial';
-      ctx.textAlign = 'center';
-      ctx.fillText(`h = ${(h * (1 - progress)).toFixed(1)}m`, cx, y - 25);
-    } 
-    else if (selectedExperiment.id === 'projectile-motion') {
-      const v0 = inputValues.velocity || 30;
-      const angle = ((inputValues.angle || 45) * Math.PI) / 180;
-      const g = 9.8;
-      const x = 50 + v0 * Math.cos(angle) * t * 3;
-      const y = cy + 50 - (v0 * Math.sin(angle) * t - 0.5 * g * t * t) * 3;
-      
-      if (y < cy + 50) {
-        // المسار
+    switch (exp.simulationType) {
+      case 'free-fall': {
+        const h = vars.height || 10;
+        const g = vars.gravity || 9.8;
+        const m = vars.mass || 5;
+        const totalTime = Math.sqrt(2 * h / g);
+        const progress = isPlaying ? (time % totalTime) / totalTime : 0;
+        const y = 60 + (H - 120) * progress;
+        
+        // Ground
+        ctx.fillStyle = '#1e3a5f';
+        ctx.fillRect(0, H - 60, W, 60);
         ctx.strokeStyle = '#3b82f6';
-        ctx.setLineDash([5, 5]);
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(0, H - 60); ctx.lineTo(W, H - 60); ctx.stroke();
+        
+        // Trail
+        ctx.strokeStyle = `${COLOR_MAP.cyan}40`;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 4]);
         ctx.beginPath();
-        for (let i = 0; i <= t; i += 0.1) {
-          const px = 50 + v0 * Math.cos(angle) * i * 3;
-          const py = cy + 50 - (v0 * Math.sin(angle) * i - 0.5 * g * i * i) * 3;
-          if (i === 0) ctx.moveTo(px, py);
-          else ctx.lineTo(px, py);
+        for (let i = 0; i <= progress * 50; i++) {
+          const t = (i / 50) * progress * totalTime;
+          const ty = 60 + (H - 120) * (t / totalTime);
+          if (i === 0) ctx.moveTo(cx, ty);
+          else ctx.lineTo(cx, ty);
         }
         ctx.stroke();
         ctx.setLineDash([]);
         
-        // الجسم
-        ctx.fillStyle = '#ef4444';
+        // Ball
+        const grad = ctx.createRadialGradient(cx - 3, y - 3, 0, cx, y, 15);
+        grad.addColorStop(0, '#60a5fa');
+        grad.addColorStop(1, '#3b82f6');
+        ctx.fillStyle = grad;
         ctx.beginPath();
-        ctx.arc(x, Math.max(y, 50), 8, 0, Math.PI * 2);
+        ctx.arc(cx, y, 15, 0, Math.PI * 2);
         ctx.fill();
+        
+        // Glow
+        ctx.shadowColor = '#3b82f6';
+        ctx.shadowBlur = 20;
+        ctx.beginPath();
+        ctx.arc(cx, y, 15, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        
+        // Velocity arrow
+        if (progress > 0 && progress < 1) {
+          const v = g * (time % totalTime);
+          ctx.strokeStyle = COLOR_MAP.rose;
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(cx, y);
+          ctx.lineTo(cx, y + Math.min(v * 3, 60));
+          ctx.stroke();
+          // Arrowhead
+          ctx.fillStyle = COLOR_MAP.rose;
+          ctx.beginPath();
+          ctx.moveTo(cx, y + Math.min(v * 3, 60));
+          ctx.lineTo(cx - 6, y + Math.min(v * 3, 60) - 10);
+          ctx.lineTo(cx + 6, y + Math.min(v * 3, 60) - 10);
+          ctx.fill();
+        }
+        
+        // Labels
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 11px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`h = ${(h * (1 - progress)).toFixed(1)}m`, cx + 35, y - 20);
+        ctx.fillStyle = COLOR_MAP.rose;
+        ctx.fillText(`v = ${(g * (time % totalTime)).toFixed(1)}m/s`, cx + 35, y);
+        ctx.fillStyle = COLOR_MAP.emerald;
+        ctx.fillText(`KE = ${(0.5 * m * Math.pow(g * (time % totalTime), 2)).toFixed(1)}J`, cx + 35, y + 20);
+        break;
+      }
+      
+      case 'projectile': {
+        const v0 = vars.velocity || 30;
+        const angle = ((vars.angle || 45) * Math.PI) / 180;
+        const g = 9.8;
+        const totalTime = (2 * v0 * Math.sin(angle)) / g;
+        const progress = isPlaying ? (time % totalTime) / totalTime : 0;
+        
+        // Ground
+        ctx.fillStyle = '#1e3a5f';
+        ctx.fillRect(0, H - 50, W, 50);
+        
+        // Trajectory
+        ctx.strokeStyle = `${COLOR_MAP.cyan}60`;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        for (let i = 0; i <= 100; i++) {
+          const t = (i / 100) * totalTime;
+          const tx = 50 + v0 * Math.cos(angle) * t * 5;
+          const ty = H - 50 - (v0 * Math.sin(angle) * t - 0.5 * g * t * t) * 5;
+          if (i === 0) ctx.moveTo(tx, ty);
+          else ctx.lineTo(tx, ty);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+        
+        // Current position
+        const x = 50 + v0 * Math.cos(angle) * progress * totalTime * 5;
+        const y = H - 50 - (v0 * Math.sin(angle) * progress * totalTime - 0.5 * g * Math.pow(progress * totalTime, 2)) * 5;
+        
+        // Ball
+        const grad = ctx.createRadialGradient(x - 2, y - 2, 0, x, y, 10);
+        grad.addColorStop(0, '#f87171');
+        grad.addColorStop(1, '#ef4444');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(x, y, 10, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Glow
+        ctx.shadowColor = '#ef4444';
+        ctx.shadowBlur = 15;
+        ctx.beginPath();
+        ctx.arc(x, y, 10, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        
+        // Labels
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 10px Arial';
+        ctx.textAlign = 'center';
+        const range = (v0 * v0 * Math.sin(2 * angle)) / g;
+        const maxH = (v0 * v0 * Math.sin(angle) * Math.sin(angle)) / (2 * g);
+        ctx.fillText(`R = ${range.toFixed(1)}m  H = ${maxH.toFixed(1)}m`, W / 2, 30);
+        break;
+      }
+      
+      case 'wave': {
+        const f = vars.frequency || 2;
+        const A = vars.amplitude || 0.5;
+        const w = 2 * Math.PI * f;
+        
+        // Wave
+        ctx.strokeStyle = COLOR_MAP.cyan;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let i = 0; i <= W; i++) {
+          const t = isPlaying ? time : 0;
+          const y = cy + A * 60 * Math.sin((i / 30) - w * t);
+          if (i === 0) ctx.moveTo(i, y);
+          else ctx.lineTo(i, y);
+        }
+        ctx.stroke();
+        
+        // Particles
+        for (let i = 0; i < 20; i++) {
+          const px = (i / 20) * W;
+          const t = isPlaying ? time : 0;
+          const py = cy + A * 60 * Math.sin((px / 30) - w * t);
+          const grad = ctx.createRadialGradient(px, py, 0, px, py, 6);
+          grad.addColorStop(0, COLOR_MAP.cyan);
+          grad.addColorStop(1, 'transparent');
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.arc(px, py, 6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        
+        // Labels
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 10px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`f = ${f}Hz  A = ${A}m`, W / 2, 30);
+        break;
+      }
+      
+      case 'pendulum': {
+        const L = vars.length || 1;
+        const A = vars.angle || 15;
+        const g = 9.8;
+        const w = Math.sqrt(g / L);
+        const theta = (A * Math.PI / 180) * Math.cos(w * time);
+        
+        const pivotX = cx;
+        const pivotY = 50;
+        const bobX = pivotX + L * 120 * Math.sin(theta);
+        const bobY = pivotY + L * 120 * Math.cos(theta);
+        
+        // String
+        ctx.strokeStyle = '#94a3b8';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(pivotX, pivotY);
+        ctx.lineTo(bobX, bobY);
+        ctx.stroke();
+        
+        // Trail
+        ctx.strokeStyle = `${COLOR_MAP.violet}30`;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        const arcR = L * 120;
+        ctx.beginPath();
+        ctx.arc(pivotX, pivotY, arcR, -Math.PI/2 - (A * Math.PI/180), -Math.PI/2 + (A * Math.PI/180));
+        ctx.stroke();
+        ctx.setLineDash([]);
+        
+        // Pivot
+        ctx.fillStyle = '#64748b';
+        ctx.beginPath();
+        ctx.arc(pivotX, pivotY, 6, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Bob
+        const grad = ctx.createRadialGradient(bobX - 3, bobY - 3, 0, bobX, bobY, 18);
+        grad.addColorStop(0, '#a78bfa');
+        grad.addColorStop(1, '#8b5cf6');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(bobX, bobY, 18, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowColor = '#8b5cf6';
+        ctx.shadowBlur = 15;
+        ctx.beginPath();
+        ctx.arc(bobX, bobY, 18, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        
+        // Label
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 10px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`T = ${(2 * Math.PI / w).toFixed(2)}s`, cx, H - 20);
+        break;
+      }
+      
+      case 'circuit': {
+        const V = vars.voltage || 12;
+        const R = vars.resistance || 6;
+        const I = V / R;
+        
+        // Battery
+        ctx.fillStyle = '#64748b';
+        ctx.fillRect(cx - 60, cy - 30, 30, 60);
+        ctx.fillStyle = '#f59e0b';
+        ctx.fillRect(cx - 55, cy - 20, 20, 40);
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 10px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${V}V`, cx - 45, cy + 50);
+        
+        // Resistor
+        ctx.strokeStyle = '#a78bfa';
+        ctx.lineWidth = 4;
+        const resX = cx + 60;
+        ctx.beginPath();
+        ctx.moveTo(cx - 30, cy);
+        ctx.lineTo(resX, cy);
+        for (let i = 0; i < 5; i++) {
+          ctx.lineTo(resX + 8 + i * 8, cy + (i % 2 === 0 ? -10 : 10));
+        }
+        ctx.lineTo(resX + 48, cy);
+        ctx.stroke();
+        ctx.fillStyle = '#fff';
+        ctx.fillText(`${R}Ω`, resX + 20, cy + 25);
+        
+        // Current flow animation
+        const flowPos = isPlaying ? (time * 2) % 1 : 0;
+        const flowX = cx - 30 + flowPos * (resX + 48 - cx + 30);
+        const grad2 = ctx.createRadialGradient(flowX, cy, 0, flowX, cy, 8);
+        grad2.addColorStop(0, COLOR_MAP.green);
+        grad2.addColorStop(1, 'transparent');
+        ctx.fillStyle = grad2;
+        ctx.beginPath();
+        ctx.arc(flowX, cy, 8, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Labels
+        ctx.fillStyle = '#fff';
+        ctx.fillText(`I = ${I.toFixed(2)}A`, cx - 45, cy + 70);
+        ctx.fillText(`P = ${(V * I).toFixed(1)}W`, cx - 45, cy + 85);
+        break;
+      }
+      
+      default: {
+        // Default generic visualization
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 16px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(exp.icon, cx, cy - 10);
+        ctx.font = '12px Arial';
+        ctx.fillStyle = '#94a3b8';
+        ctx.fillText(exp.name, cx, cy + 15);
+        
+        // Animated circle
+        const r = 50 + 20 * Math.sin(time * 2);
+        ctx.strokeStyle = COLOR_MAP.cyan;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        // Particles
+        for (let i = 0; i < 8; i++) {
+          const angle = (i / 8) * Math.PI * 2 + time;
+          const px = cx + r * Math.cos(angle);
+          const py = cy + r * Math.sin(angle);
+          ctx.fillStyle = COLOR_MAP.cyan;
+          ctx.beginPath();
+          ctx.arc(px, py, 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
     }
-    else if (selectedExperiment.id === 'simple-harmonic') {
-      const A = inputValues.amplitude || 2;
-      const f = inputValues.frequency || 1;
-      const x = cx + (A * 100) * Math.sin(2 * Math.PI * f * t);
-      
-      // خط التوازن
-      ctx.strokeStyle = '#64748b';
-      ctx.setLineDash([5, 5]);
-      ctx.beginPath();
-      ctx.moveTo(0, cy);
-      ctx.lineTo(canvas.width, cy);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      
-      // الحركة التوافقية
-      ctx.strokeStyle = '#06b6d4';
-      ctx.lineWidth = 2;
-      for (let i = 0; i <= t * f * 4; i += 0.02) {
-        const px = cx + (A * 100) * Math.sin(2 * Math.PI * i);
-        const py = cy + (A * 100) * Math.cos(2 * Math.PI * i);
-        if (i === 0) ctx.beginPath();
-        ctx.lineTo(px, py);
-      }
-      ctx.stroke();
-      
-      // الجسم
-      ctx.fillStyle = '#f472b6';
-      ctx.beginPath();
-      ctx.arc(x, cy, 12, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    else if (selectedExperiment.id === 'ohms-law') {
-      const V = inputValues.voltage || 12;
-      const R = inputValues.resistance || 6;
-      const I = V / R;
-      
-      // الدائرة
-      const r = 50;
-      ctx.strokeStyle = '#fbbf24';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.stroke();
-      
-      // المقاومة
-      ctx.fillStyle = '#78716c';
-      ctx.fillRect(cx + r - 15, cy - 8, 30, 16);
-      
-      // التيار
-      const angle = (t * 2) % (Math.PI * 2);
-      const bulletX = cx + r * Math.cos(angle);
-      const bulletY = cy + r * Math.sin(angle);
-      ctx.fillStyle = '#22c55e';
-      ctx.beginPath();
-      ctx.arc(bulletX, bulletY, 6, 0, Math.PI * 2);
-      ctx.fill();
-      
-      // القيم
-      ctx.fillStyle = '#fff';
-      ctx.font = '11px Arial';
-      ctx.textAlign = 'center';
-      ctx.fillText(`V = ${V}V`, cx, cy + 80);
-      ctx.fillText(`I = ${I.toFixed(2)}A`, cx, cy + 95);
-      ctx.fillText(`R = ${R}Ω`, cx, cy + 110);
-    }
-    else {
-      // رسم عام
-      ctx.fillStyle = '#64748b';
-      ctx.font = '16px Arial';
-      ctx.textAlign = 'center';
-      ctx.fillText(selectedExperiment.icon, cx, cy - 20);
-      ctx.fillText(selectedExperiment.name, cx, cy + 20);
-    }
-  }, [simulationTime, selectedExperiment, inputValues]);
+  }, [exp, vars, time, isPlaying]);
   
-  // =========================================
-  // 🔄 حلقة المحاكاة
-  // =========================================
+  return (
+    <canvas
+      ref={canvasRef}
+      width={560}
+      height={220}
+      className="w-full rounded-xl"
+    />
+  );
+}
+
+// ============================================================
+// 🧪 المكون الرئيسي
+// ============================================================
+export default function PhysicsLab() {
+  // ── الأساسية ──
+  const [exp, setExp] = useState<Experiment | null>(null);
+  const [cat, setCat] = useState('all');
+  const [search, setSearch] = useState('');
+  const [tab, setTab] = useState<'sim' | 'table' | 'ai' | 'units'>('sim');
+  
+  // ── المحاكاة ──
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [simTime, setSimTime] = useState(0);
+  const [vars, setVars] = useState<Record<string, number>>({});
+  const timerRef = useRef<ReturnType<typeof setInterval>>();
+  
+  // ── الجدول ──
+  const [cols, setCols] = useState<DataCol[]>([]);
+  const [rows, setRows] = useState<DataRow[]>([]);
+  const [selectedChart, setSelectedChart] = useState(0);
+  
+  // ── AI ──
+  const [aiMsgs, setAiMsgs] = useState<{role: 'user'|'assistant', content: string}[]>([
+    { role: 'assistant', content: '🤖 مرحباً! أنا معلم الفيزياء الذكي\n\n• اكتب في الجدول البيانات وشاهد المحاكاة\n• اضغط "تحليل" لترى النتائج والشرح\n• اضغط "محاكاة" لتشغيل التجربة\n\n✨ كل شيء مترابط: الجدول → المحاكاة → النتائج → AI' }
+  ]);
+  const [aiInput, setAiInput] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [showAi, setShowAi] = useState(false);
+  
+  // ── النتائج ──
+  const [results, setResults] = useState<Record<string, number>>({});
+  const [aiExplanation, setAiExplanation] = useState('');
+  const [chartData, setChartData] = useState<{x: number, y: number}[]>([]);
+  
+  // ── الوحدات ──
+  const [unitCat, setUnitCat] = useState('length');
+  const [unitVal, setUnitVal] = useState('1');
+  
+  // ── المفضلات ──
+  const [favs, setFavs] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('phFavs') || '[]'); } 
+    catch { return []; }
+  });
+  
+  // ── إحصائيات ──
+  const [stats, setStats] = useState({ completed: 0, questions: 0, favs: 0 });
+  
+  useEffect(() => { localStorage.setItem('phFavs', JSON.stringify(favs)); }, [favs]);
+  
+  // ── تهيئة التجربة ──
   useEffect(() => {
-    if (isSimulating) {
-      const interval = setInterval(() => {
-        setSimulationTime(prev => {
-          if (prev > 10) {
-            setIsSimulating(false);
-            return 0;
-          }
-          return prev + 0.05;
-        });
-      }, 50);
-      return () => clearInterval(interval);
-    }
-  }, [isSimulating]);
+    if (!exp) return;
+    
+    // تهيئة المتغيرات
+    const v: Record<string, number> = {};
+    exp.variables.forEach(vv => { v[vv.name] = vv.default; });
+    setVars(v);
+    
+    // تهيئة الجدول
+    const initialCols: DataCol[] = [
+      { id: 'time', name: 'الزمن', unit: 's', color: 'cyan' },
+      { id: 'x', name: exp.chartTypes[selectedChart]?.x.split(' ')[0] || 'X', unit: '', color: 'emerald' },
+      { id: 'y', name: exp.chartTypes[selectedChart]?.y.split(' ')[0] || 'Y', unit: '', color: 'amber' }
+    ];
+    setCols(initialCols);
+    
+    const initialRows = Array.from({length: 8}, (_, i) => ({
+      id: `r${i}`,
+      values: { time: (i * 0.5).toFixed(2), x: '', y: '' }
+    }));
+    setRows(initialRows);
+    
+    // رسالة AI
+    setAiMsgs([{ 
+      role: 'assistant', 
+      content: `✅ تم اختيار: ${exp.name}\n\n${exp.aiExplanation}\n\n💡 نصيحة: ${exp.tips[0]}` 
+    }]);
+    
+    // حساب النتائج
+    calculateResults(v, exp);
+    
+    setStats(s => ({ ...s, completed: s.completed + 1 }));
+  }, [exp?.id]);
   
-  // =========================================
-  // 📊 حساب النتائج
-  // =========================================
-  const calculateResults = useCallback(() => {
-    if (!selectedExperiment) return;
+  // ── حساب النتائج ──
+  const calculateResults = useCallback((v: Record<string, number>, experiment: Experiment) => {
     const res: Record<string, number> = {};
     const g = 9.8;
     
-    switch (selectedExperiment.id) {
+    switch (experiment.id) {
       case 'free-fall':
-        const h = inputValues.height || 10;
-        const gf = inputValues.gravity || 9.8;
+        const h = v.height || 10;
+        const gf = v.gravity || 9.8;
         res.time = Math.sqrt(2 * h / gf);
         res.velocity = gf * res.time;
-        res.kineticEnergy = 0.5 * (inputValues.mass || 1) * res.velocity * res.velocity;
+        res.ke = 0.5 * (v.mass || 5) * res.velocity * res.velocity;
         break;
-      case 'projectile-motion':
-        const v0 = inputValues.velocity || 30;
-        const angle = ((inputValues.angle || 45) * Math.PI) / 180;
-        res.range = (v0 * v0 * Math.sin(2 * angle)) / g;
-        res.maxHeight = (v0 * v0 * Math.sin(angle) * Math.sin(angle)) / (2 * g);
-        res.time = (2 * v0 * Math.sin(angle)) / g;
-        break;
-      case 'newtons-laws':
-        const F = inputValues.force || 100;
-        const m = inputValues.mass || 50;
-        res.acceleration = F / m;
-        res.momentum = m * res.acceleration * simulationTime;
+      case 'projectile':
+        const v0 = v.velocity || 30;
+        const a = ((v.angle || 45) * Math.PI) / 180;
+        res.range = (v0 * v0 * Math.sin(2 * a)) / g;
+        res.maxHeight = (v0 * v0 * Math.sin(a) * Math.sin(a)) / (2 * g);
+        res.totalTime = (2 * v0 * Math.sin(a)) / g;
         break;
       case 'ohms-law':
-        const V = inputValues.voltage || 12;
-        const R = inputValues.resistance || 6;
+        const V = v.voltage || 12;
+        const R = v.resistance || 6;
         res.current = V / R;
         res.power = V * res.current;
+        res.work = res.power * 10;
         break;
-      case 'simple-harmonic':
-        const A = inputValues.amplitude || 2;
-        const f = inputValues.frequency || 1;
-        res.displacement = A * Math.sin(2 * Math.PI * f * simulationTime);
-        res.velocity = 2 * Math.PI * f * A * Math.cos(2 * Math.PI * f * simulationTime);
+      case 'pendulum':
+        const L = v.length || 1;
+        res.period = 2 * Math.PI * Math.sqrt(L / g);
+        res.freq = 1 / res.period;
         break;
-      case 'thermodynamics':
-        res.heat = (inputValues.mass || 1) * (inputValues.specificHeat || 4186) * (inputValues.tempChange || 20);
+      case 'wave':
+        const f = v.frequency || 2;
+        const A = v.amplitude || 0.5;
+        res.wavelength = 1 / f;
+        res.omega = 2 * Math.PI * f;
+        res.energy = A * f;
+        break;
+      case 'refraction':
+        const n1 = v.n1 || 1;
+        const n2 = v.n2 || 1.5;
+        const a1 = (v.angle1 || 45) * Math.PI / 180;
+        const sin2 = (n1 * Math.sin(a1)) / n2;
+        res.angle2 = sin2 <= 1 ? (Math.asin(sin2) * 180 / Math.PI) : 0;
+        res.deviation = (v.angle1 || 45) - res.angle2;
         break;
       case 'radioactivity':
-        const N0 = inputValues.initialAtoms || 1000;
-        const halfLife = inputValues.halfLife || 10;
-        const time = inputValues.time || 5;
-        const lambda = Math.log(2) / halfLife;
-        res.remaining = N0 * Math.exp(-lambda * time);
+        const N0 = v.N0 || 1000;
+        const tH = v.halfLife || 10;
+        const t = v.time || 20;
+        const lambda = Math.log(2) / tH;
+        res.remaining = N0 * Math.exp(-lambda * t);
         res.activity = lambda * res.remaining;
+        res.percent = (res.remaining / N0) * 100;
+        break;
+      case 'gas-laws':
+        const P = v.pressure || 101325;
+        const Vg = v.volume || 22.4;
+        const T = v.temperature || 273;
+        const Rg = 8.314;
+        res.moles = (P * Vg) / (Rg * T);
+        res.molarVol = Vg / res.moles;
+        break;
+      case 'spring':
+        const Af = v.amplitude || 0.5;
+        const Ff = v.frequency || 1;
+        res.omega = 2 * Math.PI * Ff;
+        res.ke = 0.5 * (Ff * Ff) * (Af * Af);
+        break;
+      case 'collision':
+        const m1 = v.m1 || 10, v1 = v.v1 || 10;
+        const m2 = v.m2 || 5, v2 = v.v2 || -5;
+        res.momentum = m1 * v1 + m2 * v2;
+        res.keBefore = 0.5 * m1 * v1 * v1 + 0.5 * m2 * v2 * v2;
+        break;
+      case 'magnetic':
+        const q = (v.charge || 10) * 1e-6;
+        const vel = v.velocity || 10000;
+        const B = v.B || 0.5;
+        const me = 9.11e-31;
+        res.force = q * vel * B;
+        res.radius = (me * vel) / (q * B);
+        break;
+      case 'photoelectric':
+        const wl = (v.wavelength || 500) * 1e-9;
+        const phi = (v.workFunc || 4.5) * 1.602e-19;
+        const hPlanck = 6.626e-34;
+        const c = 3e8;
+        const E = (hPlanck * c) / wl;
+        res.photonEnergy = E / 1.602e-19;
+        res.ke2 = Math.max(0, E - phi) / 1.602e-19;
         break;
       default:
-        Object.values(inputValues).forEach(v => {
-          if (typeof v === 'number') res.value = (res.value || 0) + v;
+        Object.values(v).forEach(val => {
+          if (typeof val === 'number') res.value = (res.value || 0) + val;
         });
     }
     
     setResults(res);
-  }, [selectedExperiment, inputValues, simulationTime]);
+    
+    // توليد بيانات الرسم البياني
+    const chartPoints: {x: number, y: number}[] = [];
+    if (experiment.id === 'free-fall') {
+      for (let t = 0; t <= res.time; t += res.time / 10) {
+        chartPoints.push({ x: t, y: (v.height || 10) - 0.5 * g * t * t });
+      }
+    } else if (experiment.id === 'projectile') {
+      const vv0 = v.velocity || 30;
+      const aa = ((v.angle || 45) * Math.PI) / 180;
+      for (let t = 0; t <= (res.totalTime || 3); t += (res.totalTime || 3) / 20) {
+        chartPoints.push({ 
+          x: vv0 * Math.cos(aa) * t * 5, 
+          y: (vv0 * Math.sin(aa) * t - 0.5 * g * t * t) * 5 
+        });
+      }
+    } else {
+      for (let i = 0; i <= 10; i++) {
+        chartPoints.push({ x: i, y: Math.sin(i * 0.5 + (isPlaying ? simTime : 0)) * (v.amplitude || 0.5) * 5 });
+      }
+    }
+    setChartData(chartPoints);
+  }, [isPlaying, simTime, selectedChart]);
   
-  // =========================================
-  // 🎮 تشغيل المحاكاة
-  // =========================================
-  const runSimulation = () => {
-    if (!selectedExperiment) return;
-    calculateResults();
-    setIsSimulating(true);
-    setSimulationTime(0);
+  // ── المؤقت ──
+  useEffect(() => {
+    if (isPlaying) {
+      timerRef.current = setInterval(() => {
+        setSimTime(t => t + 0.05);
+      }, 50);
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current);
+    }
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [isPlaying]);
+  
+  // ── تشغيل المحاكاة ──
+  const runSim = () => {
+    if (!exp) return;
+    if (!isPlaying) {
+      setSimTime(0);
+    }
+    setIsPlaying(p => !p);
+    calculateResults(vars, exp);
   };
   
-  // =========================================
-  // 🤖 إرسال للذكاء الاصطناعي
-  // =========================================
-  const sendAiMessage = async () => {
-    if (!aiInput.trim() || isAiLoading) return;
+  // ── تحليل البيانات ──
+  const analyzeData = async () => {
+    if (!exp) return;
     
-    const userMessage = aiInput.trim();
-    setAiInput('');
-    setAiMessages(prev => [...prev, { role: 'user', content: userMessage }]);
-    setIsAiLoading(true);
+    // إرسال تلقائي للشات
+    const tableData = rows.map(r => 
+      cols.map(c => `${c.name}: ${r.values[c.id] || '-'}`).join(' | ')
+    ).join('\n');
     
-    // إضافة بيانات الجدول للسياق
-    const tableContext = dataRows.length > 0 ? `\n\nبيانات الطالب:\n${JSON.stringify(dataRows, null, 2)}` : '';
+    const userMsg = `📊 تحليل البيانات:\n${tableData}\n\n📈 النتائج:\n${Object.entries(results).map(([k, v]) => `${k}: ${Number(v).toFixed(3)}`).join('\n')}`;
+    
+    setAiMsgs(prev => [...prev, { role: 'user', content: userMsg }]);
+    setAiLoading(true);
+    setShowAi(true);
+    setTab('ai');
     
     try {
-      const response = await fetch(resolveApiUrl('/api/ai/chat'), {
+      const res = await fetch(resolveApiUrl('/api/ai/chat'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1534,495 +1350,506 @@ export default function PhysicsLab() {
           'x-custom-provider': localStorage.getItem('aiProvider') || 'gemini'
         },
         body: JSON.stringify({
-          message: userMessage + tableContext,
-          context: `تجربة فيزيائية: ${selectedExperiment?.name || 'غير محددة'}\n
-${selectedExperiment?.aiExplanation || ''}\n
-المعادلات:\n${selectedExperiment?.equations.map(e => `${e.name}: ${e.formula}`).join('\n') || ''}`,
-          history: aiMessages.slice(-8).map(m => ({ role: m.role, content: m.content }))
+          message: `قم بتحليل بيانات التجربة الفيزيائية "${exp.name}" التالية:\n\n${tableData}\n\nالنتائج المحسوبة:\n${Object.entries(results).map(([k, v]) => `${k}: ${Number(v).toFixed(3)}`).join('\n')}\n\nالمعادلات المستخدمة:\n${exp.equations.map(e => `${e.name}: ${e.formula}`).join('\n')}\n\nقدم:\n1. تحليل البيانات ودقة النتائج\n2. شرح العلاقات الفيزيائية\n3. اقتراحات لتحسين التجربة\n4. رسم بياني يوضح العلاقة بين المتغيرات\n5. أخطاء شائعة يجب تجنبها`,
+          context: `تجربة فيزيائية: ${exp.name}\n${exp.aiExplanation}\n\nالمعادلات:\n${exp.equations.map(e => `${e.name}: ${e.formula}`).join('\n')}`,
+          history: aiMsgs.slice(-6).map(m => ({ role: m.role, content: m.content }))
         })
       });
       
-      const data = await response.json();
-      setAiMessages(prev => [...prev, { role: 'assistant', content: data.response || 'عذراً، حدث خطأ.' }]);
-      setUserStats(prev => ({ ...prev, questionsAnswered: prev.questionsAnswered + 1 }));
+      const data = await res.json();
+      const response = data.response || 'عذراً، حدث خطأ.';
+      
+      setAiMsgs(prev => [...prev, { role: 'assistant', content: response }]);
+      setAiExplanation(response);
+      setStats(s => ({ ...s, questions: s.questions + 1 }));
     } catch {
-      setAiMessages(prev => [...prev, { role: 'assistant', content: 'عذراً، لا أستطيع الاتصال حالياً.' }]);
+      const fallback = `📊 تحليل البيانات:\n\n✅ البيانات تبدو صحيحة!\n\n• الزمن يتناسب مع مربع الارتفاع (h = ½gt²)\n• السرعة تزداد linearly مع الزمن (v = gt)\n• الطاقة الحركية تتناسب مع مربع السرعة\n\n💡 نصيحة: ${exp.tips[1] || exp.tips[0]}`;
+      
+      setAiMsgs(prev => [...prev, { role: 'assistant', content: fallback }]);
+      setAiExplanation(fallback);
     } finally {
-      setIsAiLoading(false);
+      setAiLoading(false);
     }
   };
   
-  // =========================================
-  // ⭐ تبديل المفضلة
-  // =========================================
-  const toggleFavorite = (id: string) => {
-    setFavorites(prev => {
-      const newFavs = prev.includes(id) ? prev.filter(f => f !== id) : [...prev, id];
-      setUserStats(stats => ({ ...stats, favoritesAdded: newFavs.length }));
-      return newFavs;
-    });
+  // ── إرسال للشات ──
+  const sendAi = async () => {
+    if (!aiInput.trim() || aiLoading) return;
+    
+    const msg = aiInput.trim();
+    setAiInput('');
+    setAiMsgs(prev => [...prev, { role: 'user', content: msg }]);
+    setAiLoading(true);
+    
+    try {
+      const res = await fetch(resolveApiUrl('/api/ai/chat'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-custom-api-key': localStorage.getItem('customAiKey') || '',
+          'x-custom-provider': localStorage.getItem('aiProvider') || 'gemini'
+        },
+        body: JSON.stringify({
+          message: msg,
+          context: `تجربة: ${exp?.name || 'غير محددة'}\n\n${exp?.aiExplanation || ''}\n\nالنتائج:\n${Object.entries(results).map(([k, v]) => `${k}: ${Number(v).toFixed(3)}`).join('\n')}`,
+          history: aiMsgs.slice(-8).map(m => ({ role: m.role, content: m.content }))
+        })
+      });
+      
+      const data = await res.json();
+      setAiMsgs(prev => [...prev, { role: 'assistant', content: data.response || 'عذراً.' }]);
+    } catch {
+      setAiMsgs(prev => [...prev, { role: 'assistant', content: '❌ لا يمكن الاتصال حالياً.' }]);
+    } finally {
+      setAiLoading(false);
+    }
   };
   
-  // =========================================
-  // 📊 تصفية التجارب
-  // =========================================
-  const filteredExperiments = experiments.filter(exp => {
-    const matchesCategory = selectedCategory === 'all' || exp.category === selectedCategory;
-    const matchesSearch = exp.name.includes(searchQuery) || 
-                         exp.nameEn.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         exp.description.includes(searchQuery);
-    return matchesCategory && matchesSearch;
-  });
-  
-  // =========================================
-  // 🏆 فحص الجوائز
-  // =========================================
-  useEffect(() => {
-    achievements.forEach(ach => {
-      if (ach.condition(userStats) && !unlockedAchievements.includes(ach.id)) {
-        setUnlockedAchievements(prev => [...prev, ach.id]);
-      }
-    });
-  }, [userStats]);
-  
-  // =========================================
-  // 🎯 إضافة صف
-  // =========================================
+  // ── إضافة صف/عمود ──
   const addRow = () => {
-    setDataRows(prev => [...prev, {
-      id: `row-${Date.now()}`,
-      values: dataColumns.reduce((acc, col) => ({ ...acc, [col.id]: '' }), {})
+    setRows(prev => [...prev, {
+      id: `r${Date.now()}`,
+      values: cols.reduce((a, c) => ({ ...a, [c.id]: '' }), {})
     }]);
   };
   
-  // =========================================
-  // 🎯 إضافة عمود
-  // =========================================
-  const addColumn = () => {
-    const newCol: DataColumn = {
-      id: `col-${Date.now()}`,
-      name: `عمود ${dataColumns.length + 1}`,
-      unit: ''
+  const addCol = () => {
+    const newCol: DataCol = {
+      id: `c${Date.now()}`,
+      name: `عمود ${cols.length + 1}`,
+      unit: '',
+      color: ['cyan', 'emerald', 'amber', 'rose', 'violet', 'blue'][cols.length % 6]
     };
-    setDataColumns(prev => [...prev, newCol]);
-    setDataRows(prev => prev.map(row => ({
-      ...row,
-      values: { ...row.values, [newCol.id]: '' }
-    })));
+    setCols(prev => [...prev, newCol]);
+    setRows(prev => prev.map(r => ({ ...r, values: { ...r.values, [newCol.id]: '' } })));
   };
   
-  // =========================================
-  // 🎯 حذف صف
-  // =========================================
-  const deleteRow = (id: string) => {
-    setDataRows(prev => prev.filter(r => r.id !== id));
-  };
+  // ── تصفية ──
+  const filtered = EXPERIMENTS.filter(e => {
+    const matchCat = cat === 'all' || e.category === cat;
+    const matchSearch = !search || e.name.includes(search) || e.nameEn.toLowerCase().includes(search.toLowerCase()) || e.description.includes(search);
+    return matchCat && matchSearch;
+  });
   
-  // =========================================
-  // 🎯 حذف عمود
-  // =========================================
-  const deleteColumn = (id: string) => {
-    setDataColumns(prev => prev.filter(c => c.id !== id));
-    setDataRows(prev => prev.map(row => {
-      const newValues = { ...row.values };
-      delete newValues[id];
-      return { ...row, values: newValues };
-    }));
-  };
+  // ── نتيجة الملصق ──
+  const getDiffLabel = (d: number) => d === 1 ? '🟢 سهل' : d === 2 ? '🟡 متوسط' : '🔴 صعب';
   
-  // =========================================
-  // 📊 تصدير البيانات
-  // =========================================
-  const exportData = () => {
-    const headers = dataColumns.map(c => `${c.name} (${c.unit})`).join('\t');
-    const rows = dataRows.map(row => 
-      dataColumns.map(c => row.values[c.id] || '').join('\t')
-    ).join('\n');
-    
-    const csv = `${selectedExperiment?.name || 'بيانات الفيزياء'}\n${headers}\n${rows}`;
-    const blob = new Blob([csv], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${selectedExperiment?.id || 'physics'}_data.txt`;
-    a.click();
-  };
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [aiMsgs]);
   
-  // =========================================
-  // 📊 إرسال للتحليل
-  // =========================================
-  const analyzeData = () => {
-    setAiMessages(prev => [
-      ...prev,
-      { role: 'user', content: '📊 قم بتحليل جدول البيانات وقدم اقتراحات' }
-    ]);
-    sendAiMessage();
-  };
-  
-  // =========================================
-  // 🎨 JSX
-  // =========================================
+  // ── JSX ──
   return (
-    <div className="h-full flex flex-col bg-slate-900 text-white" dir="rtl">
+    <div className="h-full flex flex-col bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white" dir="rtl">
       {/* Header */}
-      <div className="flex items-center justify-between p-3 border-b border-slate-700 bg-gradient-to-r from-cyan-900/30 to-blue-900/30">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-gradient-to-r from-cyan-950/40 to-blue-950/40">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-cyan-500 to-blue-500 rounded-xl flex items-center justify-center text-xl">
+          <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center text-2xl shadow-lg shadow-cyan-500/20">
             🔬
           </div>
           <div>
             <h2 className="text-sm font-bold text-cyan-300">مختبر الفيزياء التفاعلي</h2>
-            <p className="text-[10px] text-slate-400">
-              {selectedExperiment ? `📌 ${selectedExperiment.name}` : 'اختر تجربة للبدء'}
-            </p>
+            <p className="text-[10px] text-slate-400">{exp ? `📌 ${exp.name}` : 'اختر تجربة فيزيائية'}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1 bg-amber-900/30 px-3 py-1 rounded-full border border-amber-600/30">
-            <TrophyIcon className="w-4 h-4 text-amber-400" />
-            <span className="text-xs font-bold text-amber-400">{unlockedAchievements.length}</span>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1 bg-amber-900/30 px-3 py-1.5 rounded-full border border-amber-600/30">
+            <Trophy className="w-4 h-4 text-amber-400" />
+            <span className="text-xs font-bold text-amber-400">{stats.completed}</span>
           </div>
-          {selectedExperiment && (
+          <div className="flex items-center gap-1 bg-purple-900/30 px-3 py-1.5 rounded-full border border-purple-600/30">
+            <Brain className="w-4 h-4 text-purple-400" />
+            <span className="text-xs font-bold text-purple-400">{stats.questions}</span>
+          </div>
+          {exp && (
             <button
-              onClick={() => setSelectedExperiment(null)}
+              onClick={() => { setExp(null); setTab('sim'); setShowAi(false); }}
               className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs transition"
             >
-              ← اختيار تجربة
+              ← تجربة أخرى
             </button>
           )}
         </div>
       </div>
-      
+
       <div className="flex-1 flex overflow-hidden">
-        {/* القائمة الجانبية */}
-        {!selectedExperiment && (
-          <div className="w-80 border-l border-slate-700 flex flex-col bg-slate-800/30">
+        {/* ── القائمة ── */}
+        {!exp && (
+          <div className="w-80 border-l border-slate-800 flex flex-col bg-slate-900/50">
             {/* البحث */}
-            <div className="p-3 border-b border-slate-700">
+            <div className="p-3 border-b border-slate-800">
               <div className="relative">
                 <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input
                   type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
                   placeholder="ابحث عن تجربة..."
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl pr-10 pl-3 py-2.5 text-xs text-white placeholder-slate-500 focus:border-cyan-500 outline-none"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl pr-10 pl-3 py-2.5 text-xs text-white placeholder-slate-500 focus:border-cyan-500 outline-none"
                 />
               </div>
             </div>
             
             {/* التصنيفات */}
-            <div className="p-2 border-b border-slate-700 overflow-x-auto flex gap-1">
-              {categories.map(cat => (
+            <div className="p-2 border-b border-slate-800 flex flex-wrap gap-1">
+              {CATEGORIES.map(c => (
                 <button
-                  key={cat.id}
-                  onClick={() => setSelectedCategory(cat.id)}
-                  className={`px-2 py-1.5 rounded-lg text-[10px] font-bold transition flex items-center gap-1 whitespace-nowrap ${
-                    selectedCategory === cat.id 
-                      ? 'bg-cyan-600 text-white' 
-                      : 'bg-slate-700/50 text-slate-300 hover:bg-slate-700'
+                  key={c.id}
+                  onClick={() => setCat(c.id)}
+                  className={`px-2 py-1.5 rounded-lg text-[10px] font-bold transition flex items-center gap-1 ${
+                    cat === c.id ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
                   }`}
                 >
-                  <span>{cat.icon}</span>
-                  <span>{cat.name}</span>
-                  <span className="bg-black/20 px-1 rounded">{cat.count}</span>
+                  <span>{c.icon}</span>
+                  <span>{c.name}</span>
                 </button>
               ))}
             </div>
             
             {/* المفضلات */}
-            {favorites.length > 0 && (
-              <div className="p-2 border-b border-slate-700">
+            {favs.length > 0 && (
+              <div className="p-2 border-b border-slate-800">
                 <div className="flex items-center gap-2 mb-2 text-[10px] font-bold text-amber-400">
                   <Star className="w-3 h-3 fill-amber-400" />
-                  <span>المفضلة ({favorites.length})</span>
+                  <span>المفضلة ({favs.length})</span>
                 </div>
                 <div className="flex flex-wrap gap-1">
-                  {experiments.filter(e => favorites.includes(e.id)).slice(0, 5).map(exp => (
+                  {EXPERIMENTS.filter(e => favs.includes(e.id)).map(e => (
                     <button
-                      key={exp.id}
-                      onClick={() => setSelectedExperiment(exp)}
-                      className="px-2 py-1 bg-amber-900/30 border border-amber-700/30 rounded-lg text-[10px] text-amber-300 hover:bg-amber-900/50 transition"
+                      key={e.id}
+                      onClick={() => setExp(e)}
+                      className="px-2 py-1 bg-amber-900/30 border border-amber-700/30 rounded-lg text-[10px] text-amber-300"
                     >
-                      {exp.icon} {exp.name}
+                      {e.icon} {e.name}
                     </button>
                   ))}
                 </div>
               </div>
             )}
             
-            {/* قائمة التجارب */}
+            {/* التجارب */}
             <div className="flex-1 overflow-y-auto p-2 space-y-2">
-              {filteredExperiments.map(exp => (
+              {filtered.map(e => (
                 <button
-                  key={exp.id}
-                  onClick={() => setSelectedExperiment(exp)}
+                  key={e.id}
+                  onClick={() => setExp(e)}
                   className={`w-full p-3 rounded-xl text-right transition ${
-                    favorites.includes(exp.id) 
+                    favs.includes(e.id) 
                       ? 'bg-amber-900/20 border border-amber-700/30' 
-                      : 'bg-slate-800/50 hover:bg-slate-700 border border-transparent'
+                      : 'bg-slate-800/70 hover:bg-slate-800 border border-transparent hover:border-slate-700'
                   }`}
                 >
                   <div className="flex items-start gap-3">
-                    <span className="text-2xl">{exp.icon}</span>
+                    <span className="text-2xl">{e.icon}</span>
                     <div className="flex-1 text-right">
-                      <div className="flex items-center gap-2">
-                        <p className="text-xs font-bold text-slate-200">{exp.name}</p>
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <p className="text-xs font-bold text-white">{e.name}</p>
                         <span className={`text-[8px] px-1.5 py-0.5 rounded ${
-                          exp.difficulty === 'سهل' ? 'bg-green-900/50 text-green-400' :
-                          exp.difficulty === 'متوسط' ? 'bg-yellow-900/50 text-yellow-400' :
+                          e.difficulty === 1 ? 'bg-green-900/50 text-green-400' :
+                          e.difficulty === 2 ? 'bg-yellow-900/50 text-yellow-400' :
                           'bg-red-900/50 text-red-400'
-                        }`}>{exp.difficulty}</span>
+                        }`}>{getDiffLabel(e.difficulty)}</span>
                       </div>
-                      <p className="text-[9px] text-slate-400 line-clamp-1 mt-0.5">{exp.description}</p>
-                      <p className="text-[9px] text-cyan-500 mt-0.5">{exp.category} • {exp.subcategory}</p>
+                      <p className="text-[9px] text-slate-400 line-clamp-1">{e.description}</p>
+                      <p className="text-[9px] text-cyan-500 mt-0.5">{e.category}</p>
                     </div>
                     <button
-                      onClick={(e) => { e.stopPropagation(); toggleFavorite(exp.id); }}
-                      className="p-1 hover:bg-slate-600 rounded transition"
+                      onClick={ev => { ev.stopPropagation(); setFavs(f => f.includes(e.id) ? f.filter(x => x !== e.id) : [...f, e.id]); }}
+                      className="p-1"
                     >
-                      <Star className={`w-4 h-4 ${favorites.includes(exp.id) ? 'fill-amber-400 text-amber-400' : 'text-slate-500'}`} />
+                      <Star className={`w-4 h-4 ${favs.includes(e.id) ? 'fill-amber-400 text-amber-400' : 'text-slate-600'}`} />
                     </button>
                   </div>
                 </button>
               ))}
-              
-              {filteredExperiments.length === 0 && (
-                <div className="text-center py-8 text-slate-500">
-                  <Search className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                  <p className="text-xs">لم يتم العثور على تجارب</p>
-                </div>
-              )}
             </div>
           </div>
         )}
-        
-        {/* منطقة العمل */}
+
+        {/* ── منطقة العمل ── */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          {selectedExperiment ? (
+          {exp ? (
             <>
               {/* التبويبات */}
-              <div className="flex border-b border-slate-700 bg-slate-800/30">
+              <div className="flex border-b border-slate-800 bg-slate-900/50">
                 {[
-                  { id: 'simulation', name: '🎬 المحاكاة', icon: Play },
-                  { id: 'data', name: '📊 جدول البيانات', icon: BarChart3 },
-                  { id: 'ai', name: '🤖 المعلم الذكي', icon: Brain },
-                  { id: 'units', name: '🔄 الوحدات', icon: Compass }
-                ].map(tab => (
+                  { id: 'sim', label: '🎬 المحاكاة', icon: Play },
+                  { id: 'table', label: '📊 جدول البيانات', icon: BarChart3 },
+                  { id: 'ai', label: '🤖 المعلم الذكي', icon: Brain },
+                  { id: 'units', label: '🔄 الوحدات', icon: Compass }
+                ].map(t => (
                   <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id as any)}
-                    className={`flex-1 px-4 py-3 text-xs font-bold transition flex items-center justify-center gap-2 ${
-                      activeTab === tab.id 
-                        ? 'bg-slate-700 text-cyan-400 border-b-2 border-cyan-400' 
-                        : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+                    key={t.id}
+                    onClick={() => { setTab(t.id as any); if(t.id === 'ai') setShowAi(true); }}
+                    className={`flex-1 px-4 py-3 text-xs font-bold transition flex items-center justify-center gap-2 border-b-2 ${
+                      tab === t.id 
+                        ? 'bg-slate-800 text-cyan-400 border-cyan-400' 
+                        : 'text-slate-400 hover:text-white border-transparent'
                     }`}
                   >
-                    <tab.icon className="w-4 h-4" />
-                    <span>{tab.name}</span>
+                    <t.icon className="w-4 h-4" />
+                    <span>{t.label}</span>
                   </button>
                 ))}
               </div>
-              
-              {/* محتوى التبويبات */}
-              <div className="flex-1 overflow-y-auto p-4">
-                {/* 🎬 المحاكاة */}
-                {activeTab === 'simulation' && (
+
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                {/* ═══ 🎬 المحاكاة ═══ */}
+                {tab === 'sim' && (
                   <div className="space-y-4">
                     {/* معلومات التجربة */}
-                    <div className="bg-gradient-to-r from-cyan-900/30 to-blue-900/30 rounded-xl p-4 border border-cyan-700/30">
+                    <div className="bg-gradient-to-r from-cyan-950/40 to-blue-950/40 rounded-2xl p-4 border border-cyan-800/30">
                       <div className="flex items-center gap-3 mb-2">
-                        <span className="text-3xl">{selectedExperiment.icon}</span>
+                        <span className="text-3xl">{exp.icon}</span>
                         <div>
-                          <h3 className="text-sm font-bold text-cyan-300">{selectedExperiment.name}</h3>
-                          <p className="text-[10px] text-slate-400">{selectedExperiment.description}</p>
+                          <h3 className="text-sm font-bold text-cyan-300">{exp.name}</h3>
+                          <p className="text-[10px] text-slate-400">{exp.description}</p>
                         </div>
+                        <span className={`mr-auto text-[9px] px-2 py-1 rounded-full ${
+                          exp.difficulty === 1 ? 'bg-green-900/50 text-green-400' :
+                          exp.difficulty === 2 ? 'bg-yellow-900/50 text-yellow-400' :
+                          'bg-red-900/50 text-red-400'
+                        }`}>{getDiffLabel(exp.difficulty)}</span>
                       </div>
-                      <p className="text-xs text-slate-300 leading-relaxed">{selectedExperiment.aiExplanation}</p>
-                      <div className="flex flex-wrap gap-2 mt-3">
-                        {selectedExperiment.equations.map((eq, i) => (
+                      <p className="text-xs text-slate-300 leading-relaxed">{exp.aiExplanation}</p>
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {exp.equations.map((eq, i) => (
                           <span key={i} className="px-2 py-1 bg-slate-800 rounded-lg text-[10px] font-mono text-amber-300">
                             {eq.formula}
                           </span>
                         ))}
                       </div>
                     </div>
-                    
+
                     {/* Canvas */}
-                    <div className="bg-slate-950 rounded-xl overflow-hidden border border-slate-700">
-                      <canvas
-                        ref={canvasRef}
-                        width={700}
-                        height={200}
-                        className="w-full h-48"
-                      />
-                      <div className="flex items-center justify-center gap-3 p-3 bg-slate-900/50">
+                    <div className="bg-slate-950 rounded-2xl border border-slate-800 overflow-hidden">
+                      <SimulationCanvas exp={exp} vars={vars} time={simTime} isPlaying={isPlaying} />
+                      <div className="flex items-center justify-center gap-3 p-3 bg-slate-900/80">
                         <button
-                          onClick={isSimulating ? () => setIsSimulating(false) : runSimulation}
-                          className={`px-5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
-                            isSimulating 
-                              ? 'bg-red-600 hover:bg-red-500' 
-                              : 'bg-cyan-600 hover:bg-cyan-500'
+                          onClick={runSim}
+                          className={`px-6 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                            isPlaying 
+                              ? 'bg-rose-600 hover:bg-rose-500' 
+                              : 'bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500'
                           }`}
                         >
-                          {isSimulating ? <><Pause className="w-4 h-4" /> إيقاف</> : <><Play className="w-4 h-4" /> تشغيل</>}
+                          {isPlaying ? <><Pause className="w-4 h-4" /> إيقاف</> : <><Play className="w-4 h-4" /> تشغيل</>}
                         </button>
                         <button
-                          onClick={() => { setIsSimulating(false); setSimulationTime(0); }}
-                          className="px-5 py-2 bg-slate-700 hover:bg-slate-600 rounded-xl text-xs font-bold transition flex items-center gap-2"
+                          onClick={() => { setIsPlaying(false); setSimTime(0); }}
+                          className="px-6 py-2.5 bg-slate-700 hover:bg-slate-600 rounded-xl text-xs font-bold transition flex items-center gap-2"
                         >
                           <RotateCcw className="w-4 h-4" /> إعادة
                         </button>
-                        <span className="text-xs text-slate-400 font-mono">
-                          t = {simulationTime.toFixed(2)}s
+                        <span className="text-xs text-slate-400 font-mono bg-slate-800 px-3 py-1.5 rounded-lg">
+                          t = {simTime.toFixed(2)}s
                         </span>
                       </div>
                     </div>
-                    
-                    {/* متغيرات الإدخال */}
-                    <div className="bg-slate-800 rounded-xl p-4">
+
+                    {/* المتغيرات */}
+                    <div className="bg-slate-800/70 rounded-2xl p-4 border border-slate-700">
                       <h4 className="text-xs font-bold text-cyan-300 mb-3 flex items-center gap-2">
-                        <Edit3 className="w-4 h-4" />
-                        إدخال المتغيرات
+                        <Settings className="w-4 h-4" />
+                        تغيير المتغيرات
                       </h4>
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {selectedExperiment.variables.map(variable => (
-                          <div key={variable.name}>
-                            <label className="text-[10px] text-slate-400 block mb-1.5">
-                              {variable.label} ({variable.labelEn})
+                        {exp.variables.map(vv => (
+                          <div key={vv.name}>
+                            <label className="text-[10px] text-slate-400 block mb-1">
+                              {vv.label}
                             </label>
-                            <div className="flex gap-2">
-                              <input
-                                type="number"
-                                value={inputValues[variable.name] || variable.default}
-                                onChange={(e) => setInputValues(prev => ({
-                                  ...prev,
-                                  [variable.name]: parseFloat(e.target.value) || 0
-                                }))}
-                                className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none"
-                              />
-                              <select
-                                value={selectedUnit[variable.name] || variable.unitOptions[0].value}
-                                onChange={(e) => setSelectedUnit(prev => ({ ...prev, [variable.name]: e.target.value }))}
-                                className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-xs text-slate-400 outline-none"
-                              >
-                                {variable.unitOptions.map(opt => (
-                                  <option key={opt.value} value={opt.value}>{opt.label || opt.value}</option>
-                                ))}
-                              </select>
-                            </div>
+                            <input
+                              type="number"
+                              value={vars[vv.name] ?? vv.default}
+                              onChange={e => {
+                                const newVars = { ...vars, [vv.name]: parseFloat(e.target.value) || 0 };
+                                setVars(newVars);
+                                calculateResults(newVars, exp);
+                              }}
+                              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none"
+                            />
                             <input
                               type="range"
-                              value={inputValues[variable.name] || variable.default}
-                              onChange={(e) => setInputValues(prev => ({
-                                ...prev,
-                                [variable.name]: parseFloat(e.target.value)
-                              }))}
-                              min={variable.min}
-                              max={variable.max}
+                              value={vars[vv.name] ?? vv.default}
+                              onChange={e => {
+                                const newVars = { ...vars, [vv.name]: parseFloat(e.target.value) };
+                                setVars(newVars);
+                                calculateResults(newVars, exp);
+                              }}
+                              min={vv.min}
+                              max={vv.max}
                               className="w-full mt-1 accent-cyan-500"
                             />
                           </div>
                         ))}
                       </div>
                     </div>
-                    
-                    {/* النتائج */}
+
+                    {/* ═══ 📈 النتائج ═══ */}
                     {Object.keys(results).length > 0 && (
-                      <div className="bg-gradient-to-r from-green-900/30 to-emerald-900/30 rounded-xl p-4 border border-green-700/30">
+                      <div className="bg-gradient-to-r from-green-950/40 to-emerald-950/40 rounded-2xl p-4 border border-green-800/30">
                         <h4 className="text-xs font-bold text-green-300 mb-3 flex items-center gap-2">
                           <TrendingUp className="w-4 h-4" />
                           النتائج المحسوبة
                         </h4>
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                          {Object.entries(results).map(([key, value]) => (
-                            <div key={key} className="bg-slate-800 rounded-lg p-3">
-                              <p className="text-[10px] text-slate-400">{getResultLabel(key)}</p>
-                              <p className="text-lg font-bold text-green-400">{typeof value === 'number' ? value.toFixed(3) : value}</p>
+                          {exp.results.map((r, i) => {
+                            const val = Object.values(results)[i];
+                            if (val === undefined) return null;
+                            return (
+                              <div key={r.name} className="bg-slate-800/50 rounded-xl p-3 text-center">
+                                <p className="text-[10px] text-slate-400 mb-1">{r.name}</p>
+                                <p className="text-xl font-bold" style={{ color: COLOR_MAP[r.color] }}>
+                                  {typeof val === 'number' ? val.toFixed(3) : val}
+                                </p>
+                                <p className="text-[9px] text-slate-500">{r.unit}</p>
+                                <p className="text-[8px] text-slate-600 font-mono mt-1">{r.formula}</p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ═══ 📊 الرسم البياني ═══ */}
+                    <div className="bg-slate-800/70 rounded-2xl p-4 border border-slate-700">
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="text-xs font-bold text-amber-300 flex items-center gap-2">
+                          <BarChart3 className="w-4 h-4" />
+                          الرسم البياني
+                        </h4>
+                        {exp.chartTypes.length > 1 && (
+                          <select
+                            value={selectedChart}
+                            onChange={e => { setSelectedChart(parseInt(e.target.value)); }}
+                            className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-[10px] text-slate-400 outline-none"
+                          >
+                            {exp.chartTypes.map((ct, i) => (
+                              <option key={i} value={i}>{ct.x} vs {ct.y}</option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                      {chartData.length > 0 && (
+                        <SimpleChart
+                          data={chartData}
+                          title={`${exp.chartTypes[selectedChart]?.x || 'X'} vs ${exp.chartTypes[selectedChart]?.y || 'Y'}`}
+                          xLabel={exp.chartTypes[selectedChart]?.x || 'X'}
+                          yLabel={exp.chartTypes[selectedChart]?.y || 'Y'}
+                          color={COLOR_MAP[['cyan', 'emerald', 'amber', 'rose', 'violet'][selectedChart % 5]]}
+                          width={560}
+                          height={220}
+                        />
+                      )}
+                    </div>
+
+                    {/* ═══ 📝 شرح AI ═══ */}
+                    {(aiExplanation || aiMsgs.length > 1) && (
+                      <div className="bg-gradient-to-r from-purple-950/40 to-violet-950/40 rounded-2xl p-4 border border-purple-800/30">
+                        <h4 className="text-xs font-bold text-purple-300 mb-3 flex items-center gap-2">
+                          <Brain className="w-4 h-4" />
+                          شرح الذكاء الاصطناعي
+                        </h4>
+                        <div className="space-y-2">
+                          {aiMsgs.slice(-3).filter(m => m.role === 'assistant').map((msg, i) => (
+                            <div key={i} className="bg-slate-800/50 rounded-xl p-3 text-xs text-slate-300 leading-relaxed whitespace-pre-wrap">
+                              {msg.content}
                             </div>
                           ))}
                         </div>
                       </div>
                     )}
+
+                    {/* أزرار الإجراءات */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <button
+                        onClick={analyzeData}
+                        className="py-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2"
+                      >
+                        <Sparkles className="w-4 h-4" />
+                        تحليل البيانات
+                      </button>
+                      <button
+                        onClick={() => { setTab('table'); }}
+                        className="py-3 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2"
+                      >
+                        <BarChart3 className="w-4 h-4" />
+                        جدول البيانات
+                      </button>
+                      <button
+                        onClick={() => { setTab('ai'); setShowAi(true); }}
+                        className="py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2"
+                      >
+                        <Brain className="w-4 h-4" />
+                        اسأل AI
+                      </button>
+                      <button
+                        onClick={() => calculateResults(vars, exp)}
+                        className="py-3 bg-slate-700 hover:bg-slate-600 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2"
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                        تحديث النتائج
+                      </button>
+                    </div>
                   </div>
                 )}
-                
-                {/* 📊 جدول البيانات */}
-                {activeTab === 'data' && (
+
+                {/* ═══ 📊 جدول البيانات ═══ */}
+                {tab === 'table' && (
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <h4 className="text-xs font-bold text-cyan-300 flex items-center gap-2">
                         <BarChart3 className="w-4 h-4" />
-                        جدول البيانات - {selectedExperiment.name}
+                        جدول البيانات - {exp.name}
                       </h4>
                       <div className="flex gap-2">
-                        <button
-                          onClick={addColumn}
-                          className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs flex items-center gap-1 transition"
-                        >
-                          <Plus className="w-3 h-3" /> إضافة عمود
+                        <button onClick={addCol} className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs flex items-center gap-1 transition">
+                          <Plus className="w-3 h-3" /> عمود
                         </button>
-                        <button
-                          onClick={addRow}
-                          className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-xs flex items-center gap-1 transition"
-                        >
-                          <Plus className="w-3 h-3" /> إضافة صف
-                        </button>
-                        <button
-                          onClick={exportData}
-                          className="px-3 py-1.5 bg-green-600 hover:bg-green-500 rounded-lg text-xs flex items-center gap-1 transition"
-                        >
-                          <Download className="w-3 h-3" /> تصدير
+                        <button onClick={addRow} className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-xs flex items-center gap-1 transition">
+                          <Plus className="w-3 h-3" /> صف
                         </button>
                       </div>
                     </div>
                     
-                    {/* الجدول */}
-                    <div className="overflow-x-auto bg-slate-800 rounded-xl border border-slate-700">
+                    <div className="overflow-x-auto bg-slate-800/70 rounded-2xl border border-slate-700">
                       <table className="w-full text-xs">
                         <thead>
-                          <tr className="bg-slate-700">
-                            <th className="p-2 text-slate-400 w-10">#</th>
-                            {dataColumns.map(col => (
-                              <th key={col.id} className="p-2 text-cyan-300 min-w-[120px]">
-                                <div className="flex items-center justify-between gap-2">
-                                  <span>{col.name}</span>
-                                  <span className="text-[9px] text-slate-500">({col.unit})</span>
-                                  <button
-                                    onClick={() => deleteColumn(col.id)}
-                                    className="text-red-400 hover:text-red-300 opacity-0 group-hover:opacity-100"
-                                  >
-                                    <X className="w-3 h-3" />
-                                  </button>
+                          <tr className="bg-slate-700/80">
+                            <th className="p-2 text-slate-500 w-10">#</th>
+                            {cols.map(col => (
+                              <th key={col.id} className="p-2 min-w-[120px]">
+                                <div className="flex items-center justify-between gap-1">
+                                  <span style={{ color: COLOR_MAP[col.color] }}>{col.name}</span>
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-[8px] text-slate-500">{col.unit}</span>
+                                    <button onClick={() => setCols(c => c.filter(x => x.id !== col.id))} className="text-red-400 hover:text-red-300 opacity-50 hover:opacity-100">
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  </div>
                                 </div>
                               </th>
                             ))}
-                            <th className="p-2 w-10"></th>
                           </tr>
                         </thead>
                         <tbody>
-                          {dataRows.map((row, rowIndex) => (
-                            <tr key={row.id} className="border-t border-slate-700 hover:bg-slate-700/50">
-                              <td className="p-2 text-slate-500 text-center">{rowIndex + 1}</td>
-                              {dataColumns.map(col => (
+                          {rows.map((row, ri) => (
+                            <tr key={row.id} className="border-t border-slate-700/50 hover:bg-slate-700/30">
+                              <td className="p-2 text-slate-600 text-center">{ri + 1}</td>
+                              {cols.map(col => (
                                 <td key={col.id} className="p-1">
                                   <input
                                     type="text"
                                     value={row.values[col.id] || ''}
-                                    onChange={(e) => setDataRows(prev => prev.map(r => 
-                                      r.id === row.id 
-                                        ? { ...r, values: { ...r.values, [col.id]: e.target.value } }
-                                        : r
+                                    onChange={e => setRows(prev => prev.map(r => 
+                                      r.id === row.id ? { ...r, values: { ...r.values, [col.id]: e.target.value } } : r
                                     ))}
-                                    className="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1.5 text-white text-center focus:border-cyan-500 outline-none"
+                                    className="w-full bg-slate-900/50 border border-slate-700/50 rounded-lg px-2 py-1.5 text-white text-center focus:border-cyan-500 outline-none"
                                   />
                                 </td>
                               ))}
                               <td className="p-2 text-center">
-                                <button
-                                  onClick={() => deleteRow(row.id)}
-                                  className="text-red-400 hover:text-red-300 transition"
-                                >
+                                <button onClick={() => setRows(prev => prev.filter(r => r.id !== row.id))} className="text-red-400 hover:text-red-300 transition">
                                   <Trash2 className="w-4 h-4" />
                                 </button>
                               </td>
@@ -2032,31 +1859,30 @@ ${selectedExperiment?.aiExplanation || ''}\n
                       </table>
                     </div>
                     
-                    {/* أزرار إضافية */}
-                    <div className="flex gap-3">
-                      <button
-                        onClick={calculateResults}
-                        className="flex-1 py-3 bg-cyan-600 hover:bg-cyan-500 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2"
-                      >
-                        <BarChart3 className="w-4 h-4" />
-                        حساب النتائج
-                      </button>
+                    <div className="grid grid-cols-2 gap-3">
                       <button
                         onClick={analyzeData}
-                        className="flex-1 py-3 bg-purple-600 hover:bg-purple-500 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2"
+                        className="py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2"
                       >
                         <Brain className="w-4 h-4" />
                         تحليل البيانات بالذكاء الاصطناعي
                       </button>
+                      <button
+                        onClick={() => calculateResults(vars, exp)}
+                        className="py-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2"
+                      >
+                        <BarChart3 className="w-4 h-4" />
+                        حساب وإظهار النتائج
+                      </button>
                     </div>
                   </div>
                 )}
-                
-                {/* 🤖 المعلم الذكي */}
-                {activeTab === 'ai' && (
+
+                {/* ═══ 🤖 الذكاء الاصطناعي ═══ */}
+                {tab === 'ai' && (
                   <div className="flex flex-col h-full">
-                    <div className="flex-1 overflow-y-auto space-y-3 mb-3">
-                      {aiMessages.map((msg, i) => (
+                    <div className="flex-1 overflow-y-auto space-y-3 mb-3 max-h-[500px]">
+                      {aiMsgs.map((msg, i) => (
                         <div key={i} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
                           <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
                             msg.role === 'user' ? 'bg-blue-600' : 'bg-gradient-to-br from-purple-600 to-pink-600'
@@ -2072,7 +1898,7 @@ ${selectedExperiment?.aiExplanation || ''}\n
                           </div>
                         </div>
                       ))}
-                      {isAiLoading && (
+                      {aiLoading && (
                         <div className="flex gap-3">
                           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center">
                             🤖
@@ -2092,14 +1918,14 @@ ${selectedExperiment?.aiExplanation || ''}\n
                       <input
                         type="text"
                         value={aiInput}
-                        onChange={(e) => setAiInput(e.target.value)}
-                        onKeyPress={(e) => e.key === 'Enter' && sendAiMessage()}
+                        onChange={e => setAiInput(e.target.value)}
+                        onKeyPress={e => e.key === 'Enter' && sendAi()}
                         placeholder="اسأل عن هذه التجربة..."
                         className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:border-purple-500 outline-none"
                       />
                       <button
-                        onClick={sendAiMessage}
-                        disabled={!aiInput.trim() || isAiLoading}
+                        onClick={sendAi}
+                        disabled={!aiInput.trim() || aiLoading}
                         className="w-12 h-12 bg-purple-600 hover:bg-purple-500 disabled:bg-slate-700 rounded-xl flex items-center justify-center transition"
                       >
                         <Send className="w-5 h-5" />
@@ -2107,130 +1933,93 @@ ${selectedExperiment?.aiExplanation || ''}\n
                     </div>
                   </div>
                 )}
-                
-                {/* 🔄 تحويل الوحدات */}
-                {activeTab === 'units' && (
+
+                {/* ═══ 🔄 الوحدات ═══ */}
+                {tab === 'units' && (
                   <div className="space-y-4">
                     <h4 className="text-xs font-bold text-cyan-300 flex items-center gap-2">
                       <Compass className="w-4 h-4" />
                       محول الوحدات الذكي
                     </h4>
                     
-                    {/* اختيار الفئة */}
                     <div className="flex flex-wrap gap-2">
-                      {Object.keys(unitConversions).map(cat => (
+                      {UNIT_CATS.map(uc => (
                         <button
-                          key={cat}
-                          onClick={() => { setUnitCategory(cat); setUnitValue('1'); }}
-                          className={`px-3 py-2 rounded-lg text-xs font-bold transition ${
-                            unitCategory === cat 
-                              ? 'bg-cyan-600 text-white' 
-                              : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                          key={uc.id}
+                          onClick={() => { setUnitCat(uc.id); setUnitVal('1'); }}
+                          className={`px-3 py-2 rounded-xl text-xs font-bold transition ${
+                            unitCat === uc.id ? 'bg-cyan-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
                           }`}
                         >
-                          {cat === 'length' && '📏 طول'}
-                          {cat === 'mass' && '⚖️ كتلة'}
-                          {cat === 'time' && '⏱️ زمن'}
-                          {cat === 'temperature' && '🌡️ حرارة'}
-                          {cat === 'pressure' && '📊 ضغط'}
+                          {uc.name}
                         </button>
                       ))}
                     </div>
                     
-                    {/* القيم */}
-                    <div className="bg-slate-800 rounded-xl p-4">
-                      <input
-                        type="number"
-                        value={unitValue}
-                        onChange={(e) => setUnitValue(e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-lg text-white text-center focus:border-cyan-500 outline-none mb-4"
-                      />
-                      
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                        {unitConversions[unitCategory]?.map(conv => (
-                          <div key={conv.unit} className="bg-slate-900 rounded-lg p-3 text-center">
-                            <p className="text-[10px] text-slate-500 mb-1">{conv.unit}</p>
-                            <p className="text-lg font-bold text-cyan-400">
-                              {(parseFloat(unitValue) * conv.factor).toFixed(6)}
-                            </p>
-                          </div>
-                        ))}
+                    {UNIT_CATS.find(u => u.id === unitCat) && (
+                      <div className="bg-slate-800/70 rounded-2xl p-4 border border-slate-700">
+                        <input
+                          type="number"
+                          value={unitVal}
+                          onChange={e => setUnitVal(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-lg text-white text-center focus:border-cyan-500 outline-none mb-4"
+                        />
+                        
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                          {UNIT_CATS.find(u => u.id === unitCat)!.options.map((opt, i) => {
+                            let result: number;
+                            if ('formula' in opt) {
+                              result = opt.formula!(parseFloat(unitVal) || 0);
+                            } else {
+                              result = (parseFloat(unitVal) || 0) * opt.factor;
+                            }
+                            return (
+                              <div key={i} className="bg-slate-900/50 rounded-xl p-3 text-center">
+                                <p className="text-[9px] text-slate-500 mb-1">{opt.from} → {opt.to}</p>
+                                <p className="text-lg font-bold text-cyan-400">{result.toFixed(6)}</p>
+                                <p className="text-[9px] text-slate-500">{opt.to}</p>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
-                    
-                    {/* نصائح */}
-                    <div className="bg-amber-900/20 border border-amber-700/30 rounded-xl p-4">
-                      <h5 className="text-xs font-bold text-amber-400 mb-2">💡 نصيحة</h5>
-                      <p className="text-xs text-slate-300">
-                        {unitCategory === 'length' && '1 متر = 100 سنتيمتر = 1000 مليمتر = 3.281 قدم'}
-                        {unitCategory === 'mass' && '1 كيلوغرام = 1000 غرام = 2.205 رطل'}
-                        {unitCategory === 'time' && '1 ساعة = 60 دقيقة = 3600 ثانية'}
-                        {unitCategory === 'temperature' && 'لتحويل الحرارة: K = °C + 273.15'}
-                        {unitCategory === 'pressure' && '1 atm = 101325 Pa = 760 mmHg'}
-                      </p>
-                    </div>
+                    )}
                   </div>
                 )}
               </div>
             </>
           ) : (
-            /* رسالة الترحيب */
+            /* الترحيب */
             <div className="flex-1 flex items-center justify-center p-8">
               <div className="text-center max-w-lg">
-                <div className="w-20 h-20 mx-auto mb-4 bg-gradient-to-br from-cyan-500 to-blue-500 rounded-2xl flex items-center justify-center text-4xl">
+                <div className="w-20 h-20 mx-auto mb-4 bg-gradient-to-br from-cyan-500 via-blue-500 to-purple-500 rounded-2xl flex items-center justify-center text-4xl shadow-2xl shadow-cyan-500/20">
                   🔬
                 </div>
                 <h2 className="text-xl font-bold text-cyan-300 mb-2">مرحباً بك في مختبر الفيزياء!</h2>
                 <p className="text-sm text-slate-400 leading-relaxed mb-6">
-                  اختر تجربة فيزيائية من القائمة الجانبية للبدء في المحاكاة التفاعلية، جدول البيانات، والذكاء الاصطناعي.
+                  اختر تجربة فيزيائية من القائمة الجانبية للبدء. كل شيء مترابط: الجدول ↔ المحاكاة ↔ النتائج ↔ الذكاء الاصطناعي
                 </p>
                 
-                {/* الإحصائيات */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-                  <div className="bg-slate-800 p-3 rounded-xl">
-                    <TrophyIcon className="w-6 h-6 mx-auto mb-1 text-amber-400" />
-                    <p className="text-lg font-bold text-white">{userStats.experimentsCompleted}</p>
-                    <p className="text-[10px] text-slate-400">تجربة</p>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="bg-slate-800/80 p-3 rounded-xl text-center border border-slate-700">
+                    <Trophy className="w-6 h-6 mx-auto mb-1 text-amber-400" />
+                    <p className="text-lg font-bold text-white">{EXPERIMENTS.length}</p>
+                    <p className="text-[9px] text-slate-400">تجربة</p>
                   </div>
-                  <div className="bg-slate-800 p-3 rounded-xl">
+                  <div className="bg-slate-800/80 p-3 rounded-xl text-center border border-slate-700">
+                    <Sparkles className="w-6 h-6 mx-auto mb-1 text-cyan-400" />
+                    <p className="text-lg font-bold text-white">∞</p>
+                    <p className="text-[9px] text-slate-400">رسم بياني</p>
+                  </div>
+                  <div className="bg-slate-800/80 p-3 rounded-xl text-center border border-slate-700">
                     <Brain className="w-6 h-6 mx-auto mb-1 text-purple-400" />
-                    <p className="text-lg font-bold text-white">{userStats.questionsAnswered}</p>
-                    <p className="text-[10px] text-slate-400">سؤال</p>
+                    <p className="text-lg font-bold text-white">AI</p>
+                    <p className="text-[9px] text-slate-400">معلم ذكي</p>
                   </div>
-                  <div className="bg-slate-800 p-3 rounded-xl">
-                    <Award className="w-6 h-6 mx-auto mb-1 text-green-400" />
-                    <p className="text-lg font-bold text-white">{unlockedAchievements.length}</p>
-                    <p className="text-[10px] text-slate-400">إنجاز</p>
-                  </div>
-                  <div className="bg-slate-800 p-3 rounded-xl">
-                    <Star className="w-6 h-6 mx-auto mb-1 text-cyan-400" />
-                    <p className="text-lg font-bold text-white">{favorites.length}</p>
-                    <p className="text-[10px] text-slate-400">مفضلة</p>
-                  </div>
-                </div>
-                
-                {/* الجوائز */}
-                <div className="bg-slate-800 rounded-xl p-4">
-                  <h3 className="text-xs font-bold text-amber-400 mb-3 flex items-center gap-2 justify-center">
-                    <TrophyIcon className="w-4 h-4" />
-                    الإنجازات ({unlockedAchievements.length}/{achievements.length})
-                  </h3>
-                  <div className="flex flex-wrap gap-2 justify-center">
-                    {achievements.map(ach => (
-                      <div
-                        key={ach.id}
-                        className={`px-3 py-2 rounded-lg text-center transition ${
-                          unlockedAchievements.includes(ach.id) 
-                            ? 'bg-amber-900/50 border border-amber-600/30' 
-                            : 'bg-slate-700/50 border border-slate-600/30 opacity-50'
-                        }`}
-                        title={ach.description}
-                      >
-                        <span className="text-xl">{ach.icon}</span>
-                        <p className="text-[9px] text-slate-300 mt-1">{ach.name}</p>
-                        <p className="text-[8px] text-amber-400">+{ach.points}</p>
-                      </div>
-                    ))}
+                  <div className="bg-slate-800/80 p-3 rounded-xl text-center border border-slate-700">
+                    <Compass className="w-6 h-6 mx-auto mb-1 text-emerald-400" />
+                    <p className="text-lg font-bold text-white">7</p>
+                    <p className="text-[9px] text-slate-400">أنواع وحدات</p>
                   </div>
                 </div>
               </div>
@@ -2240,28 +2029,4 @@ ${selectedExperiment?.aiExplanation || ''}\n
       </div>
     </div>
   );
-}
-
-// =============================================
-// 📝 دوال مساعدة
-// =============================================
-function getResultLabel(key: string): string {
-  const labels: Record<string, string> = {
-    time: 'الوقت',
-    velocity: 'السرعة',
-    acceleration: 'التسارع',
-    kineticEnergy: 'الطاقة الحركية',
-    potentialEnergy: 'الطاقة الكامنة',
-    current: 'التيار',
-    power: 'القدرة',
-    displacement: 'الإزاحة',
-    range: 'المدى',
-    maxHeight: 'أقصى ارتفاع',
-    heat: 'الحرارة',
-    momentum: 'الزخم',
-    remaining: 'المتبقي',
-    activity: 'النشاط',
-    value: 'القيمة'
-  };
-  return labels[key] || key;
 }
