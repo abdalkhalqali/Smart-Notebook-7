@@ -849,6 +849,1698 @@ const EXPERIMENTS: Experiment[] = [
     chartTypes: [
       { x: 'عرض الشق (μm)', y: 'زاوية الحيود (°)', type: 'line' }
     ]
+  },
+
+  // ═══════════════════════════════════════════════════════════
+  // 🆕 تجارب إضافية شاملة لجميع فروع الفيزياء
+  // ═══════════════════════════════════════════════════════════
+
+  // ─────────────────────────────────────────────────────────
+  // 📦 الميكانيكا - الحركة والديناميكا
+  // ─────────────────────────────────────────────────────────
+  {
+    id: 'uniform-motion',
+    name: 'الحركة المنتظمة',
+    nameEn: 'Uniform Motion',
+    category: 'ميكانيكا',
+    icon: '🏃',
+    difficulty: 1,
+    description: 'حركة بسرعة ثابتة في خط مستقيم',
+    equations: [
+      { name: 'السرعة', formula: 'v = d/t', desc: 'السرعة المنتظمة' },
+      { name: 'المسافة', formula: 'd = vt', desc: 'المسافة المقطوعة' },
+      { name: 'الزمن', formula: 't = d/v', desc: 'الزمن اللازم' }
+    ],
+    variables: [
+      { name: 'velocity', label: 'السرعة', unit: 'm/s', unitOptions: [
+        { label: 'm/s', value: 'm/s', factor: 1 },
+        { label: 'km/h', value: 'km/h', factor: 3.6 }
+      ], min: 1, max: 50, default: 10 },
+      { name: 'time', label: 'الزمن', unit: 's', unitOptions: [
+        { label: 'ثانية', value: 's', factor: 1 },
+        { label: 'دقيقة', value: 'min', factor: 1/60 }
+      ], min: 1, max: 100, default: 20 }
+    ],
+    results: [
+      { name: 'المسافة', formula: 'd = vt', unit: 'm', color: 'cyan' },
+      { name: 'السرعة المتوسطة', formula: 'v_avg = d/t', unit: 'm/s', color: 'amber' }
+    ],
+    simulationType: 'projectile',
+    aiExplanation: 'الحركة المنتظمة هي أبسط أنواع الحركة. الجسم يقطع مسافات متساوية في أزمنة متساوية.',
+    realWorld: 'سيارة تسير بسرعة ثابتة على طريق مستقيم',
+    tips: [
+      'السرعة ثابتة في الحركة المنتظمة',
+      'المسافة تتناسب طرداً مع الزمن',
+      'منحنى المسافة-زمن خط مستقيم'
+    ],
+    chartTypes: [
+      { x: 'الزمن (s)', y: 'المسافة (m)', type: 'line' },
+      { x: 'الزمن (s)', y: 'السرعة (m/s)', type: 'line' }
+    ]
+  },
+  {
+    id: 'uniform-acceleration',
+    name: 'الحركة المتسارعة المنتظمة',
+    nameEn: 'Uniformly Accelerated Motion',
+    category: 'ميكانيكا',
+    icon: '🚀',
+    difficulty: 2,
+    description: 'حركة بتسارع ثابت',
+    equations: [
+      { name: 'السرعة', formula: 'v = v₀ + at', desc: 'السرعة اللحظية' },
+      { name: 'المسافة', formula: 'd = v₀t + ½at²', desc: 'معادلة الحركة' },
+      { name: 'التسارع', formula: 'a = (v - v₀)/t', desc: 'تعريف التسارع' }
+    ],
+    variables: [
+      { name: 'v0', label: 'السرعة الابتدائية', unit: 'm/s', unitOptions: [
+        { label: 'm/s', value: 'm/s', factor: 1 }
+      ], min: 0, max: 50, default: 5 },
+      { name: 'a', label: 'التسارع', unit: 'm/s²', unitOptions: [
+        { label: 'm/s²', value: 'm/s²', factor: 1 }
+      ], min: -5, max: 10, default: 2 },
+      { name: 't', label: 'الزمن', unit: 's', unitOptions: [
+        { label: 'ثانية', value: 's', factor: 1 }
+      ], min: 1, max: 50, default: 10 }
+    ],
+    results: [
+      { name: 'السرعة النهائية', formula: 'v = v₀ + at', unit: 'm/s', color: 'cyan' },
+      { name: 'المسافة', formula: 'd = v₀t + ½at²', unit: 'm', color: 'amber' }
+    ],
+    simulationType: 'projectile',
+    aiExplanation: 'الحركة المتسارعة المنتظمة لها تسارع ثابت. السرعة تتغير بمعدل منتظم.',
+    realWorld: 'سيارة تتسارع من السكون، سقوط حر',
+    tips: [
+      'التسارع الموجب يزيد السرعة',
+      'التسارع السالب (التباطؤ) يقلل السرعة',
+      'التسارع المنتظم يعطي منحنى سرعة خطي'
+    ],
+    chartTypes: [
+      { x: 'الزمن (s)', y: 'السرعة (m/s)', type: 'line' },
+      { x: 'الزمن (s)', y: 'المسافة (m)', type: 'line' }
+    ]
+  },
+  {
+    id: 'newtons-laws',
+    name: 'قوانين نيوتن للحركة',
+    nameEn: "Newton's Laws of Motion",
+    category: 'ميكانيكا',
+    icon: '⚖️',
+    difficulty: 2,
+    description: 'قوانين الحركة الأساسية',
+    equations: [
+      { name: 'القانون الأول', formula: 'ΣF = 0 → v = const', desc: ' القصور الذاتي' },
+      { name: 'القانون الثاني', formula: 'F = ma', desc: 'القوة والتسارع' },
+      { name: 'القانون الثالث', formula: 'F₁₂ = -F₂₁', desc: 'الفعل ورد الفعل' }
+    ],
+    variables: [
+      { name: 'mass', label: 'الكتلة', unit: 'kg', unitOptions: [
+        { label: 'kg', value: 'kg', factor: 1 }
+      ], min: 1, max: 100, default: 10 },
+      { name: 'force', label: 'القوة', unit: 'N', unitOptions: [
+        { label: 'N', value: 'N', factor: 1 }
+      ], min: 1, max: 500, default: 50 }
+    ],
+    results: [
+      { name: 'التسارع', formula: 'a = F/m', unit: 'm/s²', color: 'cyan' },
+      { name: 'الوزن', formula: 'W = mg', unit: 'N', color: 'amber' }
+    ],
+    simulationType: 'projectile',
+    aiExplanation: 'قوانين نيوتن الثلاثة تصف حركة الأجسام تحت تأثير القوى.',
+    realWorld: 'جميع أنواع الحركة في حياتنا اليومية',
+    tips: [
+      'القانون الأول: الجسم الساكن يبقى ساكناً ما لم تؤثر عليه قوة',
+      'القانون الثاني: F = ma هو أساس الميكانيكا',
+      'القانون الثالث: لكل فعل رد فعل مساوٍ ومعاكس'
+    ],
+    chartTypes: [
+      { x: 'القوة (N)', y: 'التسارع (m/s²)', type: 'line' }
+    ]
+  },
+  {
+    id: 'circular-motion',
+    name: 'الحركة الدائرية المنتظمة',
+    nameEn: 'Uniform Circular Motion',
+    category: 'ميكانيكا',
+    icon: '🔄',
+    difficulty: 2,
+    description: 'حركة دائرية بسرعة زاوية ثابتة',
+    equations: [
+      { name: 'السرعة الزاوية', formula: 'ω = 2π/T = 2πf', desc: 'السرعة الزاوية' },
+      { name: 'القوة المركزية', formula: 'Fc = mv²/r = mω²r', desc: 'القوة المركزية' },
+      { name: 'التسارع المركزي', formula: 'ac = v²/r', desc: 'التسارع المركزي' }
+    ],
+    variables: [
+      { name: 'v', label: 'السرعة', unit: 'm/s', unitOptions: [
+        { label: 'm/s', value: 'm/s', factor: 1 }
+      ], min: 1, max: 50, default: 10 },
+      { name: 'r', label: 'نصف القطر', unit: 'm', unitOptions: [
+        { label: 'm', value: 'm', factor: 1 }
+      ], min: 0.5, max: 20, default: 5 }
+    ],
+    results: [
+      { name: 'التسارع المركزي', formula: 'ac = v²/r', unit: 'm/s²', color: 'cyan' },
+      { name: 'القوة المركزية', formula: 'Fc = mv²/r', unit: 'N', color: 'amber' }
+    ],
+    simulationType: 'pendulum',
+    aiExplanation: 'الحركة الدائرية المنتظمة تتطلب قوة مركزية للحفاظ على المسار الدائري.',
+    realWorld: 'الأقمار الصناعية، العجلات، الألعاب الدائرية',
+    tips: [
+      'القوة المركزية ليست قوة جديدة، بل مجموع القوى نحو المركز',
+      'السرعة الزاوية ثابتة لكن اتجاهها يتغير',
+      'التسارع المركزي دائماً نحو مركز الدائرة'
+    ],
+    chartTypes: [
+      { x: 'نصف القطر (m)', y: 'التسارع المركزي (m/s²)', type: 'line' }
+    ]
+  },
+  {
+    id: 'momentum',
+    name: 'الزخم الخطي',
+    nameEn: 'Linear Momentum',
+    category: 'ميكانيكا',
+    icon: '💫',
+    difficulty: 2,
+    description: 'الزخم وحفظه',
+    equations: [
+      { name: 'الزخم', formula: 'p = mv', desc: 'تعريف الزخم' },
+      { name: 'حفظ الزخم', formula: 'm₁v₁ + m₂v₂ = const', desc: 'قبل = بعد' },
+      { name: 'الدفع', formula: 'J = FΔt = Δp', desc: 'نظرية الدفع-زخم' }
+    ],
+    variables: [
+      { name: 'm1', label: 'كتلة الجسم 1', unit: 'kg', unitOptions: [
+        { label: 'kg', value: 'kg', factor: 1 }
+      ], min: 1, max: 20, default: 5 },
+      { name: 'v1', label: 'سرعة الجسم 1', unit: 'm/s', unitOptions: [
+        { label: 'm/s', value: 'm/s', factor: 1 }
+      ], min: -10, max: 10, default: 8 },
+      { name: 'm2', label: 'كتلة الجسم 2', unit: 'kg', unitOptions: [
+        { label: 'kg', value: 'kg', factor: 1 }
+      ], min: 1, max: 20, default: 3 },
+      { name: 'v2', label: 'سرعة الجسم 2', unit: 'm/s', unitOptions: [
+        { label: 'm/s', value: 'm/s', factor: 1 }
+      ], min: -10, max: 10, default: -4 }
+    ],
+    results: [
+      { name: 'زخم الجسم 1', formula: 'p₁ = m₁v₁', unit: 'kg·m/s', color: 'cyan' },
+      { name: 'زخم الجسم 2', formula: 'p₂ = m₂v₂', unit: 'kg·m/s', color: 'amber' },
+      { name: 'الزخم الكلي', formula: 'p_total = p₁ + p₂', unit: 'kg·m/s', color: 'emerald' }
+    ],
+    simulationType: 'collision',
+    aiExplanation: 'الزخم كمية متجهية. الزخم الكلي لنظام مغلق محفوظ.',
+    realWorld: 'التصادمات، الصواريخ، كرات البليارد',
+    tips: [
+      'الزخم محفوظ في جميع التصادمات',
+      'الطاقة الحركية محفوظة فقط في التصادمات المرنة',
+      'وحدة الزخم: kg·m/s'
+    ],
+    chartTypes: [
+      { x: 'السرعة (m/s)', y: 'الزخم (kg·m/s)', type: 'line' }
+    ]
+  },
+  {
+    id: 'work-energy',
+    name: 'الشغل والطاقة',
+    nameEn: 'Work and Energy',
+    category: 'ميكانيكا',
+    icon: '⚡',
+    difficulty: 1,
+    description: 'الشغل والطاقة الحركية وال كامنة',
+    equations: [
+      { name: 'الشغل', formula: 'W = Fd cosθ', desc: 'تعريف الشغل' },
+      { name: 'الطاقة الحركية', formula: 'KE = ½mv²', desc: 'طاقة الحركة' },
+      { name: 'الطاقة الكامنة', formula: 'PE = mgh', desc: 'طاقة الوضع' }
+    ],
+    variables: [
+      { name: 'm', label: 'الكتلة', unit: 'kg', unitOptions: [
+        { label: 'kg', value: 'kg', factor: 1 }
+      ], min: 1, max: 50, default: 5 },
+      { name: 'v', label: 'السرعة', unit: 'm/s', unitOptions: [
+        { label: 'm/s', value: 'm/s', factor: 1 }
+      ], min: 0, max: 30, default: 10 },
+      { name: 'h', label: 'الارتفاع', unit: 'm', unitOptions: [
+        { label: 'm', value: 'm', factor: 1 }
+      ], min: 0, max: 50, default: 10 }
+    ],
+    results: [
+      { name: 'الطاقة الحركية', formula: 'KE = ½mv²', unit: 'J', color: 'cyan' },
+      { name: 'الطاقة الكامنة', formula: 'PE = mgh', unit: 'J', color: 'amber' },
+      { name: 'الشغل', formula: 'W = ΔKE', unit: 'J', color: 'emerald' }
+    ],
+    simulationType: 'free-fall',
+    aiExplanation: 'الشغل والطاقة مترابطان. الطاقة لا تفنى ولا تُستحدث، بل تتحول.',
+    realWorld: 'الألعاب البهلوانية، السدود، المحركات',
+    tips: [
+      'الشغل = التغير في الطاقة الحركية',
+      'الطاقة الحركية دائماً موجبة',
+      'عند h=0، PE=0 (اختيار مرجعي)'
+    ],
+    chartTypes: [
+      { x: 'الارتفاع (m)', y: 'الطاقة الكامنة (J)', type: 'line' },
+      { x: 'السرعة (m/s)', y: 'الطاقة الحركية (J)', type: 'line' }
+    ]
+  },
+  {
+    id: 'simple-harmonic',
+    name: 'الحركة التوافقية البسيطة',
+    nameEn: 'Simple Harmonic Motion',
+    category: 'ميكانيكا',
+    icon: '〰️',
+    difficulty: 2,
+    description: 'حركة دورية حول موضع توازن',
+    equations: [
+      { name: 'الإزاحة', formula: 'x = A cos(ωt)', desc: 'معادلة الحركة' },
+      { name: 'السرعة الزاوية', formula: 'ω = 2πf = √(k/m)', desc: 'للكتلة على نابض' },
+      { name: 'الطاقة', formula: 'E = ½kA²', desc: 'الطاقة الكلية' }
+    ],
+    variables: [
+      { name: 'A', label: 'السعة', unit: 'm', unitOptions: [
+        { label: 'm', value: 'm', factor: 1 }
+      ], min: 0.1, max: 5, default: 1 },
+      { name: 'f', label: 'التردد', unit: 'Hz', unitOptions: [
+        { label: 'Hz', value: 'Hz', factor: 1 }
+      ], min: 0.1, max: 5, default: 1 },
+      { name: 'm', label: 'الكتلة', unit: 'kg', unitOptions: [
+        { label: 'kg', value: 'kg', factor: 1 }
+      ], min: 0.1, max: 10, default: 1 }
+    ],
+    results: [
+      { name: 'الزمن الدوري', formula: 'T = 1/f', unit: 's', color: 'cyan' },
+      { name: 'ω', formula: 'ω = 2πf', unit: 'rad/s', color: 'amber' }
+    ],
+    simulationType: 'spring',
+    aiExplanation: 'الحركة التوافقية البسيطة تتكرر بشكل دوري. الطاقة تتنقل بين حركية وكامنة.',
+    realWorld: 'النوابض، البندول (لزاويا صغيرة)، الوتر المهتز',
+    tips: [
+      'الحركة التوافقية البسيطة مثالية - لا يوجد احتكاك',
+      'T لا تعتمد على السعة (ل SHM المثالية)',
+      'القوة المركزية تتناسب مع الإزاحة'
+    ],
+    chartTypes: [
+      { x: 'الزمن (s)', y: 'الإزاحة (m)', type: 'line' },
+      { x: 'الزمن (s)', y: 'السرعة (m/s)', type: 'line' }
+    ]
+  },
+  {
+    id: 'doppler-effect',
+    name: 'تأثير دوبلر',
+    nameEn: 'Doppler Effect',
+    category: 'ميكانيكا',
+    icon: '📡',
+    difficulty: 2,
+    description: 'تغير التردد بسبب الحركة النسبية',
+    equations: [
+      { name: 'تردد المراقب', formula: "f' = f(v ± vo)/(v ∓ vs)", desc: 'تأثير دوبلر' },
+      { name: 'سرعة الصوت', formula: 'v = 343 m/s', desc: 'في الهواء' }
+    ],
+    variables: [
+      { name: 'f', label: 'التردد الأصلي', unit: 'Hz', unitOptions: [
+        { label: 'Hz', value: 'Hz', factor: 1 },
+        { label: 'kHz', value: 'kHz', factor: 1000 }
+      ], min: 20, max: 20000, default: 440 },
+      { name: 'vs', label: 'سرعة المصدر', unit: 'm/s', unitOptions: [
+        { label: 'm/s', value: 'm/s', factor: 1 }
+      ], min: 0, max: 100, default: 20 },
+      { name: 'vo', label: 'سرعة المراقب', unit: 'm/s', unitOptions: [
+        { label: 'm/s', value: 'm/s', factor: 1 }
+      ], min: 0, max: 50, default: 0 }
+    ],
+    results: [
+      { name: 'التردد الجديد', formula: "f' = f(v ± vo)/(v ∓ vs)", unit: 'Hz', color: 'cyan' },
+      { name: 'تغير التردد', formula: 'Δf = f - f', unit: 'Hz', color: 'amber' }
+    ],
+    simulationType: 'wave',
+    aiExplanation: 'تأثير دوبلر يُفسر لماذا يتغير تردد الصوت عند حركة المصدر أو المراقب.',
+    realWorld: 'صفارات الإنذار، الرادار، قياس سرعة النجوم',
+    tips: [
+      'مصدر يقترب → التردد يرتفع',
+      'مصدر يبتعد → التردد ينخفض',
+      'الصيغة تعتمد على اتجاه الحركة'
+    ],
+    chartTypes: [
+      { x: 'السرعة (m/s)', y: 'التردد (Hz)', type: 'line' }
+    ]
+  },
+  {
+    id: 'rotational-motion',
+    name: 'الحركة الدورانية',
+    nameEn: 'Rotational Motion',
+    category: 'ميكانيكا',
+    icon: '🔃',
+    difficulty: 3,
+    description: 'حركة دورانية للأجسام',
+    equations: [
+      { name: 'عزم القصور الذاتي', formula: 'I = Σmr²', desc: 'لجسم نقطة' },
+      { name: 'الطاقة الحركية الدورانية', formula: 'KE = ½Iω²', desc: 'طاقة الدوران' },
+      { name: 'قانون نيوتن الدوراني', formula: 'τ = Iα', desc: 'العزم والتسارع الزاوي' }
+    ],
+    variables: [
+      { name: 'm', label: 'الكتلة', unit: 'kg', unitOptions: [
+        { label: 'kg', value: 'kg', factor: 1 }
+      ], min: 1, max: 20, default: 5 },
+      { name: 'r', label: 'نصف القطر', unit: 'm', unitOptions: [
+        { label: 'm', value: 'm', factor: 1 }
+      ], min: 0.1, max: 5, default: 1 },
+      { name: 'omega', label: 'السرعة الزاوية', unit: 'rad/s', unitOptions: [
+        { label: 'rad/s', value: 'rad/s', factor: 1 }
+      ], min: 1, max: 50, default: 10 }
+    ],
+    results: [
+      { name: 'عزم القصور', formula: 'I = mr²', unit: 'kg·m²', color: 'cyan' },
+      { name: 'الطاقة الحركية', formula: 'KE = ½Iω²', unit: 'J', color: 'amber' }
+    ],
+    simulationType: 'pendulum',
+    aiExplanation: 'الحركة الدورانية تناظر الحركة الانتقالية مع استبدال الكتلة بعزم القصور.',
+    realWorld: 'العجلات، المراوح، الأرض تدور حول محورها',
+    tips: [
+      'عزم القصور يعتمد على توزيع الكتلة',
+      'كلما كانت الكتلة بعيدة عن المحور، زاد I',
+      'الطاقة الحركية الدورانية = ½Iω²'
+    ],
+    chartTypes: [
+      { x: 'نصف القطر (m)', y: 'عزم القصور (kg·m²)', type: 'line' }
+    ]
+  },
+  {
+    id: 'angular-momentum',
+    name: 'زخم الزاوية',
+    nameEn: 'Angular Momentum',
+    category: 'ميكانيكا',
+    icon: '🌀',
+    difficulty: 3,
+    description: 'زخم الحركة الدورانية',
+    equations: [
+      { name: 'زخم الزاوية', formula: 'L = Iω', desc: 'لجسم دوار' },
+      { name: 'حفظ زخم الزاوية', formula: 'I₁ω₁ = I₂ω₂', desc: 'بدون عزم خارجي' },
+      { name: 'لجسيم', formula: 'L = mvr', desc: 'لجسيم حول نقطة' }
+    ],
+    variables: [
+      { name: 'I', label: 'عزم القصور', unit: 'kg·m²', unitOptions: [
+        { label: 'kg·m²', value: 'kg·m²', factor: 1 }
+      ], min: 0.1, max: 10, default: 2 },
+      { name: 'omega', label: 'السرعة الزاوية', unit: 'rad/s', unitOptions: [
+        { label: 'rad/s', value: 'rad/s', factor: 1 }
+      ], min: 1, max: 30, default: 10 }
+    ],
+    results: [
+      { name: 'زخم الزاوية', formula: 'L = Iω', unit: 'kg·m²/s', color: 'cyan' }
+    ],
+    simulationType: 'pendulum',
+    aiExplanation: 'زخم الزاوية كمية محفوظة. راقصة الباليه تدور أسرع عند سحب ذراعيها.',
+    realWorld: 'الفلك، الجيروسكوب، راقصون',
+    tips: [
+      'L محفوظ في غياب العزوم الخارجية',
+      'عند تقليل I، تزداد ω (حفظ L)',
+      'تطبيق: نجم ينهار → يدور أسرع'
+    ],
+    chartTypes: [
+      { x: 'السرعة الزاوية (rad/s)', y: 'زخم الزاوية (kg·m²/s)', type: 'line' }
+    ]
+  },
+  {
+    id: 'gravity-orbits',
+    name: 'الجاذبية والمدار',
+    nameEn: 'Gravity and Orbits',
+    category: 'ميكانيكا',
+    icon: '🌍',
+    difficulty: 3,
+    description: 'قانون الجذب العام وحركة الكواكب',
+    equations: [
+      { name: 'قانون الجذب', formula: 'F = Gm₁m₂/r²', desc: 'قانون نيوتن' },
+      { name: 'سرعة الهروب', formula: 'v_esc = √(2GM/r)', desc: 'للهروب من الجاذبية' },
+      { name: 'سرعة المدار', formula: 'v_orbit = √(GM/r)', desc: 'لمدار دائري' }
+    ],
+    variables: [
+      { name: 'M', label: 'كتلة الكوكب', unit: 'kg', unitOptions: [
+        { label: 'kg', value: 'kg', factor: 1 }
+      ], min: 1e24, max: 1e30, default: 5.97e24 },
+      { name: 'r', label: 'نصف قطر المدار', unit: 'km', unitOptions: [
+        { label: 'km', value: 'km', factor: 1 },
+        { label: 'm', value: 'm', factor: 1000 }
+      ], min: 1000, max: 50000, default: 7000 }
+    ],
+    results: [
+      { name: 'سرعة المدار', formula: 'v = √(GM/r)', unit: 'km/s', color: 'cyan' },
+      { name: 'السرعة الزاوية', formula: 'ω = v/r', unit: 'rad/s', color: 'amber' }
+    ],
+    simulationType: 'projectile',
+    aiExplanation: 'الجاذبية قوة مركزية تحافظ على حركة الكواكب في مداراتها.',
+    realWorld: 'الكواكب، الأقمار الصناعية، المد والجزر',
+    tips: [
+      'G = 6.67×10⁻¹¹ N·m²/kg²',
+      'سرعة المدار أقل من سرعة الهروب',
+      'المدار الإهليلجي: سرعة متغيرة'
+    ],
+    chartTypes: [
+      { x: 'نصف القطر (km)', y: 'السرعة (km/s)', type: 'line' }
+    ]
+  },
+
+  // ─────────────────────────────────────────────────────────
+  // ⚡ الكهرباء والمغناطيسية
+  // ─────────────────────────────────────────────────────────
+  {
+    id: 'electric-field',
+    name: 'المجال الكهربائي',
+    nameEn: 'Electric Field',
+    category: 'كهرباء',
+    icon: '💥',
+    difficulty: 2,
+    description: 'المجال الكهربائي الناتج عن الشحنات',
+    equations: [
+      { name: 'المجال', formula: 'E = F/q = kQ/r²', desc: 'تعريف المجال' },
+      { name: 'القوة', formula: 'F = kq₁q₂/r²', desc: 'قانون كولوم' },
+      { name: 'الجهد', formula: 'V = kQ/r', desc: 'الجهد الكهربائي' }
+    ],
+    variables: [
+      { name: 'Q', label: 'الشحنة', unit: 'μC', unitOptions: [
+        { label: 'μC', value: 'μC', factor: 1 },
+        { label: 'C', value: 'C', factor: 1000000 }
+      ], min: 1, max: 100, default: 10 },
+      { name: 'r', label: 'المسافة', unit: 'm', unitOptions: [
+        { label: 'm', value: 'm', factor: 1 },
+        { label: 'cm', value: 'cm', factor: 100 }
+      ], min: 0.1, max: 10, default: 1 }
+    ],
+    results: [
+      { name: 'المجال الكهربائي', formula: 'E = kQ/r²', unit: 'N/C', color: 'cyan' },
+      { name: 'الجهد', formula: 'V = kQ/r', unit: 'V', color: 'amber' }
+    ],
+    simulationType: 'magnetic',
+    aiExplanation: 'المجال الكهربائي يصف قوة التأثير على شحنة اختبار. المجال كمياء متجهية.',
+    realWorld: 'البرق، الشاشات، المكثفات',
+    tips: [
+      'المجال الكهربائي خارج الشحنة الموجبة يبعد',
+      'المجال الكهربائي داخل الشحنة السالبة يتجه نحوها',
+      'خطوط المجال لا تتقاطع'
+    ],
+    chartTypes: [
+      { x: 'المسافة (m)', y: 'المجال (N/C)', type: 'line' }
+    ]
+  },
+  {
+    id: 'electric-potential',
+    name: 'الجهد الكهربائي',
+    nameEn: 'Electric Potential',
+    category: 'كهرباء',
+    icon: '🔋',
+    difficulty: 2,
+    description: 'الطاقة الكامنة الكهربائية',
+    equations: [
+      { name: 'الجهد', formula: 'V = W/q = kQ/r', desc: 'تعريف الجهد' },
+      { name: 'الطاقة الكامنة', formula: 'U = kq₁q₂/r', desc: 'طاقة نظام شحنات' },
+      { name: 'الشغل', formula: 'W = qΔV', desc: 'شغل نقل شحنة' }
+    ],
+    variables: [
+      { name: 'Q', label: 'الشحنة المصدر', unit: 'μC', unitOptions: [
+        { label: 'μC', value: 'μC', factor: 1 }
+      ], min: 1, max: 100, default: 10 },
+      { name: 'q', label: 'شحنة الاختبار', unit: 'μC', unitOptions: [
+        { label: 'μC', value: 'μC', factor: 1 }
+      ], min: 1, max: 50, default: 5 },
+      { name: 'r', label: 'المسافة', unit: 'm', unitOptions: [
+        { label: 'm', value: 'm', factor: 1 }
+      ], min: 0.1, max: 5, default: 1 }
+    ],
+    results: [
+      { name: 'الجهد', formula: 'V = kQ/r', unit: 'V', color: 'cyan' },
+      { name: 'الطاقة الكامنة', formula: 'U = kQq/r', unit: 'J', color: 'amber' }
+    ],
+    simulationType: 'magnetic',
+    aiExplanation: 'الجهد الكهربائي طاقة كل وحدة شحنة. فرق الجهد يسبب تيار كهربائي.',
+    realWorld: 'البطاريات، المقابس، الدوائر الإلكترونية',
+    tips: [
+      'الجهد كمية قياسية (ليس متجهاً)',
+      'النقطة المرجعية للجهد عند ∞ عادةً = 0',
+      'الشغل = q(V₂ - V₁)'
+    ],
+    chartTypes: [
+      { x: 'المسافة (m)', y: 'الجهد (V)', type: 'line' }
+    ]
+  },
+  {
+    id: 'capacitors',
+    name: 'المكثفات',
+    nameEn: 'Capacitors',
+    category: 'كهرباء',
+    icon: '🔲',
+    difficulty: 2,
+    description: 'تخزين الشحنة الكهربائية',
+    equations: [
+      { name: 'السعة', formula: 'C = Q/V', desc: 'تعريف السعة' },
+      { name: 'طاقة المكثف', formula: 'U = ½CV² = ½QV', desc: 'الطاقة المخزنة' },
+      { name: 'لوح متوازي', formula: 'C = ε₀A/d', desc: 'سعة لوحين' }
+    ],
+    variables: [
+      { name: 'C', label: 'السعة', unit: 'μF', unitOptions: [
+        { label: 'μF', value: 'μF', factor: 1 },
+        { label: 'pF', value: 'pF', factor: 1000000 }
+      ], min: 1, max: 1000, default: 100 },
+      { name: 'V', label: 'الجهد', unit: 'V', unitOptions: [
+        { label: 'V', value: 'V', factor: 1 }
+      ], min: 1, max: 100, default: 12 }
+    ],
+    results: [
+      { name: 'الشحنة', formula: 'Q = CV', unit: 'μC', color: 'cyan' },
+      { name: 'الطاقة', formula: 'U = ½CV²', unit: 'J', color: 'amber' }
+    ],
+    simulationType: 'circuit',
+    aiExplanation: 'المكثف يخزن الطاقة في مجال كهربائي. يشحن تدريجياً عبر الزمن.',
+    realWorld: 'الفلاش، الدوائر الإلكترونية، تخزين الطاقة',
+    tips: [
+      'المكثف يحظر التيار المستمر بعد الشحن',
+      'الطاقة المخزنة = ½CV²',
+      'ثابت الزمن τ = RC'
+    ],
+    chartTypes: [
+      { x: 'الجهد (V)', y: 'الطاقة (J)', type: 'line' }
+    ]
+  },
+  {
+    id: 'magnetic-field',
+    name: 'المجال المغناطيسي',
+    nameEn: 'Magnetic Field',
+    category: 'كهرباء',
+    icon: '🧲',
+    difficulty: 2,
+    description: 'المجالات المغناطيسية وتأثيرها',
+    equations: [
+      { name: 'قوة لورنتز', formula: 'F = qvB sinθ', desc: 'قوة على شحنة متحركة' },
+      { name: 'لسلك', formula: 'F = BIL sinθ', desc: 'قوة على سلك في مجال' },
+      { name: 'ملف دائري', formula: 'B = μ₀nI', desc: 'مجال ملف حلزوني' }
+    ],
+    variables: [
+      { name: 'q', label: 'الشحنة', unit: 'μC', unitOptions: [
+        { label: 'μC', value: 'μC', factor: 1 }
+      ], min: 1, max: 100, default: 10 },
+      { name: 'v', label: 'السرعة', unit: 'm/s', unitOptions: [
+        { label: 'm/s', value: 'm/s', factor: 1 }
+      ], min: 1000, max: 100000, default: 10000 },
+      { name: 'B', label: 'المجال المغناطيسي', unit: 'T', unitOptions: [
+        { label: 'T', value: 'T', factor: 1 },
+        { label: 'G', value: 'G', factor: 10000 }
+      ], min: 0.01, max: 2, default: 0.5 }
+    ],
+    results: [
+      { name: 'قوة لورنتز', formula: 'F = qvB', unit: 'N', color: 'cyan' }
+    ],
+    simulationType: 'magnetic',
+    aiExplanation: 'المجال المغناطيسي يؤثر على الشحنات المتحركة. القوة دائماً عمودية على الحركة.',
+    realWorld: 'المحركات، المولدات، MRI',
+    tips: [
+      'المجال المغناطيسي لا يؤثر على شحنة ساكنة',
+      'القوة أعظم عندما v ⟂ B',
+      'اتجاه القوة بقاعدة اليد اليمنى'
+    ],
+    chartTypes: [
+      { x: 'المجال (T)', y: 'القوة (N)', type: 'line' }
+    ]
+  },
+  {
+    id: 'electromagnetic-induction',
+    name: 'التحريض الكهرومغناطيسي',
+    nameEn: 'Electromagnetic Induction',
+    category: 'كهرباء',
+    icon: '⚡',
+    difficulty: 3,
+    description: 'توليد القوة الدافعة الكهربائية',
+    equations: [
+      { name: 'قانون فاراداي', formula: 'ε = -dΦ/dt', desc: 'القوة الدافعة المستحثة' },
+      { name: 'تدفق مغناطيسي', formula: 'Φ = BA cosθ', desc: 'تعريف التدفق' },
+      { name: 'قاعدة لنز', formula: 'الاتجاه يعارض التغير', desc: 'قاعدة لنز' }
+    ],
+    variables: [
+      { name: 'B', label: 'المجال المغناطيسي', unit: 'T', unitOptions: [
+        { label: 'T', value: 'T', factor: 1 }
+      ], min: 0.1, max: 2, default: 1 },
+      { name: 'A', label: 'المساحة', unit: 'm²', unitOptions: [
+        { label: 'm²', value: 'm²', factor: 1 },
+        { label: 'cm²', value: 'cm²', factor: 10000 }
+      ], min: 0.001, max: 1, default: 0.1 },
+      { name: 'N', label: 'عدد اللفات', unit: '', unitOptions: [
+        { label: '', value: '', factor: 1 }
+      ], min: 10, max: 1000, default: 100 }
+    ],
+    results: [
+      { name: 'التدفق المغناطيسي', formula: 'Φ = BA', unit: 'Wb', color: 'cyan' },
+      { name: 'القوة الدافعة', formula: 'ε = NBAω', unit: 'V', color: 'amber' }
+    ],
+    simulationType: 'magnetic',
+    aiExplanation: 'التغير في التدفق المغناطيسي يولد قوة دافعة كهربائية (emf).',
+    realWorld: 'المولدات، المحولات، الدارات RL',
+    tips: [
+      'لازم تغير التدفق لتوليد emf',
+      'الحث الذاتي: ملف يولد emf في نفسه',
+      'L = NΦ/I'
+    ],
+    chartTypes: [
+      { x: 'عدد اللفات', y: 'emf (V)', type: 'line' }
+    ]
+  },
+  {
+    id: 'ac-circuits',
+    name: 'الدوائر المترددة',
+    nameEn: 'AC Circuits',
+    category: 'كهرباء',
+    icon: '〰️',
+    difficulty: 3,
+    description: 'التيار والجهد المترددان',
+    equations: [
+      { name: 'الجهد المتردد', formula: 'V = V₀sin(ωt)', desc: 'جهد متغير' },
+      { name: 'المعاوقة', formula: 'Z = √(R² + (XL - XC)²)', desc: 'المعاوقة الكلية' },
+      { name: 'القدرة', formula: 'P = VIcosφ', desc: 'القدرة الفعلية' }
+    ],
+    variables: [
+      { name: 'V0', label: 'الجهد الأقصى', unit: 'V', unitOptions: [
+        { label: 'V', value: 'V', factor: 1 }
+      ], min: 1, max: 100, default: 12 },
+      { name: 'f', label: 'التردد', unit: 'Hz', unitOptions: [
+        { label: 'Hz', value: 'Hz', factor: 1 },
+        { label: 'kHz', value: 'kHz', factor: 1000 }
+      ], min: 50, max: 1000, default: 60 }
+    ],
+    results: [
+      { name: 'الجهد الفعال', formula: 'V_rms = V₀/√2', unit: 'V', color: 'cyan' },
+      { name: 'ω', formula: 'ω = 2πf', unit: 'rad/s', color: 'amber' }
+    ],
+    simulationType: 'wave',
+    aiExplanation: 'التيار المتردد يتغير اتجاهه دورياً. معظم الطاقة الكهربائية تستخدم AC.',
+    realWorld: 'شبكات الكهرباء، الراديو، الإلكترونيات',
+    tips: [
+      'Vrms = V₀/√2 للقيمة الفعالة',
+      'في الرنين: XL = XC',
+      'الطاقة تنتقل فقط بالقدرة الفعلية'
+    ],
+    chartTypes: [
+      { x: 'التردد (Hz)', y: 'المعاوقة (Ω)', type: 'line' }
+    ]
+  },
+
+  // ─────────────────────────────────────────────────────────
+  // 💡 البصريات
+  // ─────────────────────────────────────────────────────────
+  {
+    id: 'lenses',
+    name: 'العدسات والمرايا',
+    nameEn: 'Lenses and Mirrors',
+    category: 'بصريات',
+    icon: '🔍',
+    difficulty: 2,
+    description: 'تكوين الصور بالعدسات والمرايا',
+    equations: [
+      { name: 'معادلة العدسة', formula: '1/f = 1/do + 1/di', desc: 'معادلة العدسة' },
+      { name: 'تكبير', formula: 'M = -di/do = hi/ho', desc: 'التكبير' },
+      { name: 'قوة العدسة', formula: 'P = 1/f', desc: 'بالديوبتر' }
+    ],
+    variables: [
+      { name: 'f', label: 'البعد البؤري', unit: 'cm', unitOptions: [
+        { label: 'cm', value: 'cm', factor: 1 },
+        { label: 'm', value: 'm', factor: 100 }
+      ], min: 5, max: 100, default: 20 },
+      { name: 'do', label: 'مسافة الجسم', unit: 'cm', unitOptions: [
+        { label: 'cm', value: 'cm', factor: 1 }
+      ], min: 10, max: 200, default: 50 }
+    ],
+    results: [
+      { name: 'مسافة الصورة', formula: 'di = 1/(1/f - 1/do)', unit: 'cm', color: 'cyan' },
+      { name: 'التكبير', formula: 'M = -di/do', unit: '', color: 'amber' }
+    ],
+    simulationType: 'refraction',
+    aiExplanation: 'العدسات والمرايا تغير مسار الضوء لتكوين صور. المعادلة الأساسية تربط do, di, f.',
+    realWorld: 'النظارات، الكاميرات، التلسكوبات',
+    tips: [
+      'عدسة convergent: f موجبة، تحول平行光线 لـ convergent',
+      'عدسة divergent: f سالبة',
+      'الصورة الحقيقية معكوسة، الصورة الافتراضية معتدلة'
+    ],
+    chartTypes: [
+      { x: 'مسافة الجسم (cm)', y: 'مسافة الصورة (cm)', type: 'line' }
+    ]
+  },
+  {
+    id: 'interference',
+    name: 'تداخل الضوء',
+    nameEn: 'Light Interference',
+    category: 'بصريات',
+    icon: '🌊',
+    difficulty: 3,
+    description: 'ظواهر التداخل الضوئي',
+    equations: [
+      { name: 'بفتين', formula: 'd sinθ = mλ', desc: 'شروط التداخل' },
+      { name: 'فتحة واحدة', formula: 'a sinθ = mλ', desc: 'حيود فتحة' },
+      { name: 'المسافة للشاشة', formula: 'y = mλL/d', desc: 'لبعيد' }
+    ],
+    variables: [
+      { name: 'd', label: 'المسافة بين الشقوق', unit: 'μm', unitOptions: [
+        { label: 'μm', value: 'μm', factor: 1 }
+      ], min: 0.1, max: 10, default: 0.5 },
+      { name: 'lambda', label: 'الطول الموجي', unit: 'nm', unitOptions: [
+        { label: 'nm', value: 'nm', factor: 1 }
+      ], min: 400, max: 700, default: 550 }
+    ],
+    results: [
+      { name: 'زاوية التداخل', formula: 'θ = arcsin(mλ/d)', unit: '°', color: 'cyan' },
+      { name: 'فاصل المواقع', formula: 'Δy = λL/d', unit: 'm', color: 'amber' }
+    ],
+    simulationType: 'wave',
+    aiExplanation: 'التداخل يحدث عند union موجات ضوئية. النمط الناتج يعتمد على اختلاف المسار.',
+    realWorld: 'الأقراص المدمجة، الطلاء anti-reflective، التداخل في فقاعات الصابون',
+    tips: [
+      'تداخل بناء: المسار = mλ',
+      'تداخل هدمي: المسار = (m+½)λ',
+      'λ المرئي: 400-700 nm'
+    ],
+    chartTypes: [
+      { x: 'المسافة (μm)', y: 'θ (°)', type: 'line' }
+    ]
+  },
+  {
+    id: 'polarization',
+    name: 'استقطاب الضوء',
+    nameEn: 'Light Polarization',
+    category: 'بصريات',
+    icon: '↗️',
+    difficulty: 2,
+    description: 'الاستقطاب وأمثلة عليه',
+    equations: [
+      { name: 'قانون مالوس', formula: 'I = I₀cos²θ', desc: 'شدة الضوء المستقطب' },
+      { name: 'زاوية بروستر', formula: 'tanθ_B = n₂/n₁', desc: 'استقطاب بالانعكاس' }
+    ],
+    variables: [
+      { name: 'I0', label: 'الشدة الابتدائية', unit: 'W/m²', unitOptions: [
+        { label: 'W/m²', value: 'W/m²', factor: 1 }
+      ], min: 1, max: 100, default: 10 },
+      { name: 'theta', label: 'الزاوية', unit: '°', unitOptions: [
+        { label: '°', value: '°', factor: 1 }
+      ], min: 0, max: 90, default: 45 }
+    ],
+    results: [
+      { name: 'الشدة المستقطبة', formula: 'I = I₀cos²θ', unit: 'W/m²', color: 'cyan' }
+    ],
+    simulationType: 'wave',
+    aiExplanation: 'الاستقطاب يصف اتجاه المجال الكهربائي في الموجة الضوئية.',
+    realWorld: 'النظارات الشمسية، شاشات LCD، التصوير',
+    tips: [
+      'الضوء العادي غير مستقطب',
+      'النظارات المستقطبة تحجب الانعكاسات',
+      'زاوية بروستر: الضوء المنعكس مستقطب تماماً'
+    ],
+    chartTypes: [
+      { x: 'الزاوية (°)', y: 'الشدة (W/m²)', type: 'line' }
+    ]
+  },
+  {
+    id: 'color',
+    name: 'ألوان الضوء',
+    nameEn: 'Colors of Light',
+    category: 'بصريات',
+    icon: '🌈',
+    difficulty: 1,
+    description: 'الطيف المرئي وخلط الألوان',
+    equations: [
+      { name: 'طاقة الفوتون', formula: 'E = hf = hc/λ', desc: 'طاقة الفوتون' },
+      { name: 'اللون الأساسي', formula: 'RGB', desc: 'الألوان الأساسية' }
+    ],
+    variables: [
+      { name: 'lambda', label: 'الطول الموجي', unit: 'nm', unitOptions: [
+        { label: 'nm', value: 'nm', factor: 1 }
+      ], min: 380, max: 750, default: 550 }
+    ],
+    results: [
+      { name: 'التردد', formula: 'f = c/λ', unit: 'Hz', color: 'cyan' },
+      { name: 'طاقة الفوتون', formula: 'E = hc/λ', unit: 'eV', color: 'amber' }
+    ],
+    simulationType: 'wave',
+    aiExplanation: 'اللون يعتمد على التردد (أو الطول الموجي). الضوء الأبيض خليط من كل الألوان.',
+    realWorld: 'قوس قزح، الشاشات، الفن',
+    tips: [
+      'أحمر: λ كبير، تردد قليل، طاقة قليلة',
+      'بنفسجي: λ صغير، تردد عالي، طاقة عالية',
+      'الألوان الأساسية للإضاءة: RGB'
+    ],
+    chartTypes: [
+      { x: 'الطول الموجي (nm)', y: 'طاقة الفوتون (eV)', type: 'line' }
+    ]
+  },
+
+  // ─────────────────────────────────────────────────────────
+  // 🌡️ الديناميكا الحرارية
+  // ─────────────────────────────────────────────────────────
+  {
+    id: 'heat-capacity',
+    name: 'الحرارة النوعية',
+    nameEn: 'Specific Heat Capacity',
+    category: 'حرارة',
+    icon: '🔥',
+    difficulty: 1,
+    description: 'الحرارة النوعية والتغير في الحرارة',
+    equations: [
+      { name: 'الحرارة', formula: 'Q = mcΔT', desc: 'الحرارة المكتسبة/المفقودة' },
+      { name: 'الطاقة الحرارية', formula: 'Q = mc(T₂-T₁)', desc: 'تغير الحرارة' }
+    ],
+    variables: [
+      { name: 'm', label: 'الكتلة', unit: 'g', unitOptions: [
+        { label: 'g', value: 'g', factor: 1 },
+        { label: 'kg', value: 'kg', factor: 1000 }
+      ], min: 10, max: 1000, default: 100 },
+      { name: 'c', label: 'الحرارة النوعية', unit: 'J/kg·K', unitOptions: [
+        { label: 'J/kg·K', value: 'J/kg·K', factor: 1 }
+      ], min: 100, max: 5000, default: 4186 },
+      { name: 'dT', label: 'التغير في الحرارة', unit: '°C', unitOptions: [
+        { label: '°C', value: '°C', factor: 1 }
+      ], min: 1, max: 100, default: 20 }
+    ],
+    results: [
+      { name: 'الحرارة', formula: 'Q = mcΔT', unit: 'J', color: 'amber' },
+      { name: 'الطاقة الحرارية', formula: 'P = Q/t', unit: 'W', color: 'cyan' }
+    ],
+    simulationType: 'gas',
+    aiExplanation: 'الحرارة النوعية كمية الحرارة اللازمة لرفع 1kg بمقدار 1K.',
+    realWorld: 'التدفئة، التبريد، الطهي',
+    tips: [
+      'c الماء = 4186 J/kg·K (عالية جداً)',
+      'المعادن لها حرارة نوعية منخفضة',
+      'ΔT بالسيلزيوس = ΔT بالكلفن'
+    ],
+    chartTypes: [
+      { x: 'الكتلة (g)', y: 'الحرارة (J)', type: 'line' },
+      { x: 'ΔT (°C)', y: 'الحرارة (J)', type: 'line' }
+    ]
+  },
+  {
+    id: 'phase-change',
+    name: 'التحولات الطورية',
+    nameEn: 'Phase Changes',
+    category: 'حرارة',
+    icon: '🧊',
+    difficulty: 2,
+    description: 'الانصهار والتبخر والحرارة الكامنة',
+    equations: [
+      { name: 'الحرارة الكامنة', formula: 'Q = mL', desc: 'لتحويل طوري' },
+      { name: 'لانصهار', formula: 'L_f', desc: 'الحرارة الكامنة للانصهار' },
+      { name: 'لتبخر', formula: 'L_v', desc: 'الحرارة الكامنة للتبخر' }
+    ],
+    variables: [
+      { name: 'm', label: 'الكتلة', unit: 'g', unitOptions: [
+        { label: 'g', value: 'g', factor: 1 }
+      ], min: 1, max: 500, default: 100 },
+      { name: 'Lf', label: 'الحرارة الكامنة للانصهار', unit: 'J/kg', unitOptions: [
+        { label: 'J/kg', value: 'J/kg', factor: 1 },
+        { label: 'cal/g', value: 'cal/g', factor: 4184 }
+      ], min: 10000, max: 400000, default: 334000 }
+    ],
+    results: [
+      { name: 'الحرارة للانصهار', formula: 'Q = mL_f', unit: 'J', color: 'cyan' },
+      { name: 'الحرارة للتبخر', formula: 'Q = mL_v', unit: 'J', color: 'amber' }
+    ],
+    simulationType: 'gas',
+    aiExplanation: 'خلال التحول الطوري، الحرارة لا تغير درجة الحرارة بل تكسر الروابط.',
+    realWorld: 'الثلج يذوب، الماء يغلي، الأنهار الجليدية',
+    tips: [
+      'L_f للجليد = 334 kJ/kg',
+      'L_v للماء = 2260 kJ/kg',
+      'خلال التحول، T ثابتة'
+    ],
+    chartTypes: [
+      { x: 'الكتلة (g)', y: 'الحرارة (J)', type: 'line' }
+    ]
+  },
+  {
+    id: 'ideal-gas-law',
+    name: 'قانون الغاز المثالي',
+    nameEn: 'Ideal Gas Law',
+    category: 'حرارة',
+    icon: '💨',
+    difficulty: 2,
+    description: 'معادلة حالة الغاز المثالي',
+    equations: [
+      { name: 'الغاز المثالي', formula: 'PV = nRT', desc: 'المعادلة الرئيسية' },
+      { name: 'قانون شارل', formula: 'V/T = const (P ثابت)', desc: 'عند ضغط ثابت' },
+      { name: 'قانون بويل', formula: 'PV = const (T ثابت)', desc: 'عند حرارة ثابتة' }
+    ],
+    variables: [
+      { name: 'n', label: 'عدد المولات', unit: 'mol', unitOptions: [
+        { label: 'mol', value: 'mol', factor: 1 }
+      ], min: 0.1, max: 10, default: 1 },
+      { name: 'T', label: 'الحرارة', unit: 'K', unitOptions: [
+        { label: 'K', value: 'K', factor: 1 },
+        { label: '°C', value: '°C', factor: 1, convert: (v) => v + 273 }
+      ], min: 200, max: 500, default: 300 },
+      { name: 'P', label: 'الضغط', unit: 'atm', unitOptions: [
+        { label: 'atm', value: 'atm', factor: 1 },
+        { label: 'Pa', value: 'Pa', factor: 101325 }
+      ], min: 0.5, max: 10, default: 1 }
+    ],
+    results: [
+      { name: 'الحجم', formula: 'V = nRT/P', unit: 'L', color: 'cyan' },
+      { name: 'PV/nT', formula: 'R', unit: 'L·atm/mol·K', color: 'amber' }
+    ],
+    simulationType: 'gas',
+    aiExplanation: 'الغاز المثالي نموذج مثالي. R = 0.0821 L·atm/mol·K أو 8.314 J/mol·K',
+    realWorld: 'محركات الاحتراق الداخلي، البالونات، الغلاف الجوي',
+    tips: [
+      'R = 0.0821 L·atm/mol·K',
+      'R = 8.314 J/mol·K',
+      'الغاز الحقيقي يقترب من المثالي في ضغط منخفض وحرارة عالية'
+    ],
+    chartTypes: [
+      { x: 'الحرارة (K)', y: 'الحجم (L)', type: 'line' },
+      { x: 'الضغط (atm)', y: 'الحجم (L)', type: 'line' }
+    ]
+  },
+  {
+    id: 'heat-engines',
+    name: 'محركات الحرارة',
+    nameEn: 'Heat Engines',
+    category: 'حرارة',
+    icon: '⚙️',
+    difficulty: 3,
+    description: 'كفاءة محركات الحرارة ودورة كارنو',
+    equations: [
+      { name: 'الكفاءة', formula: 'η = 1 - Tc/Th', desc: 'لكارنو' },
+      { name: 'الشغل', formula: 'W = Qh - Qc', desc: 'الشغل المنتج' },
+      { name: 'الكفاءة الفعلية', formula: 'η = W/Qh', desc: 'عملياً' }
+    ],
+    variables: [
+      { name: 'Th', label: 'حرارة المصدر', unit: 'K', unitOptions: [
+        { label: 'K', value: 'K', factor: 1 }
+      ], min: 300, max: 1000, default: 500 },
+      { name: 'Tc', label: 'حرارة المصرف', unit: 'K', unitOptions: [
+        { label: 'K', value: 'K', factor: 1 }
+      ], min: 100, max: 400, default: 300 }
+    ],
+    results: [
+      { name: 'كفاءة كارنو', formula: 'η = 1 - Tc/Th', unit: '', color: 'cyan' },
+      { name: 'النسبة', formula: 'Tc/Th', unit: '', color: 'amber' }
+    ],
+    simulationType: 'gas',
+    aiExplanation: 'محركات الحرارة تحول الحرارة إلى شغل. كفاءة كارنو هي أقصى كفاءة ممكنة.',
+    realWorld: 'محركات السيارات، المحطات الحرارية',
+    tips: [
+      'كفاءة 100% مستحيلة (ت违反了 القانون الثاني)',
+      'كلما زاد الفرق بين Th و Tc، زادت الكفاءة',
+      'Carnot هو نموذج مثالي لا يمكن تحقيقه'
+    ],
+    chartTypes: [
+      { x: 'Tc/Th', y: 'الكفاءة', type: 'line' }
+    ]
+  },
+  {
+    id: 'entropy',
+    name: 'الإنتروبيا',
+    nameEn: 'Entropy',
+    category: 'حرارة',
+    icon: '📊',
+    difficulty: 3,
+    description: 'مقياس disorder وال قانون الثاني',
+    equations: [
+      { name: 'تعريف', formula: 'ΔS = Q/T (عند T ثابت)', desc: 'للعمليات القابلة للعكس' },
+      { name: 'لغاز مثالي', formula: 'ΔS = nC_v ln(T₂/T₁) + nR ln(V₂/V₁)', desc: 'معادلة عامة' }
+    ],
+    variables: [
+      { name: 'Q', label: 'الحرارة', unit: 'J', unitOptions: [
+        { label: 'J', value: 'J', factor: 1 },
+        { label: 'kJ', value: 'kJ', factor: 1000 }
+      ], min: 100, max: 10000, default: 1000 },
+      { name: 'T', label: 'الحرارة', unit: 'K', unitOptions: [
+        { label: 'K', value: 'K', factor: 1 }
+      ], min: 100, max: 500, default: 300 }
+    ],
+    results: [
+      { name: 'الإنتروبيا', formula: 'ΔS = Q/T', unit: 'J/K', color: 'cyan' }
+    ],
+    simulationType: 'wave',
+    aiExplanation: 'الإنتروبيا مقياس لعدم الانتظام. القانون الثاني: ΔS ≥ 0.',
+    realWorld: 'تحلل الطاقة، انتشار الغازات، الشيخوخة',
+    tips: [
+      'الكون يميل لزيادة الإنتروبيا',
+      'S لا تنخفض في نظام مغلق',
+      'S كمية extensive (تdepend على size)'
+    ],
+    chartTypes: [
+      { x: 'الحرارة (K)', y: 'الإنتروبيا (J/K)', type: 'line' }
+    ]
+  },
+
+  // ─────────────────────────────────────────────────────────
+  // ⚛️ فيزياء الكم والحديثة
+  // ─────────────────────────────────────────────────────────
+  {
+    id: 'quantum-energy',
+    name: 'تكميم الطاقة',
+    nameEn: 'Energy Quantization',
+    category: 'فيزياء حديثة',
+    icon: '⚛️',
+    difficulty: 3,
+    description: 'طبيعة الكم وطاقة الفوتون',
+    equations: [
+      { name: 'طاقة الفوتون', formula: 'E = hf = hc/λ', desc: 'بلانك' },
+      { name: 'تكميم الطاقة', formula: 'E_n = n²E₁', desc: 'لجسيم في صندوق' },
+      { name: 'ثابت بلانك', formula: 'h = 6.63×10⁻³⁴ J·s', desc: 'قيمة h' }
+    ],
+    variables: [
+      { name: 'f', label: 'التردد', unit: 'Hz', unitOptions: [
+        { label: 'Hz', value: 'Hz', factor: 1 },
+        { label: 'THz', value: 'THz', factor: 1e12 }
+      ], min: 1e14, max: 1e16, default: 5e14 }
+    ],
+    results: [
+      { name: 'طاقة الفوتون', formula: 'E = hf', unit: 'eV', color: 'cyan' },
+      { name: 'طاقة في جول', formula: 'E = hc/λ', unit: 'J', color: 'amber' }
+    ],
+    simulationType: 'wave',
+    aiExplanation: 'الطاقة مكماة. لا يمكن للجسيم امتلاك أي طاقة، بل قيم محددة فقط.',
+    realWorld: 'الليزر، أشعة X، الصمامات الثنائية',
+    tips: [
+      'h = 6.626×10⁻³⁴ J·s',
+      'E بالـ eV أسهل: E(eV) = 1240/λ(nm)',
+      'الطاقة مكماة في الأنظمة المرتبطة'
+    ],
+    chartTypes: [
+      { x: 'التردد (Hz)', y: 'الطاقة (eV)', type: 'line' }
+    ]
+  },
+  {
+    id: 'wave-particle',
+    name: 'ازدواجية الموجة-جسيم',
+    nameEn: 'Wave-Particle Duality',
+    category: 'فيزياء حديثة',
+    icon: '🌊',
+    difficulty: 3,
+    description: 'الطبيعة المزدوجة للمادة والضوء',
+    equations: [
+      { name: 'طاقة فوتون', formula: 'E = hf', desc: 'ك موجة' },
+      { name: 'زخم جسيم', formula: 'p = h/λ', desc: 'ك جسيم' },
+      { name: 'د بروي', formula: 'λ = h/p', desc: 'الطول الموجي' }
+    ],
+    variables: [
+      { name: 'm', label: 'الكتلة', unit: 'kg', unitOptions: [
+        { label: 'kg', value: 'kg', factor: 1 },
+        { label: 'eV/c²', value: 'eV/c²', factor: 1 }
+      ], min: 1e-31, max: 1e-10, default: 9.11e-31 }
+    ],
+    results: [
+      { name: 'زخم', formula: 'p = mv', unit: 'kg·m/s', color: 'cyan' },
+      { name: 'الطول الموجي', formula: 'λ = h/p', unit: 'm', color: 'amber' }
+    ],
+    simulationType: 'wave',
+    aiExplanation: 'الضوء والمادة كلاهما يمتلك خصائص موجية وجسيمية.',
+    realWorld: 'الحيود الإلكتروني، المجهر الإلكتروني',
+    tips: [
+      'الأجسام الكبيرة: λ صغير جداً (لا يمكن قياسه)',
+      'الأجسام الصغيرة: λ قابل للقياس',
+      'التجربة تحدد: موجة أو جسيم'
+    ],
+    chartTypes: [
+      { x: 'الكتلة (kg)', y: 'الطول الموجي (m)', type: 'line' }
+    ]
+  },
+  {
+    id: 'heisenberg',
+    name: 'مبدأ عدم اليقين',
+    nameEn: 'Heisenberg Uncertainty',
+    category: 'فيزياء حديثة',
+    icon: '❓',
+    difficulty: 3,
+    description: 'حدود دقة القياس في الكم',
+    equations: [
+      { name: 'مبدأ عدم اليقين', formula: 'ΔxΔp ≥ ℏ/2', desc: 'موقع-زخم' },
+      { name: 'طاقة-زمن', formula: 'ΔEΔt ≥ ℏ/2', desc: 'طاقة-زمن' },
+      { name: 'اختصار', formula: 'ΔxΔp ≥ h/4π', desc: 'بديل' }
+    ],
+    variables: [
+      { name: 'dx', label: 'عدم اليقين في الموقع', unit: 'm', unitOptions: [
+        { label: 'm', value: 'm', factor: 1 },
+        { label: 'nm', value: 'nm', factor: 1e9 }
+      ], min: 1e-12, max: 1e-6, default: 1e-9 }
+    ],
+    results: [
+      { name: 'Δp الأدنى', formula: 'Δp ≥ ℏ/(2Δx)', unit: 'kg·m/s', color: 'cyan' },
+      { name: 'Δv الأدنى', formula: 'Δv ≥ ℏ/(2mΔx)', unit: 'm/s', color: 'amber' }
+    ],
+    simulationType: 'wave',
+    aiExplanation: 'مبدأ هايزنبرغ: لا يمكن تحديد موقع وسرعة الجسيم بدقة عالية في نفس الوقت.',
+    realWorld: 'الفيزياء الذرية، الميكروسكوب الإلكتروني',
+    tips: [
+      'ℏ = h/2π = 1.055×10⁻³⁴ J·s',
+      'كلما زادت دقة الموقع، قلت دقة الزخم',
+      'مبدأ fundamental ولا يمكن التغلب عليه'
+    ],
+    chartTypes: [
+      { x: 'Δx (m)', y: 'Δp (kg·m/s)', type: 'line' }
+    ]
+  },
+  {
+    id: 'nuclear-physics',
+    name: 'الفيزياء النووية',
+    nameEn: 'Nuclear Physics',
+    category: 'فيزياء حديثة',
+    icon: '☢️',
+    difficulty: 3,
+    description: 'تركيب النواة والتفاعلات النووية',
+    equations: [
+      { name: 'طاقة الربط', formula: 'E = Δmc²', desc: 'نقص الكتلة' },
+      { name: 'نقص الكتلة', formula: 'Δm = Zmp + Nmn - M', desc: 'حساب Δm' },
+      { name: 'النصف', formula: 'N = N₀e^(-λt)', desc: 'تحلل إشعاعي' }
+    ],
+    variables: [
+      { name: 'N0', label: 'الذرات الابتدائية', unit: '', unitOptions: [
+        { label: '', value: '', factor: 1 }
+      ], min: 100, max: 10000, default: 1000 },
+      { name: 'lambda', label: 'ثابت التحلل', formula: (v) => Math.log(2)/v, unit: '1/s', unitOptions: [
+        { label: '1/s', value: '1/s', factor: 1 }
+      ], min: 0.01, max: 1, default: 0.1 }
+    ],
+    results: [
+      { name: 'الذرات بعد t', formula: 'N = N₀e^(-λt)', unit: '', color: 'cyan' },
+      { name: 'النشاط', formula: 'A = λN', unit: 'Bq', color: 'amber' }
+    ],
+    simulationType: 'radioactive',
+    aiExplanation: 'الفيزياء النووية تدرس النواة وتفاعلاتها. طاقة الربط تحفظ النواة.',
+    realWorld: 'المفاعلات النووية، الطب النووي، التأريخ بالكربون',
+    tips: [
+      'طاقة الربط لكل nucleon ~ 8 MeV',
+      'U-235 للانشطار، H-1 للاندماج',
+      'عمر النصف يختلف من ms لـ billions of years'
+    ],
+    chartTypes: [
+      { x: 'الزمن (s)', y: 'عدد الذرات', type: 'line' }
+    ]
+  },
+  {
+    id: 'fusion-fission',
+    name: 'الانشطار والاندماج',
+    nameEn: 'Nuclear Fusion & Fission',
+    category: 'فيزياء حديثة',
+    icon: '💣',
+    difficulty: 3,
+    description: 'الطاقة من التفاعلات النووية',
+    equations: [
+      { name: 'انشطار', formula: 'U-235 + n → Ba + Kr + 3n', desc: 'مثال انشطار' },
+      { name: 'اندماج', formula: 'D + T → He + n', desc: 'D-T اندماج' },
+      { name: 'طاقة', formula: 'E = Δmc²', desc: 'طاقة التفاعل' }
+    ],
+    variables: [
+      { name: 'm', label: 'نقص الكتلة', unit: 'kg', unitOptions: [
+        { label: 'kg', value: 'kg', factor: 1 },
+        { label: 'u', value: 'u', factor: 1.66e-27 }
+      ], min: 1e-28, max: 1e-26, default: 3.2e-28 }
+    ],
+    results: [
+      { name: 'الطاقة الناتجة', formula: 'E = mc²', unit: 'J', color: 'cyan' },
+      { name: 'بالميجا إلكترون فولت', formula: 'E = Δm × 931.5', unit: 'MeV', color: 'amber' }
+    ],
+    simulationType: 'radioactive',
+    aiExplanation: 'الانشطار يقسم نواة ثقيلة، الاندماج يدمج نواتين خفيفتين. كلاهما يطلق طاقة.',
+    realWorld: 'القنابل الذرية (انشطار)، الشمس (اندماج)، المفاعلات',
+    tips: [
+      'الطاقة لكل nucleon أكبر في الاندماج',
+      'شمسنا تعمل بالاندماج',
+      'الطاقة الناتجة من E=mc² هائلة'
+    ],
+    chartTypes: [
+      { x: 'نقص الكتلة (kg)', y: 'الطاقة (J)', type: 'line' }
+    ]
+  },
+
+  // ─────────────────────────────────────────────────────────
+  // 🔊 الموجات والصوت
+  // ─────────────────────────────────────────────────────────
+  {
+    id: 'sound-waves',
+    name: 'الموجات الصوتية',
+    nameEn: 'Sound Waves',
+    category: 'ميكانيكا',
+    icon: '🔊',
+    difficulty: 1,
+    description: 'خصائص الصوت وانتقاله',
+    equations: [
+      { name: 'سرعة الصوت', formula: 'v = 343 m/s (في الهواء)', desc: 'سرعة الصوت' },
+      { name: 'التردد', formula: 'f = 1/T', desc: 'تعريف التردد' },
+      { name: 'الطول الموجي', formula: 'λ = v/f', desc: 'العلاقة الأساسية' }
+    ],
+    variables: [
+      { name: 'f', label: 'التردد', unit: 'Hz', unitOptions: [
+        { label: 'Hz', value: 'Hz', factor: 1 },
+        { label: 'kHz', value: 'kHz', factor: 1000 }
+      ], min: 20, max: 20000, default: 440 },
+      { name: 'T', label: 'الحرارة', unit: '°C', unitOptions: [
+        { label: '°C', value: '°C', factor: 1 }
+      ], min: -20, max: 40, default: 20 }
+    ],
+    results: [
+      { name: 'سرعة الصوت', formula: 'v = 331 + 0.6T', unit: 'm/s', color: 'cyan' },
+      { name: 'الطول الموجي', formula: 'λ = v/f', unit: 'm', color: 'amber' }
+    ],
+    simulationType: 'wave',
+    aiExplanation: 'الصوت موجة ميكانيكية طولية. يحتاج وسط مادي للانتشار.',
+    realWorld: 'الموسيقى، التحدث، السونار، الموجات فوق الصوتية',
+    tips: [
+      'الصوت لا ينتقل في الفراغ',
+      'التردد المسموع: 20Hz - 20kHz',
+      'فوق 20kHz: فوق صوتية (Ultrasound)'
+    ],
+    chartTypes: [
+      { x: 'التردد (Hz)', y: 'الطول الموجي (m)', type: 'line' }
+    ]
+  },
+  {
+    id: 'standing-waves',
+    name: 'الموجات الموقوفة',
+    nameEn: 'Standing Waves',
+    category: 'ميكانيكا',
+    icon: '🎸',
+    difficulty: 2,
+    description: 'الرنين في الأوتار والأنابيب',
+    equations: [
+      { name: 'وتر', formula: 'f_n = nv/2L', desc: 'وتر مفتوح الطرفين' },
+      { name: 'أنبوب مفتوح', formula: 'f_n = nv/2L', desc: 'الطرفين مفتوحين' },
+      { name: 'أنبوب مغلق', formula: 'f_n = nv/4L', desc: 'طرف مغلق' }
+    ],
+    variables: [
+      { name: 'L', label: 'الطول', unit: 'm', unitOptions: [
+        { label: 'm', value: 'm', factor: 1 }
+      ], min: 0.1, max: 5, default: 1 },
+      { name: 'n', label: 'رقم الرتبة', unit: '', unitOptions: [
+        { label: '', value: '', factor: 1 }
+      ], min: 1, max: 5, default: 1 }
+    ],
+    results: [
+      { name: 'الطول الموجي', formula: 'λ = 2L/n', unit: 'm', color: 'cyan' },
+      { name: 'التردد', formula: 'f = nv/2L', unit: 'Hz', color: 'amber' }
+    ],
+    simulationType: 'wave',
+    aiExplanation: 'الموجات الموقوفة تتكون من superposition موجتين متعاكستين.',
+    realWorld: 'الآلات الموسيقية، الليزر، أجهزة الميكروويف',
+    tips: [
+      'المعقدات (nodes): سكون',
+      'البطون (antinodes): سعة عظمى',
+      'التردد الأساسي n=1'
+    ],
+    chartTypes: [
+      { x: 'رقم الرتبة (n)', y: 'التردد (Hz)', type: 'line' }
+    ]
+  },
+
+  // ─────────────────────────────────────────────────────────
+  // 🌍 فيزياء الأرض والفضاء
+  // ─────────────────────────────────────────────────────────
+  {
+    id: 'fluid-statics',
+    name: 'ستاتيكا الموائع',
+    nameEn: 'Fluid Statics',
+    category: 'ميكانيكا',
+    icon: '🌊',
+    difficulty: 2,
+    description: 'الضغط في الموائع والاتزان',
+    equations: [
+      { name: 'الضغط', formula: 'P = F/A', desc: 'تعريف الضغط' },
+      { name: 'الضغط في سائل', formula: 'P = ρgh', desc: 'لعمق h' },
+      { name: 'مبدأ أرخميدس', formula: 'Fb = ρ_fluid g V_submerged', desc: 'قوة الطفو' }
+    ],
+    variables: [
+      { name: 'rho', label: 'الكثافة', unit: 'kg/m³', unitOptions: [
+        { label: 'kg/m³', value: 'kg/m³', factor: 1 }
+      ], min: 500, max: 2000, default: 1000 },
+      { name: 'h', label: 'العمق', unit: 'm', unitOptions: [
+        { label: 'm', value: 'm', factor: 1 }
+      ], min: 1, max: 100, default: 10 }
+    ],
+    results: [
+      { name: 'الضغط', formula: 'P = ρgh', unit: 'Pa', color: 'cyan' },
+      { name: 'الضغط الكلي', formula: 'P = P₀ + ρgh', unit: 'Pa', color: 'amber' }
+    ],
+    simulationType: 'gas',
+    aiExplanation: 'الضغط في سائل يتناسب مع العمق. الضغط الجوي P₀ = 101325 Pa.',
+    realWorld: 'السدود، الغواصات، قياس الضغط',
+    tips: [
+      'الضغط لا يعتمد على شكل الحاوية',
+      'الضغط عند نفس العمق متساوٍ في كل الاتجاهات',
+      'P₀ = 1 atm = 101.325 kPa = 760 mmHg'
+    ],
+    chartTypes: [
+      { x: 'العمق (m)', y: 'الضغط (Pa)', type: 'line' }
+    ]
+  },
+  {
+    id: 'fluid-dynamics',
+    name: 'ديناميكا الموائع',
+    nameEn: 'Fluid Dynamics',
+    category: 'ميكانيكا',
+    icon: '💧',
+    difficulty: 3,
+    description: 'جريان الموائع ومعادلة برنولي',
+    equations: [
+      { name: 'الاستمرارية', formula: 'A₁v₁ = A₂v₂', desc: 'حفظ الكتلة' },
+      { name: 'برنولي', formula: 'P + ½ρv² + ρgh = const', desc: 'لأنبوب أفقي: h ثابت' },
+      { name: 'اللزوجة', formula: 'F = ηA(dv/dy)', desc: 'قانون نيوتن' }
+    ],
+    variables: [
+      { name: 'v1', label: 'السرعة 1', unit: 'm/s', unitOptions: [
+        { label: 'm/s', value: 'm/s', factor: 1 }
+      ], min: 1, max: 20, default: 5 },
+      { name: 'A1', label: 'المساحة 1', unit: 'cm²', unitOptions: [
+        { label: 'cm²', value: 'cm²', factor: 1 },
+        { label: 'm²', value: 'm²', factor: 10000 }
+      ], min: 1, max: 100, default: 10 },
+      { name: 'A2', label: 'المساحة 2', unit: 'cm²', unitOptions: [
+        { label: 'cm²', value: 'cm²', factor: 1 }
+      ], min: 0.1, max: 50, default: 2 }
+    ],
+    results: [
+      { name: 'السرعة 2', formula: 'v₂ = A₁v₁/A₂', unit: 'm/s', color: 'cyan' },
+      { name: 'الضغط الكلي', formula: 'P + ½ρv²', unit: 'Pa', color: 'amber' }
+    ],
+    simulationType: 'wave',
+    aiExplanation: 'معادلة الاستمرارية: A×v ثابت. برنولي: P + ½ρv² ثابت.',
+    realWorld: 'أنابيب المياه، أجنحة الطائرات، measuring flow rate',
+    tips: [
+      'تضيق القطر → تزيد السرعة → ينخفض الضغط',
+      'هذا explains how airplane wings generate lift',
+      'Bernoulli explains why curve balls curve'
+    ],
+    chartTypes: [
+      { x: 'المساحة (cm²)', y: 'السرعة (m/s)', type: 'line' }
+    ]
+  },
+  {
+    id: 'surface-tension',
+    name: 'التوتر السطحي',
+    nameEn: 'Surface Tension',
+    category: 'ميكانيكا',
+    icon: '🫧',
+    difficulty: 2,
+    description: 'خاصية سطح السائل',
+    equations: [
+      { name: 'التوتر السطحي', formula: 'γ = F/L', desc: 'تعريف γ' },
+      { name: 'الشغل', formula: 'W = γΔA', desc: 'لتغيير المساحة' },
+      { name: 'الشعيرات', formula: 'h = 2γcosθ/ρgr', desc: 'ارتفاع في شعيرة' }
+    ],
+    variables: [
+      { name: 'gamma', label: 'التوتر السطحي', unit: 'N/m', unitOptions: [
+        { label: 'N/m', value: 'N/m', factor: 1 }
+      ], min: 0.01, max: 0.1, default: 0.073 },
+      { name: 'r', label: 'نصف قطر الشعيرة', unit: 'mm', unitOptions: [
+        { label: 'mm', value: 'mm', factor: 1 }
+      ], min: 0.1, max: 5, default: 1 }
+    ],
+    results: [
+      { name: 'الشعيرات', formula: 'h = 2γ/ρgr', unit: 'm', color: 'cyan' }
+    ],
+    simulationType: 'wave',
+    aiExplanation: 'التوتر السطحي يجعل سطح السائل يتصرف كغشاء مشدود.',
+    realWorld: 'الفقاعات، قطرات الماء، الحشرات على الماء',
+    tips: [
+      'γ للماء = 0.073 N/m (عند 20°C)',
+      'الحرارة تقلل γ',
+      'الشوائب تقلل γ (surface active agents)'
+    ],
+    chartTypes: [
+      { x: 'نصف القطر (mm)', y: 'الارتفاع (m)', type: 'line' }
+    ]
+  },
+  {
+    id: 'viscosity',
+    name: 'اللزوجة',
+    nameEn: 'Viscosity',
+    category: 'ميكانيكا',
+    icon: '🍯',
+    difficulty: 2,
+    description: 'مقاومة السائل للجريان',
+    equations: [
+      { name: 'قانون ستوكس', formula: 'F = 6πηrv', desc: 'لكرة في سائل' },
+      { name: 'سرعة الترسيب', formula: 'v = mg/6πηr', desc: 'السرعة النهائية' }
+    ],
+    variables: [
+      { name: 'eta', label: 'اللزوجة', unit: 'Pa·s', unitOptions: [
+        { label: 'Pa·s', value: 'Pa·s', factor: 1 }
+      ], min: 0.001, max: 1, default: 0.001 },
+      { name: 'r', label: 'نصف قطر الكرة', unit: 'mm', unitOptions: [
+        { label: 'mm', value: 'mm', factor: 1 }
+      ], min: 0.1, max: 5, default: 1 }
+    ],
+    results: [
+      { name: 'قوة ستوكس', formula: 'F = 6πηrv', unit: 'N', color: 'cyan' }
+    ],
+    simulationType: 'wave',
+    aiExplanation: 'اللزوجة مقياس لمقاومة السائل للجريان. العسل عالي اللزوجة.',
+    realWorld: 'التزييت، الدم، الطبخ',
+    tips: [
+      'η الماء = 0.001 Pa·s (منخفضة)',
+      'η العسل = 1-10 Pa·s (عالية)',
+      'اللزوجة تنخفض مع الحرارة'
+    ],
+    chartTypes: [
+      { x: 'نصف القطر (mm)', y: 'القوة (N)', type: 'line' }
+    ]
+  },
+
+  // ─────────────────────────────────────────────────────────
+  // 📐 الكهرومغناطيسية المتقدمة
+  // ─────────────────────────────────────────────────────────
+  {
+    id: 'maxwell-equations',
+    name: 'معادلات ماكسويل',
+    nameEn: "Maxwell's Equations",
+    category: 'كهرباء',
+    icon: '📡',
+    difficulty: 3,
+    description: 'أساس الكهرومغناطيسية',
+    equations: [
+      { name: 'قانون غاوس', formula: '∮E·dA = Q/ε₀', desc: 'للكهرباء' },
+      { name: 'قانون غاوس', formula: '∮B·dA = 0', desc: 'للمغناطيسية' },
+      { name: 'قانون فاراداي', formula: '∮E·dl = -dΦ/dt', desc: 'الحث' }
+    ],
+    variables: [
+      { name: 'Q', label: 'الشحنة', unit: 'C', unitOptions: [
+        { label: 'C', value: 'C', factor: 1 }
+      ], min: 1e-9, max: 1e-6, default: 1e-8 }
+    ],
+    results: [
+      { name: 'المجال', formula: 'E = Q/4πε₀r²', unit: 'N/C', color: 'cyan' }
+    ],
+    simulationType: 'wave',
+    aiExplanation: 'معادلات ماكسويل الأربع تصف جميع الظواهر الكهرومغناطيسية.',
+    realWorld: 'الأمواج الراديوية، الضوء، الرادار',
+    tips: [
+      'توحيد الكهرباء والمغناطيسية',
+      'توقع الموجات الكهرومغناطيسية',
+      'c = 1/√(μ₀ε₀)'
+    ],
+    chartTypes: [
+      { x: 'الشحنة (C)', y: 'المجال (N/C)', type: 'line' }
+    ]
+  },
+  {
+    id: 'electromagnetic-waves',
+    name: 'الأمواج الكهرومغناطيسية',
+    nameEn: 'Electromagnetic Waves',
+    category: 'كهرباء',
+    icon: '📶',
+    difficulty: 2,
+    description: 'خصائص وانواع الموجات الكهرومغناطيسية',
+    equations: [
+      { name: 'سرعة', formula: 'c = fλ', desc: 'السرعة في الفراغ' },
+      { name: 'المجالات', formula: 'E ⟂ B ⟂ direction', desc: 'التعامد' },
+      { name: 'شدة', formula: 'I = P/A', desc: 'شدة الموجة' }
+    ],
+    variables: [
+      { name: 'f', label: 'التردد', unit: 'Hz', unitOptions: [
+        { label: 'Hz', value: 'Hz', factor: 1 }
+      ], min: 1e6, max: 1e20, default: 1e14 }
+    ],
+    results: [
+      { name: 'الطول الموجي', formula: 'λ = c/f', unit: 'm', color: 'cyan' },
+      { name: 'c', formula: 'c = 3×10⁸ m/s', unit: 'm/s', color: 'amber' }
+    ],
+    simulationType: 'wave',
+    aiExplanation: 'الضوء موجة كهرومغناطيسية. لا تحتاج وسطاً للانتشار.',
+    realWorld: 'الراديو، الضوء، الأشعة السينية',
+    tips: [
+      'c = 299,792,458 m/s (في الفراغ)',
+      'E و B في طور',
+      'الطيف الكهرومغناطيسي واسع جداً'
+    ],
+    chartTypes: [
+      { x: 'التردد (Hz)', y: 'الطول الموجي (m)', type: 'line' }
+    ]
+  },
+
+  // ─────────────────────────────────────────────────────────
+  // 🎯 فيزياء متقدمة
+  // ─────────────────────────────────────────────────────────
+  {
+    id: 'cosmology',
+    name: 'علم الكون',
+    nameEn: 'Cosmology',
+    category: 'فيزياء حديثة',
+    icon: '🌌',
+    difficulty: 3,
+    description: 'الكون وتوسعه',
+    equations: [
+      { name: 'هابل', formula: 'v = H₀d', desc: 'قانون هابل' },
+      { name: 'ثابت هابل', formula: 'H₀ ≈ 70 km/s/Mpc', desc: 'قيمة تقريبية' },
+      { name: 'عمر الكون', formula: 't ≈ 1/H₀', desc: 'تقدير' }
+    ],
+    variables: [
+      { name: 'd', label: 'المسافة', unit: 'Mpc', unitOptions: [
+        { label: 'Mpc', value: 'Mpc', factor: 1 },
+        { label: 'Mly', value: 'Mly', factor: 0.306 }
+      ], min: 1, max: 10000, default: 100 },
+      { name: 'H0', label: 'ثابت هابل', unit: 'km/s/Mpc', unitOptions: [
+        { label: 'km/s/Mpc', value: 'km/s/Mpc', factor: 1 }
+      ], min: 50, max: 100, default: 70 }
+    ],
+    results: [
+      { name: 'سرعة الابتعاد', formula: 'v = H₀d', unit: 'km/s', color: 'cyan' },
+      { name: 'عمر الكون', formula: 't ≈ 1/H₀', unit: 'Gyr', color: 'amber' }
+    ],
+    simulationType: 'projectile',
+    aiExplanation: 'الكون يتمدد! المجرات تبتعد عنا بسرعة تتناسب مع المسافة.',
+    realWorld: 'تلسكوب هابل، إشعاع الخلفية الكونية',
+    tips: [
+      'المجرات البعيدة أبعد وأسرع',
+      'عمر الكون ~ 13.8 مليار سنة',
+      'الطاقة المظلمة تسرع التوسع'
+    ],
+    chartTypes: [
+      { x: 'المسافة (Mpc)', y: 'السرعة (km/s)', type: 'line' }
+    ]
+  },
+  {
+    id: 'special-relativity2',
+    name: 'النسبية الخاصة - تطبيقات',
+    nameEn: 'Special Relativity Applications',
+    category: 'فيزياء حديثة',
+    icon: '🚀',
+    difficulty: 3,
+    description: 'تطبيقات عملية للنسبية الخاصة',
+    equations: [
+      { name: 'عامل غاما', formula: 'γ = 1/√(1 - v²/c²)', desc: 'عامل لورنتز' },
+      { name: 'تمدد الزمن', formula: 'Δt = γΔt₀', desc: 'للمراقب' },
+      { name: 'انكماش الطول', formula: 'L = L₀/γ', desc: 'في اتجاه الحركة' }
+    ],
+    variables: [
+      { name: 'v', label: 'السرعة', unit: 'km/s', unitOptions: [
+        { label: 'km/s', value: 'km/s', factor: 1000 },
+        { label: 'm/s', value: 'm/s', factor: 1 }
+      ], min: 1000000, max: 290000000, default: 200000000 }
+    ],
+    results: [
+      { name: 'γ', formula: 'γ = 1/√(1 - v²/c²)', unit: '', color: 'cyan' },
+      { name: 'النسبة v/c', formula: 'v/c', unit: '', color: 'amber' }
+    ],
+    simulationType: 'wave',
+    aiExplanation: 'النسبية الخاصة تغير مفهومنا عن الزمن والطول والكتلة.',
+    realWorld: 'نظام GPS، الساعة الذرية في الطائرات',
+    tips: [
+      'عند v << c: γ ≈ 1 (الكلاسيكية صحيحة)',
+      'عند v → c: γ → ∞',
+      'لا يمكن الوصول لسرعة الضوء'
+    ],
+    chartTypes: [
+      { x: 'v/c', y: 'γ', type: 'line' }
+    ]
+  },
+  {
+    id: ' semiconductors',
+    name: 'أشباه الموصلات',
+    nameEn: 'Semiconductors',
+    category: 'كهرباء',
+    icon: '🔲',
+    difficulty: 3,
+    description: 'فيزياء الأجهزة الإلكترونية',
+    equations: [
+      { name: 'طاقة الفجوة', formula: 'E_g ≈ 1.1 eV (Si)', desc: 'فجوة الطاقة' },
+      { name: 'تيار', formula: 'I = I₀(e^V/nV_T - 1)', desc: 'معادلة الديود' }
+    ],
+    variables: [
+      { name: 'V', label: 'الجهد', unit: 'V', unitOptions: [
+        { label: 'V', value: 'V', factor: 1 }
+      ], min: -1, max: 1, default: 0.5 },
+      { name: 'n', label: 'معامل الجودة', unit: '', unitOptions: [
+        { label: '', value: '', factor: 1 }
+      ], min: 1, max: 3, default: 1 }
+    ],
+    results: [
+      { name: 'التيار', formula: 'I = I₀e^(V/V_T)', unit: 'A', color: 'cyan' }
+    ],
+    simulationType: 'circuit',
+    aiExplanation: 'أشباه الموصلات أساس الإلكترونيات الحديثة. السيليكون الأكثر استخداماً.',
+    realWorld: 'الترانزستورات، الديودات، الدوائر المتكاملة',
+    tips: [
+      'Si: Eg = 1.1 eV, Ge: Eg = 0.67 eV',
+      'الأشباه الموصلة N: electron majority',
+      'الأشباه الموصلة P: hole majority'
+    ],
+    chartTypes: [
+      { x: 'الجهد (V)', y: 'التيار (A)', type: 'line' }
+    ]
+  },
+  {
+    id: 'solid-state',
+    name: 'فيزياء الحالة الصلبة',
+    nameEn: 'Solid State Physics',
+    category: 'فيزياء حديثة',
+    icon: '💎',
+    difficulty: 3,
+    description: 'بنية المواد الصلبة',
+    equations: [
+      { name: 'طاقة فيرمي', formula: 'E_F = (h²/2m)(3π²n)^(2/3)', desc: 'لإلكترونات حرة' },
+      { name: 'الفجوة', formula: 'E_gap', desc: 'طاقة الفجوة بين النطاقين' }
+    ],
+    variables: [
+      { name: 'n', label: 'تركيز الإلكترونات', unit: 'm⁻³', unitOptions: [
+        { label: 'm⁻³', value: 'm⁻³', factor: 1 }
+      ], min: 1e27, max: 1e29, default: 1e28 }
+    ],
+    results: [
+      { name: 'طاقة فيرمي', formula: 'E_F ∝ n^(2/3)', unit: 'eV', color: 'cyan' }
+    ],
+    simulationType: 'wave',
+    aiExplanation: 'فيزياء الحالة الصلبة تدرس الخصائص الإلكترونية للمواد.',
+    realWorld: 'المعادن، العوازل، أشباه الموصلات',
+    tips: [
+      'المعادن: نطاق تكاد conduction فارغ',
+      'العوازل: فجوة كبيرة (> 3 eV)',
+      'أشباه الموصلات: فجوة صغيرة (1-2 eV)'
+    ],
+    chartTypes: [
+      { x: 'n (m⁻³)', y: 'E_F (eV)', type: 'line' }
+    ]
+  },
+  {
+    id: 'particle-physics',
+    name: 'فيزياء الجسيمات',
+    nameEn: 'Particle Physics',
+    category: 'فيزياء حديثة',
+    icon: '🔬',
+    difficulty: 3,
+    description: 'الجسيمات الأولية والقوى',
+    equations: [
+      { name: 'الكواركات', formula: 'u, d, c, s, t, b', desc: '6 أنواع' },
+      { name: 'اللبتونات', formula: 'e, μ, τ, ν_e, ν_μ, ν_τ', desc: '6 أنواع' },
+      { name: 'القوى', formula: 'EM, Weak, Strong, Gravity', desc: '4 قوى أساسية' }
+    ],
+    variables: [
+      { name: 'E', label: 'الطاقة', unit: 'GeV', unitOptions: [
+        { label: 'GeV', value: 'GeV', factor: 1 },
+        { label: 'TeV', value: 'TeV', factor: 1000 }
+      ], min: 0.1, max: 100, default: 1 }
+    ],
+    results: [
+      { name: 'الطاقة بـ جول', formula: 'E = E_GeV × 1.6×10⁻¹⁰', unit: 'J', color: 'cyan' }
+    ],
+    simulationType: 'magnetic',
+    aiExplanation: 'فيزياء الجسيمات تبحث عن المكونات الأساسية للمادة.',
+    realWorld: 'مصادم الهادرونات، المادة المضادة',
+    tips: [
+      'الكوارك + الكوارك = هادرون',
+      'البروتون: uud، النيوترون: udd',
+      'هناك 4 قوى: كهرومغناطيسية، ضعيفة، قوية، جاذبية'
+    ],
+    chartTypes: [
+      { x: 'الطاقة (GeV)', y: 'الطاقة (J)', type: 'line' }
+    ]
   }
 ];
 
