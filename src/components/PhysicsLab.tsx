@@ -10,6 +10,7 @@ import {
   Sun, Moon, VolumeX, Volume1
 } from 'lucide-react';
 import { resolveApiUrl } from '../utils/apiBase';
+import PhysicsChart from './PhysicsChart';
 
 // ============================================================
 // 📚 قاعدة التجارب الفيزيائية الشاملة
@@ -564,6 +565,289 @@ const EXPERIMENTS: Experiment[] = [
     ],
     chartTypes: [
       { x: 'التردد (Hz)', y: 'KE (eV)', type: 'scatter' }
+    ]
+  },
+  // ═══════════════════════════════════════════════════════════
+  // 🆕 تجارب جديدة مضافة حديثاً
+  // ═══════════════════════════════════════════════════════════
+  {
+    id: 'thermodynamics',
+    name: 'الديناميكا الحرارية',
+    nameEn: 'Thermodynamics',
+    category: 'حرارة',
+    icon: '🌡️',
+    difficulty: 3,
+    description: 'قوانين الديناميكا الحرارية',
+    equations: [
+      { name: 'الحرارة', formula: 'Q = mcΔT', desc: 'الحرارة النوعية' },
+      { name: 'الشغل', formula: 'W = PΔV', desc: 'شغل الغاز' },
+      { name: 'الكفاءة', formula: 'η = 1 - Tc/Th', desc: 'كفاءة كارنو' }
+    ],
+    variables: [
+      { name: 'mass', label: 'الكتلة', unit: 'kg', unitOptions: [
+        { label: 'kg', value: 'kg', factor: 1 },
+        { label: 'g', value: 'g', factor: 1000 }
+      ], min: 0.1, max: 10, default: 1 },
+      { name: 'c', label: 'الحرارة النوعية', unit: 'J/kg·K', unitOptions: [
+        { label: 'J/kg·K', value: 'J/kg·K', factor: 1 }
+      ], min: 100, max: 5000, default: 4186 },
+      { name: 'deltaT', label: 'التغير في الحرارة', unit: 'K', unitOptions: [
+        { label: 'K', value: 'K', factor: 1 },
+        { label: '°C', value: '°C', factor: 1 }
+      ], min: 1, max: 100, default: 20 }
+    ],
+    results: [
+      { name: 'الحرارة', formula: 'Q = mcΔT', unit: 'J', color: 'amber' },
+      { name: 'القدرة الحرارية', formula: 'P = Q/t', unit: 'W', color: 'cyan' }
+    ],
+    simulationType: 'gas',
+    aiExplanation: 'الديناميكا الحرارية تدرس انتقال الحرارة والشغل. القانون الأول: الطاقة محفوظة.',
+    realWorld: 'المحركات، المكثفات، الطهي',
+    tips: [
+      'الحرارة النوعية للماء 4186 J/kg·K',
+      'لا يمكن تحويل كل الحرارة لشغل',
+      'الإنتروبيا تزداد دائماً في نظام مغلق'
+    ],
+    chartTypes: [
+      { x: 'الزمن (s)', y: 'الحرارة (J)', type: 'line' },
+      { x: 'درجة الحرارة (K)', y: 'الإنتروبيا (J/K)', type: 'line' }
+    ]
+  },
+  {
+    id: 'bohr-model',
+    name: 'نموذج بور للذرة',
+    nameEn: 'Bohr Model',
+    category: 'فيزياء حديثة',
+    icon: '⚛️',
+    difficulty: 3,
+    description: 'نموذج بور للذرة ومستويات الطاقة',
+    equations: [
+      { name: 'طاقة المستوى', formula: 'En = -13.6/n²', desc: 'طاقة الإلكترون' },
+      { name: 'تردد الفوتون', formula: 'f = (En-Em)/h', desc: 'تردد الإشعاع' },
+      { name: 'نصف قطر بور', formula: 'r = n²a₀', desc: 'نصف قطر المدار' }
+    ],
+    variables: [
+      { name: 'n1', label: 'المستوى الأول', unit: '', unitOptions: [
+        { label: '', value: '', factor: 1 }
+      ], min: 1, max: 5, default: 2 },
+      { name: 'n2', label: 'المستوى الثاني', unit: '', unitOptions: [
+        { label: '', value: '', factor: 1 }
+      ], min: 1, max: 6, default: 1 }
+    ],
+    results: [
+      { name: 'طاقة المستوى 1', formula: 'En = -13.6/n²', unit: 'eV', color: 'violet' },
+      { name: 'طاقة المستوى 2', formula: 'En = -13.6/n²', unit: 'eV', color: 'cyan' },
+      { name: 'فرق الطاقة', formula: 'ΔE = E₂ - E₁', unit: 'eV', color: 'amber' }
+    ],
+    simulationType: 'wave',
+    aiExplanation: 'نموذج بور يصف الذرة كنواة مركزية وإلكترونات تدور في مدارات محددة.',
+    realWorld: 'الأطياف الذرية، الليزر، أشعة X',
+    tips: [
+      'n=1 هو المستوى الأرضي (أقل طاقة)',
+      'كلما زاد n، زاد نصف القطر',
+      'الانتقال بين المستويات يُصدر أو يمتص فوتون'
+    ],
+    chartTypes: [
+      { x: 'المستوى (n)', y: 'الطاقة (eV)', type: 'scatter' }
+    ]
+  },
+  {
+    id: 'special-relativity',
+    name: 'النسبية الخاصة',
+    nameEn: 'Special Relativity',
+    category: 'فيزياء حديثة',
+    icon: '🚀',
+    difficulty: 3,
+    description: 'تأثيرات النسبية الخاصة',
+    equations: [
+      { name: 'تمدد الزمن', formula: 'Δt = γΔt₀', desc: 'تأثير النسبية' },
+      { name: 'انكماش الطول', formula: 'L = L₀/γ', desc: 'تأثير النسبية' },
+      { name: 'كتلة نسبية', formula: 'm = γm₀', desc: 'كتلة متحركة' }
+    ],
+    variables: [
+      { name: 'v', label: 'السرعة', unit: 'm/s', unitOptions: [
+        { label: 'm/s', value: 'm/s', factor: 1 },
+        { label: 'km/s', value: 'km/s', factor: 1000 }
+      ], min: 1000000, max: 299000000, default: 200000000 },
+      { name: 't0', label: 'الزمن الساكن', unit: 's', unitOptions: [
+        { label: 's', value: 's', factor: 1 }
+      ], min: 1, max: 100, default: 10 }
+    ],
+    results: [
+      { name: 'عامل غاما', formula: 'γ = 1/√(1-v²/c²)', unit: '', color: 'emerald' },
+      { name: 'زمن متحرك', formula: 'Δt = γΔt₀', unit: 's', color: 'cyan' }
+    ],
+    simulationType: 'wave',
+    aiExplanation: 'النسبية الخاصة تغير مفهومنا عن الزمن والكتلة والطول عند السرعات العالية.',
+    realWorld: 'أنظمة GPS، فيزياء الجسيمات',
+    tips: [
+      'c = 3×10⁸ m/s هي سرعة الضوء',
+      'عند v << c، γ ≈ 1 (تأثيرات ضئيلة)',
+      'لا يمكن لأي جسم الوصول لسرعة الضوء'
+    ],
+    chartTypes: [
+      { x: 'السرعة (m/s)', y: 'عامل γ', type: 'line' }
+    ]
+  },
+  {
+    id: 'simple-machine',
+    name: 'الآلات البسيطة',
+    nameEn: 'Simple Machines',
+    category: 'ميكانيكا',
+    icon: '🏗️',
+    difficulty: 1,
+    description: 'الروافع والعجلات والبكرات',
+    equations: [
+      { name: 'الميزة الميكانيكية', formula: 'MA = F_out/F_in', desc: 'الميزة الآلية' },
+      { name: 'الشغل', formula: 'W = Fd', desc: 'الشغل المبذول' },
+      { name: 'البكرة', formula: 'MA = n', desc: 'عدد الحبال' }
+    ],
+    variables: [
+      { name: 'load', label: 'الحمل', unit: 'N', unitOptions: [
+        { label: 'N', value: 'N', factor: 1 }
+      ], min: 10, max: 1000, default: 100 },
+      { name: 'effort', label: 'الجهد', unit: 'N', unitOptions: [
+        { label: 'N', value: 'N', factor: 1 }
+      ], min: 1, max: 500, default: 50 }
+    ],
+    results: [
+      { name: 'الميزة الميكانيكية', formula: 'MA = F_out/F_in', unit: '', color: 'cyan' },
+      { name: 'الكفاءة', formula: 'η = MA/IMA × 100%', unit: '%', color: 'emerald' }
+    ],
+    simulationType: 'spring',
+    aiExplanation: 'الآلات البسيطة ت放大 القوة أو تغير اتجاهها لتسهّل العمل.',
+    realWorld: 'الرافعات، البكرات، العجلات، الأسفين',
+    tips: [
+      'المachines لا تخلق طاقة',
+      'الشغل الداخل = الشغل الخارج (بالكفاءة)',
+      'الميزة الميكانيكية الأيديية = MA > 1'
+    ],
+    chartTypes: [
+      { x: 'الجهد (N)', y: 'الحمل (N)', type: 'bar' }
+    ]
+  },
+  {
+    id: 'density',
+    name: 'الكثافة والطفو',
+    nameEn: 'Density & Buoyancy',
+    category: 'ميكانيكا',
+    icon: '🧊',
+    difficulty: 1,
+    description: 'الكثافة ومبدأ أرخميدس',
+    equations: [
+      { name: 'الكثافة', formula: 'ρ = m/V', desc: 'تعريف الكثافة' },
+      { name: 'قوة الطفو', formula: 'Fb = ρgV', desc: 'مبدأ أرخميدس' },
+      { name: 'الطفو', formula: 'Fb = W', desc: 'شرط الطفو' }
+    ],
+    variables: [
+      { name: 'mass', label: 'الكتلة', unit: 'kg', unitOptions: [
+        { label: 'kg', value: 'kg', factor: 1 },
+        { label: 'g', value: 'g', factor: 1000 }
+      ], min: 0.1, max: 10, default: 2 },
+      { name: 'volume', label: 'الحجم', unit: 'm³', unitOptions: [
+        { label: 'm³', value: 'm³', factor: 1 },
+        { label: 'cm³', value: 'cm³', factor: 1000000 }
+      ], min: 0.001, max: 0.1, default: 0.002 },
+      { name: 'fluidDensity', label: 'كثافة السائل', unit: 'kg/m³', unitOptions: [
+        { label: 'kg/m³', value: 'kg/m³', factor: 1 }
+      ], min: 500, max: 2000, default: 1000 }
+    ],
+    results: [
+      { name: 'الكثافة', formula: 'ρ = m/V', unit: 'kg/m³', color: 'cyan' },
+      { name: 'قوة الطفو', formula: 'Fb = ρgV', unit: 'N', color: 'amber' },
+      { name: 'الوزن', formula: 'W = mg', unit: 'N', color: 'emerald' }
+    ],
+    simulationType: 'gas',
+    aiExplanation: 'مبدأ أرخميدس: الجسم المغمور في سائل يفقد من وزنه بقدر وزن السائل المزاح.',
+    realWorld: 'السفن، المناطيد، الغواصات',
+    tips: [
+      'كثافة الماء 1000 kg/m³',
+      'الجسم يطفو إذا كانت كثافته أقل من السائل',
+      'قوة الطفو لا تعتمد على عمق الجسم'
+    ],
+    chartTypes: [
+      { x: 'الحجم (m³)', y: 'قوة الطفو (N)', type: 'line' }
+    ]
+  },
+  {
+    id: 'moment',
+    name: 'عزم القوة',
+    nameEn: 'Torque',
+    category: 'ميكانيكا',
+    icon: '🔧',
+    difficulty: 2,
+    description: 'عزم القوة وتأثيره على الدوران',
+    equations: [
+      { name: 'العزم', formula: 'τ = rFsinθ', desc: 'تعريف العزم' },
+      { name: 'الاتزان', formula: 'Στ = 0', desc: 'شرط الاتزان' }
+    ],
+    variables: [
+      { name: 'force', label: 'القوة', unit: 'N', unitOptions: [
+        { label: 'N', value: 'N', factor: 1 }
+      ], min: 1, max: 100, default: 20 },
+      { name: 'distance', label: 'المسافة', unit: 'm', unitOptions: [
+        { label: 'm', value: 'm', factor: 1 },
+        { label: 'cm', value: 'cm', factor: 100 }
+      ], min: 0.1, max: 5, default: 1 },
+      { name: 'angle', label: 'الزاوية', unit: '°', unitOptions: [
+        { label: '°', value: '°', factor: 1 }
+      ], min: 0, max: 180, default: 90 }
+    ],
+    results: [
+      { name: 'العزم', formula: 'τ = rFsinθ', unit: 'N·m', color: 'amber' },
+      { name: 'الشغل', formula: 'W = τθ', unit: 'J', color: 'cyan' }
+    ],
+    simulationType: 'pendulum',
+    aiExplanation: 'العزم هو مقياس لقدرة القوة على إحداث الدوران حول محور.',
+    realWorld: 'المفاتيح، العجلات، العضلات',
+    tips: [
+      'العزم أعظم عندما القوة عمودية على ذراع العزم',
+      'F⊥ = Fsinθ',
+      'وحدة العزم: N·m (ليست Joule)'
+    ],
+    chartTypes: [
+      { x: 'الزاوية (°)', y: 'العزم (N·m)', type: 'line' }
+    ]
+  },
+  {
+    id: 'diffraction',
+    name: 'الحيود والتداخل',
+    nameEn: 'Diffraction & Interference',
+    category: 'بصريات',
+    icon: '🌈',
+    difficulty: 3,
+    description: 'ظواهر الحيود والتداخل الضوئي',
+    equations: [
+      { name: 'شروط التداخل', formula: 'd sinθ = mλ', desc: 'بناء ومدمیر' },
+      { name: 'الحيود', formula: 'a sinθ = mλ', desc: 'محزوز الحيود' },
+      { name: 'زاوية الحيود', formula: 'θ ≈ λ/d', desc: 'للزوايا الصغيرة' }
+    ],
+    variables: [
+      { name: 'wavelength', label: 'الطول الموجي', unit: 'nm', unitOptions: [
+        { label: 'nm', value: 'nm', factor: 1 },
+        { label: 'm', value: 'm', factor: 1000000000 }
+      ], min: 100, max: 1000, default: 550 },
+      { name: 'slitWidth', label: 'عرض الشق', unit: 'μm', unitOptions: [
+        { label: 'μm', value: 'μm', factor: 1 }
+      ], min: 1, max: 100, default: 10 },
+      { name: 'order', label: 'رتبة التداخل', unit: '', unitOptions: [
+        { label: '', value: '', factor: 1 }
+      ], min: 1, max: 5, default: 1 }
+    ],
+    results: [
+      { name: 'زاوية التداخل', formula: 'θ = arcsin(mλ/d)', unit: '°', color: 'violet' },
+      { name: 'فاصل المواقع', formula: 'Δy = λL/d', unit: 'm', color: 'cyan' }
+    ],
+    simulationType: 'wave',
+    aiExplanation: 'الحيود والتداخل ظواهر موجية تظهر عند مرور الضوء من فتحات ضيقة.',
+    realWorld: 'الأقراص المدمجة، نظارات 3D، مطياف',
+    tips: [
+      'λ المرئي: 400-700 nm',
+      'الحيود أوضح مع الفتحات الصغيرة',
+      'التداخل يحدث للموجات المت coherent'
+    ],
+    chartTypes: [
+      { x: 'عرض الشق (μm)', y: 'زاوية الحيود (°)', type: 'line' }
     ]
   }
 ];
@@ -1990,15 +2274,15 @@ export default function PhysicsLab() {
                           </select>
                         )}
                       </div>
-                      {chartData.length > 0 && (
-                        <SimpleChart
+                      {chartData.length > 0 && exp.chartTypes[selectedChart] && (
+                        <PhysicsChart
                           data={chartData}
                           title={`${exp.chartTypes[selectedChart]?.x || 'X'} vs ${exp.chartTypes[selectedChart]?.y || 'Y'}`}
                           xLabel={exp.chartTypes[selectedChart]?.x || 'X'}
                           yLabel={exp.chartTypes[selectedChart]?.y || 'Y'}
-                          color={COLOR_MAP[['cyan', 'emerald', 'amber', 'rose', 'violet'][selectedChart % 5]]}
-                          width={560}
-                          height={220}
+                          chartType={exp.chartTypes[selectedChart]?.type || 'line'}
+                          color={['cyan', 'emerald', 'amber', 'rose', 'violet'][selectedChart % 5]}
+                          height={300}
                         />
                       )}
                     </div>
@@ -2209,14 +2493,14 @@ export default function PhysicsLab() {
                           <p className="text-[10px] text-slate-400 font-bold mb-2 text-center">
                             {cols[0]?.name || 'X'} vs {cols[1]?.name || 'Y'}
                           </p>
-                          <SimpleChart
+                          <PhysicsChart
                             data={chartData}
                             title=""
                             xLabel={cols[0]?.name || 'X'}
                             yLabel={cols[1]?.name || 'Y'}
-                            color={COLOR_MAP['cyan']}
-                            width={500}
-                            height={180}
+                            chartType="scatter"
+                            color="cyan"
+                            height={220}
                           />
                         </div>
                       )}
