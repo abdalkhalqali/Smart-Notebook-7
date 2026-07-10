@@ -10,6 +10,7 @@ import DailyTraining from "./DailyTraining";
 import HandwritingAI from "./components/HandwritingAI";
 import AvatarVideoGenerator from "./components/AvatarVideoGenerator";
 import AIChat from "./components/AIChat";
+import SmartBoard from "./components/SmartBoard";
 import { resolveApiUrl } from "./utils/apiBase";
 
 // Lucide icons
@@ -538,7 +539,7 @@ export default function App() {
   const [activeMainTab, setActiveMainTab] = useState<'editor' | 'stats' | 'cloud' | 'security' | 'training' | 'handwriting-ai' | 'file-manager'>('editor');
 
   // Real-time floating overlay view modes
-  const [activeOverlay, setActiveOverlay] = useState<'materials' | 'lecture-hub' | 'stats' | 'training' | 'handwriting-ai' | 'cloud' | 'security' | 'file-manager' | 'settings' | 'ai-advisor' | 'changelog' | 'homework' | 'media-studio' | 'ai-chat' | null>(null);
+  const [activeOverlay, setActiveOverlay] = useState<'materials' | 'lecture-hub' | 'stats' | 'training' | 'handwriting-ai' | 'cloud' | 'security' | 'file-manager' | 'settings' | 'ai-advisor' | 'changelog' | 'homework' | 'media-studio' | 'ai-chat' | 'smart-board' | null>(null);
 
   // Homework / Assignments state
   const [assignments, setAssignments] = useState<Assignment[]>(() => {
@@ -3751,6 +3752,20 @@ export default function App() {
                 <span className="text-[9px] text-teal-400 bg-teal-500/10 px-1.5 py-0.5 rounded font-mono font-bold border border-teal-500/20">CHAT</span>
               </button>
 
+              {/* 📝 Smart Board - السبورة الذكية */}
+              <button
+                onClick={() => { setActiveOverlay('smart-board'); setIsAiAdvisorCollapsed(false); setIsSidebarOpen(false); }}
+                className={`w-full p-2 rounded-xl text-right text-xs font-black transition flex items-center justify-between gap-2 ${activeOverlay === 'smart-board' ? 'bg-gradient-to-l from-amber-600/25 to-orange-600/25 text-amber-200 border-r-4 border-amber-500 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
+              >
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 bg-gradient-to-br from-amber-500 to-orange-500 rounded flex items-center justify-center">
+                    <span className="text-[8px] text-white">📝</span>
+                  </div>
+                  <span>السبورة الذكية</span>
+                </div>
+                <span className="text-[9px] text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded font-mono font-bold border border-amber-500/20">BOARD</span>
+              </button>
+
               {/* 🎬 Media Studio - Avatar & Voice Generation */}
               <button
                 onClick={() => { setActiveOverlay('media-studio'); setIsAiAdvisorCollapsed(false); setIsSidebarOpen(false); }}
@@ -5290,7 +5305,14 @@ export default function App() {
                     />
                   )}
 
-                  {/* 12. Media Studio - Avatar Video & Text-to-Speech */}
+                  {/* 12. Smart Board - السبورة الذكية */}
+                  {activeOverlay === 'smart-board' && (
+                    <SmartBoard 
+                      lectureTitle={lecture?.title || 'السبورة الذكية'}
+                    />
+                  )}
+
+                  {/* 13. Media Studio - Avatar Video & Text-to-Speech */}
                   {activeOverlay === 'media-studio' && (
                     <div className="space-y-4" dir="rtl">
                       <div className="flex items-center justify-between border-b border-slate-800 pb-3">
