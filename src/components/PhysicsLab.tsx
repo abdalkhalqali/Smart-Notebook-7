@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { resolveApiUrl } from '../utils/apiBase';
 import PhysicsChart from './PhysicsChart';
+import PhysicsSimulatorV2 from './PhysicsSimulatorV2';
 
 // ============================================================
 // 📚 قاعدة التجارب الفيزيائية الشاملة
@@ -3833,14 +3834,23 @@ export default function PhysicsLab() {
 
                     {/* Canvas */}
                     <div className="bg-slate-950 rounded-2xl border border-slate-800 overflow-hidden">
-                      <SimulationCanvas 
-                        exp={exp} 
-                        vars={vars} 
-                        time={simTime} 
-                        isPlaying={isPlaying}
-                        tableData={useTableDataInSim ? chartData : []}
-                        tableCols={useTableDataInSim ? cols : []}
-                      />
+                      {exp.simulationType === 'photoelectric' || exp.simulationType === 'bohr-model' || exp.simulationType === 'radioactivity' ? (
+                        <PhysicsSimulatorV2
+                          experimentType={exp.simulationType}
+                          variables={vars}
+                          width={560}
+                          height={280}
+                        />
+                      ) : (
+                        <SimulationCanvas 
+                          exp={exp} 
+                          vars={vars} 
+                          time={simTime} 
+                          isPlaying={isPlaying}
+                          tableData={useTableDataInSim ? chartData : []}
+                          tableCols={useTableDataInSim ? cols : []}
+                        />
+                      )}
                       <div className="flex items-center justify-center gap-3 p-3 bg-slate-900/80 flex-wrap">
                         {/* زر تبديل وضع البيانات */}
                         <button
