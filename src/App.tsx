@@ -4347,6 +4347,9 @@ export default function App() {
                     {activeOverlay === 'cloud' && 'النسخ السحابي والـ Google Drive ☁️'}
                     {activeOverlay === 'security' && 'وضع الحماية ورمز الـ PIN 🔒'}
                     {activeOverlay === 'homework' && 'قسم الواجبات والمهام الدراسية 📋'}
+                    {activeOverlay === 'ai-chat' && 'الحوار والمناقشة 💬'}
+                    {activeOverlay === 'smart-board' && 'السبورة الذكية 📝'}
+                    {activeOverlay === 'media-studio' && 'استوديو الوسائط المتعددة 🎬'}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -4471,6 +4474,9 @@ export default function App() {
                         {activeOverlay === 'security' && 'تأمين الملفات وقفل الرمز السري 🔒'}
                         {activeOverlay === 'changelog' && 'سجل إصدارات التعديل والمسار الزمني 📖'}
                         {activeOverlay === 'homework' && 'قسم الواجبات والمهام الدراسية 📋'}
+                        {activeOverlay === 'ai-chat' && 'الحوار والمناقشة 💬'}
+                        {activeOverlay === 'smart-board' && 'السبورة الذكية 📝'}
+                        {activeOverlay === 'media-studio' && 'استوديو الوسائط المتعددة 🎬'}
                       </span>
                       
                       <div className="p-1 px-2.5 bg-indigo-650/15 border border-indigo-900/40 text-indigo-400 rounded-lg text-[9px] font-extrabold select-none">
@@ -4494,6 +4500,9 @@ export default function App() {
                       {activeOverlay === 'security' && 'تعليمات: قم بتفعيل الرمز السري المكون من 4 أرقام لضمان حماية مذكرات الكلية من المتطفلين.'}
                       {activeOverlay === 'changelog' && 'تعليمات: تصفح المسار الزمني للتعديلات والنسخ المؤرخة المسترجعة بكبسة زر.'}
                       {activeOverlay === 'homework' && 'تعليمات: اعرض واجباتك المستخرجة من المحاضرات، افتح أي واجب وابدأ حله مع تلميحات الذكاء الاصطناعي واحفظه فور الانتهاء.'}
+                      {activeOverlay === 'ai-chat' && 'تعليمات: تحدث مع معلمك الذكي واطرح أي سؤال. يمكنه شرح المواضيع وتلخيصها بالصوت.'}
+                      {activeOverlay === 'smart-board' && 'تعليمات: استخدم السبورة الذكية للرسم والتخطيط والتوضيح بشكل تفاعلي.'}
+                      {activeOverlay === 'media-studio' && 'تعليمات: حوّل النصوص والمحاضرات إلى صوت أو فيديو مع أفاتار متحركة.'}
                     </div>
                   {/* 1. Materials Search & Selection Area */}
                   {activeOverlay === 'materials' && (
@@ -5297,24 +5306,28 @@ export default function App() {
 
                   {/* 11. AI Chat - المحادثة النصية والصوتية */}
                   {activeOverlay === 'ai-chat' && (
-                    <AIChat 
-                      lectureText={lecture ? lecture.pages.map((p) => 
-                        p.textboxes.map(tb => tb.text).filter(Boolean).join('\n')
-                      ).join('\n\n') : ''}
-                      lectureTitle={lecture?.title || ''}
-                    />
+                    <div className="h-full min-h-[400px]">
+                      <AIChat 
+                        lectureText={lecture ? lecture.pages.map((p) => 
+                          p.textboxes.map(tb => tb.text).filter(Boolean).join('\n')
+                        ).join('\n\n') : ''}
+                        lectureTitle={lecture?.title || ''}
+                      />
+                    </div>
                   )}
 
                   {/* 12. Smart Board - السبورة الذكية */}
                   {activeOverlay === 'smart-board' && (
-                    <SmartBoard 
-                      lectureTitle={lecture?.title || 'السبورة الذكية'}
-                    />
+                    <div className="h-full min-h-[400px]">
+                      <SmartBoard 
+                        lectureTitle={lecture?.title || 'السبورة الذكية'}
+                      />
+                    </div>
                   )}
 
                   {/* 13. Media Studio - Avatar Video & Text-to-Speech */}
                   {activeOverlay === 'media-studio' && (
-                    <div className="space-y-4" dir="rtl">
+                    <div className="space-y-4 h-full min-h-[400px]" dir="rtl">
                       <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                         <button
                           onClick={() => { setActiveOverlay(null); }}

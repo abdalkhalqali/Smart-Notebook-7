@@ -336,7 +336,7 @@ export default function AIChat({ lectureText = '', lectureTitle = '' }: AIChatPr
                   <button
                     onClick={() => playMessage(message)}
                     className={`p-1 rounded-full transition ${
-                      isDarkMark ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'
+                      isDarkMode ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'
                     }`}
                   >
                     <Volume2 className="w-3 h-3" />
@@ -355,7 +355,7 @@ export default function AIChat({ lectureText = '', lectureTitle = '' }: AIChatPr
             <div className={`inline-block p-3 rounded-2xl rounded-tl-sm ${isDarkMode ? 'bg-slate-800 border border-slate-700' : 'bg-white shadow-sm border border-slate-200'}`}>
               <div className="flex items-center gap-2">
                 <Loader2 className="w-4 h-4 animate-spin text-teal-500" />
-                <span className={`text-sm ${isDarkMark ? 'text-slate-400' : 'text-slate-500'}`}>جارٍ الكتابة...</span>
+                <span className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>جارٍ الكتابة...</span>
               </div>
             </div>
           </div>
@@ -372,7 +372,7 @@ export default function AIChat({ lectureText = '', lectureTitle = '' }: AIChatPr
             className={`w-10 h-10 rounded-full flex items-center justify-center transition ${
               isRecording 
                 ? 'bg-red-500 hover:bg-red-600 animate-pulse' 
-                : isDarkMark ? 'bg-slate-700 hover:bg-slate-600 text-slate-300' : 'bg-slate-200 hover:bg-slate-300 text-slate-600'
+                : isDarkMode ? 'bg-slate-700 hover:bg-slate-600 text-slate-300' : 'bg-slate-200 hover:bg-slate-300 text-slate-600'
             }`}
           >
             {isRecording ? <MicOff className="w-4 h-4 text-white" /> : <Mic className="w-4 h-4" />}
@@ -384,7 +384,7 @@ export default function AIChat({ lectureText = '', lectureTitle = '' }: AIChatPr
             onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
             placeholder="اكتب رسالتك هنا..."
             className={`flex-1 px-4 py-2 rounded-xl text-sm ${
-              isDarkMark 
+              isDarkMode 
                 ? 'bg-slate-700 text-white placeholder-slate-400 border border-slate-600 focus:border-teal-500 outline-none' 
                 : 'bg-slate-100 text-slate-800 placeholder-slate-400 border border-slate-200 focus:border-teal-500 outline-none'
             }`}

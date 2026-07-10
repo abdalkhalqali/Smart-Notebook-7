@@ -23,11 +23,11 @@ export default function MathText({ text, className = "", dir = "rtl" }: MathText
     <span className={className} dir={dir}>
       {segments.map((seg, i) => {
         if (seg.type === "block-math") {
-          return <BlockMath key={i} latex={seg.content} />;
+          return <BlockMath key={`block-${i}`} latex={seg.content} /> as React.ReactElement;
         } else if (seg.type === "inline-math") {
-          return <InlineMath key={i} latex={seg.content} />;
+          return <InlineMath key={`inline-${i}`} latex={seg.content} /> as React.ReactElement;
         } else {
-          return <span key={i}>{seg.content}</span>;
+          return <span key={`text-${i}`}>{seg.content}</span>;
         }
       })}
     </span>
@@ -66,7 +66,7 @@ function splitMathSegments(text: string): Segment[] {
   return segments.length > 0 ? segments : [{ type: "text", content: text }];
 }
 
-function InlineMath({ latex }: { latex: string }) {
+function InlineMath({ latex }: { latex: string; key?: string }) {
   try {
     const html = katex.renderToString(latex, {
       throwOnError: false,
@@ -80,7 +80,7 @@ function InlineMath({ latex }: { latex: string }) {
   }
 }
 
-function BlockMath({ latex }: { latex: string }) {
+function BlockMath({ latex }: { latex: string; key?: string }) {
   try {
     const html = katex.renderToString(latex, {
       throwOnError: false,
