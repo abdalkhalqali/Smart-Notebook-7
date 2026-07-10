@@ -738,12 +738,16 @@ function SimulationCanvas({
   exp,
   vars,
   time,
-  isPlaying
+  isPlaying,
+  tableData = [],
+  tableCols = []
 }: {
   exp: Experiment;
   vars: Record<string, number>;
   time: number;
   isPlaying: boolean;
+  tableData?: {x: number, y: number}[];
+  tableCols?: DataCol[];
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
@@ -768,6 +772,95 @@ function SimulationCanvas({
     }
     for (let y = 0; y < H; y += 30) {
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+    
+    // ── رسم بيانات الجدول إذا كانت متوفرة ──
+    if (tableData.length > 0 && tableCols.length >= 2) {
+      // حساب الحدود
+      const minX = Math.min(...tableData.map(d => d.x));
+      const maxX = Math.max(...tableData.map(d => d.x));
+      const minY = Math.min(...tableData.map(d => d.y));
+      const maxY = Math.max(...tableData.map(d => d.y));
+      const rangeX = maxX - minX || 1;
+      const rangeY = maxY - minY || 1;
+      
+      const padding = 50;
+      const chartW = W - padding * 2;
+      const chartH = H - padding * 2;
+      
+      const toX = (x: number) => padding + ((x - minX) / rangeX) * chartW;
+      const toY = (y: number) => H - padding - ((y - minY) / rangeY) * chartH;
+      
+      // رسم المحاور
+      ctx.strokeStyle = '#64748b';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(padding, H - padding);
+      ctx.lineTo(W - padding, H - padding);
+      ctx.moveTo(padding, H - padding);
+      ctx.lineTo(padding, padding);
+      ctx.stroke();
+      
+      // رسم نقاط البيانات
+      tableData.forEach((d, i) => {
+        const x = toX(d.x);
+        const y = toY(d.y);
+        
+        // نقطة البيانات
+        ctx.beginPath();
+        ctx.arc(x, y, 6, 0, Math.PI * 2);
+        ctx.fillStyle = '#f97316';
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        
+        // رقم النقطة
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 10px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${i + 1}`, x, y - 12);
+      });
+      
+      // رسم خط أفضل مطابقة إذا كانت هناك نقطتان على الأقل
+      if (tableData.length >= 2) {
+        const n = tableData.length;
+        let sumX = 0, sumY = 0;
+        tableData.forEach(d => { sumX += d.x; sumY += d.y; });
+        const meanX = sumX / n;
+        const meanY = sumY / n;
+        
+        let num = 0, den = 0;
+        tableData.forEach(d => {
+          num += (d.x - meanX) * (d.y - meanY);
+          den += (d.x - meanX) * (d.x - meanX);
+        });
+        const slope = den !== 0 ? num / den : 0;
+        const intercept = meanY - slope * meanX;
+        
+        // رسم الخط
+        ctx.strokeStyle = '#22d3ee';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        const x1 = minX - rangeX * 0.1;
+        const x2 = maxX + rangeX * 0.1;
+        ctx.moveTo(toX(x1), toY(slope * x1 + intercept));
+        ctx.lineTo(toX(x2), toY(slope * x2 + intercept));
+        ctx.stroke();
+        ctx.setLineDash([]);
+        
+        // عنوان المحاكاة
+        ctx.fillStyle = '#22d3ee';
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`📊 محاكاة من البيانات: ${tableData.length} نقطة`, W / 2, 25);
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '10px Arial';
+        ctx.fillText(`y = ${slope.toFixed(3)}x + ${intercept.toFixed(3)}`, W / 2, 40);
+      }
+      
+      return; // لا نرسم المحاكاة التقليدية عند استخدام البيانات
     }
     
     const cx = W / 2;
@@ -1115,6 +1208,8 @@ export default function PhysicsLab() {
   const [cols, setCols] = useState<DataCol[]>([]);
   const [rows, setRows] = useState<DataRow[]>([]);
   const [selectedChart, setSelectedChart] = useState(0);
+  const [saveMessage, setSaveMessage] = useState('');
+  const [lastSaved, setLastSaved] = useState<string | null>(null);
   
   // ── AI ──
   const [aiMsgs, setAiMsgs] = useState<{role: 'user'|'assistant', content: string}[]>([
@@ -1129,9 +1224,22 @@ export default function PhysicsLab() {
   const [aiExplanation, setAiExplanation] = useState('');
   const [chartData, setChartData] = useState<{x: number, y: number}[]>([]);
   
+  // ── تحليل الرسم البياني ──
+  const [slopeData, setSlopeData] = useState<{slope: number; rSquared: number; xCol: string; yCol: string} | null>(null);
+  
   // ── الوحدات ──
   const [unitCat, setUnitCat] = useState('length');
   const [unitVal, setUnitVal] = useState('1');
+  
+  // ── استخدام بيانات الجدول في المحاكاة ──
+  const [useTableDataInSim, setUseTableDataInSim] = useState(false);
+  
+  // ── إعادة رسم المحاكاة عند تغير البيانات ──
+  useEffect(() => {
+    if (useTableDataInSim && chartData.length > 0) {
+      setIsPlaying(false);
+    }
+  }, [useTableDataInSim, chartData]);
   
   // ── المفضلات ──
   const [favs, setFavs] = useState<string[]>(() => {
@@ -1178,6 +1286,65 @@ export default function PhysicsLab() {
     
     setStats(s => ({ ...s, completed: s.completed + 1 }));
   }, [exp?.id]);
+  
+  // ── حساب الميل ومعامل الارتباط ──
+  const calculateSlopeAndRSquared = useCallback((tableRows: DataRow[], tableCols: DataCol[]) => {
+    // البحث عن أول عمودين رقميين
+    const numericCols = tableCols.filter(col => {
+      const values = tableRows.map(r => parseFloat(r.values[col.id]));
+      return values.some(v => !isNaN(v));
+    });
+    
+    if (numericCols.length < 2) {
+      setSlopeData(null);
+      return;
+    }
+    
+    const xCol = numericCols[0];
+    const yCol = numericCols[1];
+    
+    const points = tableRows
+      .map(r => ({ x: parseFloat(r.values[xCol.id]), y: parseFloat(r.values[yCol.id]) }))
+      .filter(p => !isNaN(p.x) && !isNaN(p.y));
+    
+    if (points.length < 2) {
+      setSlopeData(null);
+      return;
+    }
+    
+    // حساب المتوسط
+    const n = points.length;
+    const sumX = points.reduce((s, p) => s + p.x, 0);
+    const sumY = points.reduce((s, p) => s + p.y, 0);
+    const meanX = sumX / n;
+    const meanY = sumY / n;
+    
+    // حساب الميل (slope)
+    let numerator = 0;
+    let denominator = 0;
+    for (const p of points) {
+      numerator += (p.x - meanX) * (p.y - meanY);
+      denominator += (p.x - meanX) * (p.x - meanX);
+    }
+    const slope = denominator !== 0 ? numerator / denominator : 0;
+    
+    // حساب R² (معامل الارتباط)
+    let ssRes = 0;
+    let ssTot = 0;
+    for (const p of points) {
+      const yPred = meanY + slope * (p.x - meanX);
+      ssRes += Math.pow(p.y - yPred, 2);
+      ssTot += Math.pow(p.y - meanY, 2);
+    }
+    const rSquared = ssTot !== 0 ? 1 - (ssRes / ssTot) : 0;
+    
+    setSlopeData({
+      slope,
+      rSquared: Math.max(0, Math.min(1, rSquared)), // التأكد من أن R² بين 0 و 1
+      xCol: xCol.name,
+      yCol: yCol.name
+    });
+  }, []);
   
   // ── حساب النتائج ──
   const calculateResults = useCallback((v: Record<string, number>, experiment: Experiment) => {
@@ -1424,6 +1591,74 @@ export default function PhysicsLab() {
     setRows(prev => prev.map(r => ({ ...r, values: { ...r.values, [newCol.id]: '' } })));
   };
   
+  // ── حفظ البيانات ──
+  const saveData = () => {
+    if (!exp) return;
+    const saveKey = `phData_${exp.id}`;
+    const saveObj = {
+      expId: exp.id,
+      cols,
+      rows,
+      savedAt: new Date().toISOString()
+    };
+    localStorage.setItem(saveKey, JSON.stringify(saveObj));
+    setLastSaved(new Date().toISOString());
+    setSaveMessage('✅ تم حفظ البيانات بنجاح!');
+    setTimeout(() => setSaveMessage(''), 2000);
+  };
+
+  // ── تحميل البيانات المحفوظة ──
+  const loadSavedData = () => {
+    if (!exp) return;
+    const saveKey = `phData_${exp.id}`;
+    const saved = localStorage.getItem(saveKey);
+    if (saved) {
+      try {
+        const data = JSON.parse(saved);
+        setCols(data.cols || []);
+        setRows(data.rows || []);
+        setLastSaved(data.savedAt);
+        setSaveMessage('📂 تم تحميل البيانات المحفوظة!');
+        setTimeout(() => setSaveMessage(''), 2000);
+      } catch {
+        setSaveMessage('❌ خطأ في تحميل البيانات');
+        setTimeout(() => setSaveMessage(''), 2000);
+      }
+    } else {
+      setSaveMessage('📭 لا توجد بيانات محفوظة لهذه التجربة');
+      setTimeout(() => setSaveMessage(''), 2000);
+    }
+  };
+
+  // ── تصدير البيانات ──
+  const exportData = () => {
+    if (!exp) return;
+    const csvContent = [
+      cols.map(c => `${c.name} (${c.unit})`).join(','),
+      ...rows.map(r => cols.map(c => r.values[c.id] || '').join(','))
+    ].join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${exp.name}_data_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setSaveMessage('📥 تم تصدير البيانات!');
+    setTimeout(() => setSaveMessage(''), 2000);
+  };
+
+  // ── حذف البيانات المحفوظة ──
+  const deleteSavedData = () => {
+    if (!exp) return;
+    const saveKey = `phData_${exp.id}`;
+    localStorage.removeItem(saveKey);
+    setLastSaved(null);
+    setSaveMessage('🗑️ تم حذف البيانات المحفوظة');
+    setTimeout(() => setSaveMessage(''), 2000);
+  };
+  
   // ── تصفية ──
   const filtered = EXPERIMENTS.filter(e => {
     const matchCat = cat === 'all' || e.category === cat;
@@ -1622,15 +1857,40 @@ export default function PhysicsLab() {
 
                     {/* Canvas */}
                     <div className="bg-slate-950 rounded-2xl border border-slate-800 overflow-hidden">
-                      <SimulationCanvas exp={exp} vars={vars} time={simTime} isPlaying={isPlaying} />
-                      <div className="flex items-center justify-center gap-3 p-3 bg-slate-900/80">
+                      <SimulationCanvas 
+                        exp={exp} 
+                        vars={vars} 
+                        time={simTime} 
+                        isPlaying={isPlaying}
+                        tableData={useTableDataInSim ? chartData : []}
+                        tableCols={useTableDataInSim ? cols : []}
+                      />
+                      <div className="flex items-center justify-center gap-3 p-3 bg-slate-900/80 flex-wrap">
+                        {/* زر تبديل وضع البيانات */}
+                        <button
+                          onClick={() => setUseTableDataInSim(!useTableDataInSim)}
+                          disabled={chartData.length === 0}
+                          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                            useTableDataInSim 
+                              ? 'bg-amber-600 hover:bg-amber-500' 
+                              : 'bg-slate-700 hover:bg-slate-600'
+                          } ${chartData.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          title={chartData.length === 0 ? 'يجب رسم البيانات أولاً' : 'تبديل بين المحاكاة الكلاسيكية وبيانات الجدول'}
+                        >
+                          <BarChart3 className="w-4 h-4" />
+                          {useTableDataInSim ? '📊 وضع البيانات' : '🎬 المحاكاة'}
+                        </button>
+                        
+                        <div className="w-px h-6 bg-slate-600" />
+                        
                         <button
                           onClick={runSim}
+                          disabled={useTableDataInSim}
                           className={`px-6 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
                             isPlaying 
                               ? 'bg-rose-600 hover:bg-rose-500' 
                               : 'bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500'
-                          }`}
+                          } ${useTableDataInSim ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
                           {isPlaying ? <><Pause className="w-4 h-4" /> إيقاف</> : <><Play className="w-4 h-4" /> تشغيل</>}
                         </button>
@@ -1857,6 +2117,169 @@ export default function PhysicsLab() {
                           ))}
                         </tbody>
                       </table>
+                    </div>
+                    
+                    {/* رسالة الحفظ/التحميل */}
+                    {saveMessage && (
+                      <div className={`px-4 py-2 rounded-xl text-sm font-bold text-center transition ${
+                        saveMessage.includes('✅') || saveMessage.includes('📂') ? 'bg-emerald-900/50 text-emerald-400 border border-emerald-600/30' :
+                        saveMessage.includes('❌') ? 'bg-red-900/50 text-red-400 border border-red-600/30' :
+                        saveMessage.includes('🗑️') ? 'bg-amber-900/50 text-amber-400 border border-amber-600/30' :
+                        'bg-cyan-900/50 text-cyan-400 border border-cyan-600/30'
+                      }`}>
+                        {saveMessage}
+                      </div>
+                    )}
+                    
+                    {/* شريط الأزرار */}
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={saveData}
+                        className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 rounded-xl text-xs font-bold transition flex items-center gap-2"
+                      >
+                        <Download className="w-4 h-4" />
+                        💾 حفظ البيانات
+                      </button>
+                      <button
+                        onClick={loadSavedData}
+                        className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 rounded-xl text-xs font-bold transition flex items-center gap-2"
+                      >
+                        <FileText className="w-4 h-4" />
+                        📂 تحميل البيانات
+                      </button>
+                      <button
+                        onClick={exportData}
+                        className="px-4 py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 rounded-xl text-xs font-bold transition flex items-center gap-2"
+                      >
+                        <Share2 className="w-4 h-4" />
+                        📥 تصدير CSV
+                      </button>
+                      {lastSaved && (
+                        <button
+                          onClick={deleteSavedData}
+                          className="px-4 py-2 bg-slate-700 hover:bg-red-600 rounded-xl text-xs font-bold transition flex items-center gap-2"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          🗑️ حذف المحفوظ
+                        </button>
+                      )}
+                    </div>
+                    
+                    {/* آخر حفظ */}
+                    {lastSaved && (
+                      <p className="text-[10px] text-slate-500 text-center">
+                        آخر حفظ: {new Date(lastSaved).toLocaleString('ar-SA')}
+                      </p>
+                    )}
+                    
+                    {/* ═══ 📈 نتائج الرسم البياني ═══ */}
+                    <div className="bg-gradient-to-br from-slate-800/80 to-slate-900/80 rounded-2xl border border-slate-700 p-4 space-y-4">
+                      <h4 className="text-xs font-bold text-cyan-300 flex items-center gap-2">
+                        <TrendingUp className="w-4 h-4" />
+                        📈 نتائج تحليل البيانات
+                      </h4>
+                      
+                      {/* أزرار التحكم */}
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => {
+                            // تحويل بيانات الجدول إلى chartData
+                            const validRows = rows.filter(r => {
+                              const xVal = cols[0] ? parseFloat(r.values[cols[0].id]) : NaN;
+                              const yVal = cols[1] ? parseFloat(r.values[cols[1].id]) : NaN;
+                              return !isNaN(xVal) && !isNaN(yVal);
+                            });
+                            const newChartData = validRows.map(r => ({
+                              x: parseFloat(r.values[cols[0].id]),
+                              y: parseFloat(r.values[cols[1].id])
+                            }));
+                            setChartData(newChartData);
+                            calculateSlopeAndRSquared(rows, cols);
+                          }}
+                          className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 rounded-xl text-xs font-bold transition flex items-center gap-2"
+                        >
+                          <TrendingUp className="w-4 h-4" />
+                          📊 رسم وتحليل البيانات
+                        </button>
+                      </div>
+                      
+                      {/* الرسم البياني */}
+                      {chartData.length > 1 && (
+                        <div className="bg-slate-900 rounded-xl p-3 border border-slate-700">
+                          <p className="text-[10px] text-slate-400 font-bold mb-2 text-center">
+                            {cols[0]?.name || 'X'} vs {cols[1]?.name || 'Y'}
+                          </p>
+                          <SimpleChart
+                            data={chartData}
+                            title=""
+                            xLabel={cols[0]?.name || 'X'}
+                            yLabel={cols[1]?.name || 'Y'}
+                            color={COLOR_MAP['cyan']}
+                            width={500}
+                            height={180}
+                          />
+                        </div>
+                      )}
+                      
+                      {/* بطاقة النتائج */}
+                      {slopeData && (
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="bg-gradient-to-br from-cyan-900/40 to-blue-900/40 rounded-xl p-3 border border-cyan-600/30">
+                            <div className="flex items-center gap-2 mb-1">
+                              <TrendingUp className="w-4 h-4 text-cyan-400" />
+                              <span className="text-[10px] text-slate-400">الميل (Slope)</span>
+                            </div>
+                            <p className="text-xl font-bold text-cyan-300">
+                              {slopeData.slope.toFixed(4)}
+                            </p>
+                            <p className="text-[9px] text-slate-500 mt-1">
+                              {slopeData.yCol} / {slopeData.xCol}
+                            </p>
+                          </div>
+                          <div className="bg-gradient-to-br from-emerald-900/40 to-green-900/40 rounded-xl p-3 border border-emerald-600/30">
+                            <div className="flex items-center gap-2 mb-1">
+                              <BarChart3 className="w-4 h-4 text-emerald-400" />
+                              <span className="text-[10px] text-slate-400">معامل الارتباط (R²)</span>
+                            </div>
+                            <p className="text-xl font-bold text-emerald-300">
+                              {slopeData.rSquared.toFixed(4)}
+                            </p>
+                            <p className="text-[9px] text-slate-500 mt-1">
+                              {slopeData.rSquared >= 0.9 ? '✓ ممتاز' : 
+                               slopeData.rSquared >= 0.7 ? '~ جيد' : '✗ يحتاج تحسين'}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* الشرح */}
+                      {slopeData && (
+                        <div className="bg-slate-900/50 rounded-xl p-3 border border-slate-700">
+                          <h5 className="text-[10px] font-bold text-amber-400 mb-2 flex items-center gap-1">
+                            <Lightbulb className="w-3 h-3" />
+                            الشرح:
+                          </h5>
+                          <p className="text-xs text-slate-300 leading-relaxed">
+                            {slopeData.rSquared >= 0.9 ? (
+                              <>✅ العلاقة بين <span className="text-cyan-400 font-bold">{slopeData.xCol}</span> و 
+                              <span className="text-emerald-400 font-bold"> {slopeData.yCol}</span> قوية جداً!
+                              معامل التحديد R² = {slopeData.rSquared.toFixed(4)} يعني أن {Math.round(slopeData.rSquared * 100)}% من التغير في {slopeData.yCol} يُفسر بـ {slopeData.xCol}.</>
+                            ) : slopeData.rSquared >= 0.7 ? (
+                              <>⚠️ العلاقة بين <span className="text-cyan-400 font-bold">{slopeData.xCol}</span> و 
+                              <span className="text-emerald-400 font-bold"> {slopeData.yCol}</span> جيدة.
+                              معامل التحديد R² = {slopeData.rSquared.toFixed(4)} يعني أن {Math.round(slopeData.rSquared * 100)}% من التغير يُفسر بالمتغير الآخر.
+                              هناك {Math.round((1-slopeData.rSquared) * 100)}% من التغير ناتج عن عوامل أخرى أو أخطاء في القياس.</>
+                            ) : (
+                              <>❌ العلاقة ضعيفة. R² = {slopeData.rSquared.toFixed(4)} يعني أن {Math.round(slopeData.rSquared * 100)}% فقط من التغير يُفسر بالمتغير الآخر.
+                              راجع البيانات أو تحقق من صحة التجربة.</>
+                            )}
+                            <br/>
+                            <span className="text-amber-300 mt-1 block">
+                              📐 الميل = {slopeData.slope.toFixed(4)} ({slopeData.yCol}/{slopeData.xCol})
+                            </span>
+                          </p>
+                        </div>
+                      )}
                     </div>
                     
                     <div className="grid grid-cols-2 gap-3">
