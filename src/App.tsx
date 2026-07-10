@@ -11,6 +11,7 @@ import HandwritingAI from "./components/HandwritingAI";
 import AvatarVideoGenerator from "./components/AvatarVideoGenerator";
 import AIChat from "./components/AIChat";
 import SmartBoard from "./components/SmartBoard";
+import PhysicsLab from "./components/PhysicsLab";
 import { resolveApiUrl } from "./utils/apiBase";
 
 // Lucide icons
@@ -539,7 +540,7 @@ export default function App() {
   const [activeMainTab, setActiveMainTab] = useState<'editor' | 'stats' | 'cloud' | 'security' | 'training' | 'handwriting-ai' | 'file-manager'>('editor');
 
   // Real-time floating overlay view modes
-  const [activeOverlay, setActiveOverlay] = useState<'materials' | 'lecture-hub' | 'stats' | 'training' | 'handwriting-ai' | 'cloud' | 'security' | 'file-manager' | 'settings' | 'ai-advisor' | 'changelog' | 'homework' | 'media-studio' | 'ai-chat' | 'smart-board' | null>(null);
+  const [activeOverlay, setActiveOverlay] = useState<'materials' | 'lecture-hub' | 'stats' | 'training' | 'handwriting-ai' | 'cloud' | 'security' | 'file-manager' | 'settings' | 'ai-advisor' | 'changelog' | 'homework' | 'media-studio' | 'ai-chat' | 'smart-board' | 'physics-lab' | null>(null);
 
   // Homework / Assignments state
   const [assignments, setAssignments] = useState<Assignment[]>(() => {
@@ -3779,6 +3780,20 @@ export default function App() {
                 </div>
                 <span className="text-[9px] text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded font-mono font-bold border border-purple-500/20">TTS+AI</span>
               </button>
+
+              {/* 🔬 Physics Lab - محاكاة التجارب الفيزيائية */}
+              <button
+                onClick={() => { setActiveOverlay('physics-lab'); setIsAiAdvisorCollapsed(false); setIsSidebarOpen(false); }}
+                className={`w-full p-2 rounded-xl text-right text-xs font-black transition flex items-center justify-between gap-2 ${activeOverlay === 'physics-lab' ? 'bg-gradient-to-l from-cyan-600/25 to-blue-600/25 text-cyan-200 border-r-4 border-cyan-500 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
+              >
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 bg-gradient-to-br from-cyan-500 to-blue-500 rounded flex items-center justify-center">
+                    <span className="text-[8px] text-white">🔬</span>
+                  </div>
+                  <span>مختبر الفيزياء التفاعلي</span>
+                </div>
+                <span className="text-[9px] text-cyan-400 bg-cyan-500/10 px-1.5 py-0.5 rounded font-mono font-bold border border-cyan-500/20">PHYSICS</span>
+              </button>
             </div>
 
             {/* Core Navigation Selector: Universities & Academic years */}
@@ -4350,6 +4365,7 @@ export default function App() {
                     {activeOverlay === 'ai-chat' && 'الحوار والمناقشة 💬'}
                     {activeOverlay === 'smart-board' && 'السبورة الذكية 📝'}
                     {activeOverlay === 'media-studio' && 'استوديو الوسائط المتعددة 🎬'}
+                    {activeOverlay === 'physics-lab' && 'مختبر الفيزياء التفاعلي 🔬'}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -4477,6 +4493,7 @@ export default function App() {
                         {activeOverlay === 'ai-chat' && 'الحوار والمناقشة 💬'}
                         {activeOverlay === 'smart-board' && 'السبورة الذكية 📝'}
                         {activeOverlay === 'media-studio' && 'استوديو الوسائط المتعددة 🎬'}
+                        {activeOverlay === 'physics-lab' && 'مختبر الفيزياء التفاعلي 🔬'}
                       </span>
                       
                       <div className="p-1 px-2.5 bg-indigo-650/15 border border-indigo-900/40 text-indigo-400 rounded-lg text-[9px] font-extrabold select-none">
@@ -4503,6 +4520,7 @@ export default function App() {
                       {activeOverlay === 'ai-chat' && 'تعليمات: تحدث مع معلمك الذكي واطرح أي سؤال. يمكنه شرح المواضيع وتلخيصها بالصوت.'}
                       {activeOverlay === 'smart-board' && 'تعليمات: استخدم السبورة الذكية للرسم والتخطيط والتوضيح بشكل تفاعلي.'}
                       {activeOverlay === 'media-studio' && 'تعليمات: حوّل النصوص والمحاضرات إلى صوت أو فيديو مع أفاتار متحركة.'}
+                      {activeOverlay === 'physics-lab' && 'تعليمات: اختر تجربة فيزيائية من القائمة، أدخل البيانات، وشاهد المحاكاة التفاعلية مع شرح الذكاء الاصطناعي.'}
                     </div>
                   {/* 1. Materials Search & Selection Area */}
                   {activeOverlay === 'materials' && (
@@ -5322,6 +5340,13 @@ export default function App() {
                       <SmartBoard 
                         lectureTitle={lecture?.title || 'السبورة الذكية'}
                       />
+                    </div>
+                  )}
+
+                  {/* 14. Physics Lab - محاكاة التجارب الفيزيائية */}
+                  {activeOverlay === 'physics-lab' && (
+                    <div className="h-full min-h-[500px]">
+                      <PhysicsLab />
                     </div>
                   )}
 
