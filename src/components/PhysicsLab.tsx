@@ -3853,29 +3853,31 @@ export default function PhysicsLab() {
                 {/* ═══ 🎬 المحاكاة ═══ */}
                 {tab === 'sim' && (
                   <div className="space-y-4">
-                    {/* معلومات التجربة */}
-                    <div className="bg-gradient-to-r from-cyan-950/40 to-blue-950/40 rounded-2xl p-4 border border-cyan-800/30">
-                      <div className="flex items-center gap-3 mb-2">
-                        <span className="text-3xl">{exp.icon}</span>
-                        <div>
-                          <h3 className="text-sm font-bold text-cyan-300">{exp.name}</h3>
-                          <p className="text-[10px] text-slate-400">{exp.description}</p>
+                    {/* معلومات التجربة - تُخفى للظاهرة الكهروضوئية */}
+                    {exp.id !== 'photoelectric' && (
+                      <div className="bg-gradient-to-r from-cyan-950/40 to-blue-950/40 rounded-2xl p-4 border border-cyan-800/30">
+                        <div className="flex items-center gap-3 mb-2">
+                          <span className="text-3xl">{exp.icon}</span>
+                          <div>
+                            <h3 className="text-sm font-bold text-cyan-300">{exp.name}</h3>
+                            <p className="text-[10px] text-slate-400">{exp.description}</p>
+                          </div>
+                          <span className={`mr-auto text-[9px] px-2 py-1 rounded-full ${
+                            exp.difficulty === 1 ? 'bg-green-900/50 text-green-400' :
+                            exp.difficulty === 2 ? 'bg-yellow-900/50 text-yellow-400' :
+                            'bg-red-900/50 text-red-400'
+                          }`}>{getDiffLabel(exp.difficulty)}</span>
                         </div>
-                        <span className={`mr-auto text-[9px] px-2 py-1 rounded-full ${
-                          exp.difficulty === 1 ? 'bg-green-900/50 text-green-400' :
-                          exp.difficulty === 2 ? 'bg-yellow-900/50 text-yellow-400' :
-                          'bg-red-900/50 text-red-400'
-                        }`}>{getDiffLabel(exp.difficulty)}</span>
+                        <p className="text-xs text-slate-300 leading-relaxed">{exp.aiExplanation}</p>
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {exp.equations.map((eq, i) => (
+                            <span key={i} className="px-2 py-1 bg-slate-800 rounded-lg text-[10px] font-mono text-amber-300">
+                              {eq.formula}
+                            </span>
+                          ))}
+                        </div>
                       </div>
-                      <p className="text-xs text-slate-300 leading-relaxed">{exp.aiExplanation}</p>
-                      <div className="flex flex-wrap gap-2 mt-2">
-                        {exp.equations.map((eq, i) => (
-                          <span key={i} className="px-2 py-1 bg-slate-800 rounded-lg text-[10px] font-mono text-amber-300">
-                            {eq.formula}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
+                    )}
 
                     {/* Canvas */}
                     <div className="bg-slate-950 rounded-2xl border border-slate-800 overflow-hidden">
