@@ -12,6 +12,7 @@ import {
 import { resolveApiUrl } from '../utils/apiBase';
 import PhysicsChart from './PhysicsChart';
 import PhysicsSimulatorV2 from './PhysicsSimulatorV2';
+import ModernPhysicsCanvas, { isModernPhysicsExperiment } from './ModernPhysicsSimulations';
 
 // ============================================================
 // 📚 قاعدة التجارب الفيزيائية الشاملة
@@ -62,7 +63,7 @@ interface Experiment {
   equations: { name: string; formula: string; desc: string }[];
   variables: ExpVariable[];
   results: ExpResult[];
-  simulationType: 'free-fall' | 'projectile' | 'pendulum' | 'wave' | 'circuit' | 'refraction' | 'radioactive' | 'gas' | 'spring' | 'collision' | 'magnetic' | 'photoelectric';
+  simulationType: 'free-fall' | 'projectile' | 'pendulum' | 'wave' | 'circuit' | 'refraction' | 'radioactive' | 'gas' | 'spring' | 'collision' | 'magnetic' | 'photoelectric' | 'double-slit' | 'nuclear-fission';
   aiExplanation: string;
   realWorld: string;
   tips: string[];
@@ -2066,16 +2067,64 @@ const EXPERIMENTS: Experiment[] = [
       { name: 'الطاقة الناتجة', formula: 'E = mc²', unit: 'J', color: 'cyan' },
       { name: 'بالميجا إلكترون فولت', formula: 'E = Δm × 931.5', unit: 'MeV', color: 'amber' }
     ],
-    simulationType: 'radioactive',
-    aiExplanation: 'الانشطار يقسم نواة ثقيلة، الاندماج يدمج نواتين خفيفتين. كلاهما يطلق طاقة.',
-    realWorld: 'القنابل الذرية (انشطار)، الشمس (اندماج)، المفاعلات',
+    simulationType: 'nuclear-fission',
+    aiExplanation: 'الانشطار النووي: نيوترون يصطدم بنواة U-235 فتنقسم إلى شظيتين وتُطلق 3 نيوترونات جديدة وطاقة ≈200 MeV. هذه النيوترونات تُحفّز انشطار نوى أخرى مما يؤدي إلى تفاعل متسلسل يمكن ضبطه في المفاعلات النووية.',
+    realWorld: 'المفاعلات النووية، القنابل الذرية، محطات الطاقة النووية',
     tips: [
-      'الطاقة لكل nucleon أكبر في الاندماج',
-      'شمسنا تعمل بالاندماج',
-      'الطاقة الناتجة من E=mc² هائلة'
+      'U-235 هو النظير القابل للانشطار بنيوترونات بطيئة',
+      'كل انشطار يُطلق ~200 MeV ≈ 3.2×10⁻¹¹ J',
+      'عامل الكتلة الحرجة يحدد هل التفاعل ينطلق أم لا',
+      'الطاقة الناتجة من E=Δmc²'
     ],
     chartTypes: [
-      { x: 'نقص الكتلة (kg)', y: 'الطاقة (J)', type: 'line' }
+      { x: 'نقص الكتلة (u)', y: 'الطاقة (MeV)', type: 'line' }
+    ]
+  },
+
+  // ─────────────────────────────────────────────────────────
+  // 🌊 تجربة الشق المزدوج
+  // ─────────────────────────────────────────────────────────
+  {
+    id: 'double-slit',
+    name: 'تجربة الشق المزدوج',
+    nameEn: 'Double-Slit Experiment',
+    category: 'فيزياء حديثة',
+    icon: '🌊',
+    difficulty: 3,
+    description: 'ازدواجية الموجة-الجسيم - يونغ 1801',
+    equations: [
+      { name: 'موضع الهدب', formula: 'y_m = mλL/d', desc: 'هدب مضيء رقم m' },
+      { name: 'فرق المسار', formula: 'Δ = d·sinθ ≈ d·y/L', desc: 'فرق مسار بين الشقين' },
+      { name: 'شرط البناء', formula: 'Δ = mλ  (m=0,±1,±2,...)', desc: 'تداخل بنّاء' },
+      { name: 'شرط الهدم', formula: 'Δ = (m+½)λ', desc: 'تداخل هادم' }
+    ],
+    variables: [
+      { name: 'wavelength', label: 'الطول الموجي', unit: 'nm', unitOptions: [
+        { label: 'نانومتر (nm)', value: 'nm', factor: 1 }
+      ], min: 380, max: 780, default: 550 },
+      { name: 'slitSep', label: 'تباعد الشقين d', unit: 'mm', unitOptions: [
+        { label: 'mm', value: 'mm', factor: 1 }
+      ], min: 0.05, max: 0.5, default: 0.1 },
+      { name: 'screenDist', label: 'المسافة للشاشة L', unit: 'm', unitOptions: [
+        { label: 'متر (m)', value: 'm', factor: 1 }
+      ], min: 0.5, max: 3, default: 1 }
+    ],
+    results: [
+      { name: 'موضع الهدب الأول y₁', formula: 'y₁ = λL/d', unit: 'mm', color: 'cyan' },
+      { name: 'فرق المسار الهدب 1', formula: 'Δ = λ', unit: 'nm', color: 'amber' },
+      { name: 'زاوية الهدب الأول θ₁', formula: 'sinθ = λ/d', unit: '°', color: 'emerald' }
+    ],
+    simulationType: 'double-slit',
+    aiExplanation: 'تجربة الشق المزدوج تُثبت ازدواجية الموجة-الجسيم. حتى جسيم واحد يمر في وقت واحد يبني نمط تداخل على الشاشة — لأنه يمر كموجة من كلا الشقين في آن. لكن إذا راقبنا أي شق مرّ منه، ينهار نمط التداخل ويتصرف كجسيم. هذا أحد أعمق مفاريق ميكانيك الكم.',
+    realWorld: 'الحيود الإلكتروني، المجهر الإلكتروني، الليزر، الكريستالوغرافيا بالأشعة السينية',
+    tips: [
+      'تجربة يونغ (1801) أثبتت طبيعة الضوء الموجية أولاً',
+      'الإلكترونات والنيوترونات تُعطي نفس النمط!',
+      'المراقبة تُدمّر نمط التداخل (collapse)',
+      'الهدب المركزي (m=0) دائماً مضيء بغض النظر عن λ'
+    ],
+    chartTypes: [
+      { x: 'الموضع y (mm)', y: 'الشدة I', type: 'line' }
     ]
   },
 
@@ -3881,12 +3930,12 @@ export default function PhysicsLab() {
 
                     {/* Canvas */}
                     <div className="bg-slate-950 rounded-2xl border border-slate-800 overflow-hidden">
-                      {exp.simulationType === 'photoelectric' || exp.simulationType === 'bohr-model' || exp.simulationType === 'radioactivity' ? (
-                        <PhysicsSimulatorV2
-                          experimentType={exp.simulationType}
-                          variables={vars}
-                          width={560}
-                          height={280}
+                      {isModernPhysicsExperiment(exp.id) ? (
+                        <ModernPhysicsCanvas
+                          experimentId={exp.id}
+                          vars={vars}
+                          results={results}
+                          isPlaying={isPlaying}
                         />
                       ) : (
                         <SimulationCanvas 
