@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { 
   Play, Pause, RotateCcw, Zap, Activity, Target, 
-  Atom, Magnet, Waves, Timer, CircleDot, Radio
+  Atom, Magnet, Waves, Timer, CircleDot, Radio, Settings
 } from 'lucide-react';
 
 // ============================================================
@@ -125,6 +125,17 @@ function PhotoelectricSimulation({
   
   // Determine if effect occurs
   const effectOccurs = photonEnergy >= workFunction;
+  
+  // Get wavelength color
+  const getWavelengthColor = (wl: number) => {
+    if (wl < 380) return '#8B00FF';
+    if (wl < 450) return '#0000FF';
+    if (wl < 495) return '#00BFFF';
+    if (wl < 570) return '#00FF00';
+    if (wl < 590) return '#FFFF00';
+    if (wl < 620) return '#FF8C00';
+    return '#FF0000';
+  };
   
   // Initialize photons
   const initPhotons = useCallback(() => {
@@ -450,41 +461,230 @@ function PhotoelectricSimulation({
     });
   };
   
+  // Calculate threshold values
+  const thresholdFreq = (workFunction * e) / h;
+  const thresholdWavelength = (h * c) / (workFunction * e);
+  
   return (
-    <div className="relative">
-      <canvas
-        ref={canvasRef}
-        width={width}
-        height={height}
-        className="w-full rounded-xl cursor-pointer"
-        onClick={start}
-      />
-      
-      {/* Controls */}
-      <div className="absolute top-2 right-2 flex gap-2">
-        <button
-          onClick={start}
-          className={`p-2 rounded-lg transition ${
-            state.isPlaying ? 'bg-amber-600' : 'bg-emerald-600'
-          } hover:opacity-80`}
-        >
-          {state.isPlaying ? <Pause className="w-4 h-4 text-white" /> : <Play className="w-4 h-4 text-white" />}
-        </button>
-        <button onClick={reset} className="p-2 bg-slate-700 rounded-lg hover:bg-slate-600 transition">
-          <RotateCcw className="w-4 h-4 text-white" />
-        </button>
+    <div className="w-full">
+      {/* ═══════════════════════════════════════════════════════════ */}
+      {/* 🔬 لوحة المختبر الحقيقية - التجربة الكهروضوئية */}
+      {/* ═══════════════════════════════════════════════════════════ */}
+      <div className="relative bg-gradient-to-b from-slate-900 to-slate-950 rounded-2xl border-2 border-slate-700 overflow-hidden">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-cyan-900/50 to-blue-900/50 p-3 border-b border-slate-700">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center text-xl">
+                ⚡
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-cyan-300">تجربة أينشتاين - الظاهرة الكهروضوئية</h3>
+                <p className="text-[10px] text-slate-400">Einstein's Photoelectric Effect Experiment - 1905</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {/* Status Indicator */}
+              <div className={`px-3 py-1.5 rounded-full text-xs font-bold ${
+                effectOccurs 
+                  ? 'bg-green-900/50 text-green-400 border border-green-600/50' 
+                  : 'bg-red-900/50 text-red-400 border border-red-600/50'
+              }`}>
+                {effectOccurs ? '✅ تأثير كهروضوئي' : '❌ لا يوجد تأثير'}
+              </div>
+              {/* Play/Pause */}
+              <button
+                onClick={start}
+                className={`p-2 rounded-lg transition ${
+                  state.isPlaying ? 'bg-amber-600 hover:bg-amber-500' : 'bg-emerald-600 hover:bg-emerald-500'
+                }`}
+              >
+                {state.isPlaying ? <Pause className="w-5 h-5 text-white" /> : <Play className="w-5 h-5 text-white" />}
+              </button>
+              <button onClick={reset} className="p-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition">
+                <RotateCcw className="w-5 h-5 text-white" />
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        {/* Canvas Area */}
+        <div className="relative">
+          <canvas
+            ref={canvasRef}
+            width={width}
+            height={height}
+            className="w-full cursor-pointer"
+            onClick={start}
+          />
+          
+          {/* Legend */}
+          <div className="absolute bottom-2 left-2 bg-black/70 rounded-lg p-2 text-xs flex items-center gap-4">
+            <div className="flex items-center gap-1">
+              <div className="w-3 h-3 rounded-full animate-pulse" style={{ backgroundColor: getWavelengthColor(wavelength) }} />
+              <span className="text-slate-300">فوتون (γ)</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-3 h-3 rounded-full bg-cyan-400 animate-pulse" />
+              <span className="text-slate-300">إلكترون (e⁻)</span>
+            </div>
+          </div>
+          
+          {/* Live Readings */}
+          <div className="absolute top-2 left-2 bg-black/80 rounded-lg p-2 text-xs">
+            <div className="flex items-center gap-3">
+              <div className="text-center">
+                <p className="text-slate-400 text-[9px]">التيار</p>
+                <p className="text-cyan-400 font-bold">{effectOccurs ? '2.5' : '0.0'} μA</p>
+              </div>
+              <div className="text-center">
+                <p className="text-slate-400 text-[9px]">KE_max</p>
+                <p className="text-amber-400 font-bold">{kineticEnergy.toFixed(3)} eV</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        {/* ═══════════════════════════════════════════════════════════ */}
+        {/* 📊 أجهزة القياس */}
+        {/* ═══════════════════════════════════════════════════════════ */}
+        <div className="grid grid-cols-3 gap-2 p-3 bg-slate-900/80 border-t border-slate-700">
+          {/* الفولتميتر */}
+          <div className="bg-slate-800/50 rounded-xl p-3 border border-slate-700 text-center">
+            <div className="text-[10px] text-slate-400 mb-1">⚡ فولتميتر</div>
+            <div className="bg-black/50 rounded-lg p-2 font-mono text-lg text-amber-400">
+              {(photonEnergy - workFunction).toFixed(3)} V
+            </div>
+            <div className="text-[9px] text-slate-500 mt-1">جهد الإيقاف</div>
+          </div>
+          
+          {/* الأميتر */}
+          <div className="bg-slate-800/50 rounded-xl p-3 border border-slate-700 text-center">
+            <div className="text-[10px] text-slate-400 mb-1">🔌 أمبيرميتر</div>
+            <div className="bg-black/50 rounded-lg p-2 font-mono text-lg text-cyan-400">
+              {effectOccurs ? (photonEnergy / workFunction * 10).toFixed(1) : '0.0'} μA
+            </div>
+            <div className="text-[9px] text-slate-500 mt-1">تيار الانبعاث</div>
+          </div>
+          
+          {/* الطاقة */}
+          <div className="bg-slate-800/50 rounded-xl p-3 border border-slate-700 text-center">
+            <div className="text-[10px] text-slate-400 mb-1">💡 طاقة الفوتون</div>
+            <div className="bg-black/50 rounded-lg p-2 font-mono text-lg" style={{ color: getWavelengthColor(wavelength) }}>
+              {photonEnergy.toFixed(3)} eV
+            </div>
+            <div className="text-[9px] text-slate-500 mt-1">E = hf</div>
+          </div>
+        </div>
       </div>
       
-      {/* Legend */}
-      <div className="absolute bottom-2 left-2 bg-black/70 rounded-lg p-2 text-xs">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1">
-            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: getWavelengthColor(wavelength) }} />
-            <span className="text-slate-300">فوتون (γ)</span>
+      {/* ═══════════════════════════════════════════════════════════ */}
+      {/* 📐 المعلومات والنتائج */}
+      {/* ═══════════════════════════════════════════════════════════ */}
+      <div className="mt-3 grid grid-cols-3 gap-3">
+        {/* المدخلات */}
+        <div className="bg-gradient-to-br from-blue-950/50 to-indigo-950/50 rounded-xl p-3 border border-blue-800/30">
+          <h4 className="text-xs font-bold text-blue-300 mb-2">📥 المتغيرات المُدخلة</h4>
+          <div className="space-y-1 text-[10px]">
+            <div className="flex justify-between">
+              <span className="text-slate-400">الطول الموجي (λ):</span>
+              <span className="text-blue-300 font-mono">{wavelength} nm</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">دالة الشغل (φ):</span>
+              <span className="text-blue-300 font-mono">{workFunction.toFixed(2)} eV</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">التردد (f):</span>
+              <span className="text-blue-300 font-mono">{(frequency/1e14).toFixed(3)}×10¹⁴ Hz</span>
+            </div>
           </div>
-          <div className="flex items-center gap-1">
-            <div className="w-3 h-3 rounded-full bg-cyan-400" />
-            <span className="text-slate-300">إلكترون (e⁻)</span>
+        </div>
+        
+        {/* القيم المحسوبة */}
+        <div className="bg-gradient-to-br from-green-950/50 to-emerald-950/50 rounded-xl p-3 border border-green-800/30">
+          <h4 className="text-xs font-bold text-green-300 mb-2">📐 القيم المحسوبة</h4>
+          <div className="space-y-1 text-[10px]">
+            <div className="flex justify-between">
+              <span className="text-slate-400">طاقة الفوتون:</span>
+              <span className="text-green-300 font-mono">{photonEnergy.toFixed(3)} eV</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">KE_max:</span>
+              <span className="text-green-300 font-mono">{kineticEnergy.toFixed(3)} eV</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">جهد الإيقاف:</span>
+              <span className="text-green-300 font-mono">{(kineticEnergy).toFixed(3)} V</span>
+            </div>
+          </div>
+        </div>
+        
+        {/* المعادلات */}
+        <div className="bg-gradient-to-br from-amber-950/50 to-orange-950/50 rounded-xl p-3 border border-amber-800/30">
+          <h4 className="text-xs font-bold text-amber-300 mb-2">📝 المعادلات الأساسية</h4>
+          <div className="space-y-1 text-[10px] font-mono">
+            <div className="text-amber-300">E = hf = hc/λ</div>
+            <div className="text-amber-300">KE = hf - φ</div>
+            <div className="text-amber-300">f₀ = φ/h</div>
+            <div className="text-amber-300">λ₀ = hc/φ</div>
+          </div>
+        </div>
+      </div>
+      
+      {/* ═══════════════════════════════════════════════════════════ */}
+      {/* 🎛️ أدوات التحكم (للعرض فقط - يتم التحكم من التبويب الرئيسي) */}
+      {/* ═══════════════════════════════════════════════════════════ */}
+      <div className="mt-3 bg-gradient-to-r from-slate-800/50 to-slate-900/50 rounded-xl p-4 border border-slate-700">
+        <h4 className="text-xs font-bold text-cyan-300 mb-3 flex items-center gap-2">
+          <Settings className="w-4 h-4" />
+          🎛️ أدوات التحكم - اضبط المتغيرات من اللوحة الجانبية
+        </h4>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* الطول الموجي */}
+          <div>
+            <label className="text-[10px] text-slate-400 block mb-1">الطول الموجي (nm)</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="range"
+                min="200"
+                max="800"
+                value={wavelength}
+                disabled
+                className="flex-1 accent-cyan-500"
+              />
+              <span className="text-xs font-mono text-cyan-300 w-16 text-left">{wavelength} nm</span>
+            </div>
+            <div className="h-2 mt-1 rounded-full bg-gradient-to-r from-violet-500 via-blue-500 via-green-500 via-yellow-500 to-red-500" />
+          </div>
+          
+          {/* دالة الشغل */}
+          <div>
+            <label className="text-[10px] text-slate-400 block mb-1">المعدن (دالة الشغل)</label>
+            <div className="bg-slate-700/50 rounded-lg p-2 text-center">
+              <span className="text-sm font-bold text-amber-300">φ = {workFunction.toFixed(2)} eV</span>
+            </div>
+          </div>
+          
+          {/* الطول الموجي الحرج */}
+          <div>
+            <label className="text-[10px] text-slate-400 block mb-1">الطول الموجي الحرج</label>
+            <div className="bg-slate-700/50 rounded-lg p-2 text-center">
+              <span className="text-sm font-bold text-cyan-300">λ₀ = {thresholdWavelength.toFixed(0)} nm</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      {/* ملاحظة مهمة */}
+      <div className="mt-3 bg-gradient-to-r from-purple-950/30 to-pink-950/30 rounded-xl p-3 border border-purple-800/30">
+        <div className="flex items-start gap-2">
+          <span className="text-xl">💡</span>
+          <div className="text-[10px] text-slate-300">
+            <p className="font-bold text-purple-300 mb-1">📖 ملاحظة مهمة:</p>
+            <p>• طاقة الحركة لل электрона تعتمد على تردد الضوء (λ) وليس شدته!</p>
+            <p>• لا يحدث تأثير كهروضوئي إذا كانت λ &gt; λ₀ (تردد أقل من التردد الحرج)</p>
+            <p>• التيار يزداد مع شدة الضوء لكن KE لا تتغير</p>
           </div>
         </div>
       </div>
