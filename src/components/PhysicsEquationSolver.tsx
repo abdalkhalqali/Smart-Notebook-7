@@ -1,8 +1,8 @@
 import React, { useState, useCallback } from 'react';
 import { 
   Calculator, Zap, ArrowRight, Copy, Check, RotateCcw,
-  Lightbulb, BookOpen, Play, ChevronDown, ChevronUp, Math,
-  FunctionSquare, Sigma, SquareRoot, Pi, Variable
+  Lightbulb, BookOpen, Play, ChevronDown, ChevronUp,
+  FunctionSquare, Sigma, Pi, Variable
 } from 'lucide-react';
 
 interface Equation {

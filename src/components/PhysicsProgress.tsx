@@ -296,11 +296,13 @@ export default function PhysicsProgress({ darkMode = true }: { darkMode?: boolea
                   التقدم حسب الفئة
                 </h4>
                 <div className="space-y-3">
-                  {Object.entries(stats.categoryProgress).map(([category, progress]) => (
+                  {Object.entries(stats.categoryProgress).map(([category, progress]) => {
+                    const p = progress as { completed: number; total: number };
+                    return (
                     <div key={category}>
                       <div className="flex justify-between text-xs mb-1">
                         <span className={textSecondary}>{category}</span>
-                        <span className={textSecondary}>{progress.completed}/{progress.total}</span>
+                        <span className={textSecondary}>{p.completed}/{p.total}</span>
                       </div>
                       <div className={`h-2 rounded-full ${darkMode ? 'bg-slate-700' : 'bg-slate-200'}`}>
                         <div 
@@ -310,11 +312,12 @@ export default function PhysicsProgress({ darkMode = true }: { darkMode?: boolea
                             category.includes('بصريات') ? 'bg-emerald-500' :
                             'bg-purple-500'
                           }`}
-                          style={{ width: `${(progress.completed / progress.total) * 100}%` }}
+                          style={{ width: `${(p.completed / p.total) * 100}%` }}
                         />
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
               

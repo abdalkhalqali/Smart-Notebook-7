@@ -533,39 +533,55 @@ const EXPERIMENTS: Experiment[] = [
   },
   {
     id: 'photoelectric',
-    name: 'التأثير الكهروضوئي',
-    nameEn: 'Photoelectric Effect',
+    name: 'الظاهرة الكهروضوئية',
+    nameEn: 'Photoelectric Effect Lab',
     category: 'فيزياء حديثة',
-    icon: '⚛️',
+    icon: '⚡',
     difficulty: 3,
-    description: 'إلكترونات تترك السطح المعدني',
+    description: 'مختبر شامل للظاهرة الكهروضوئية - أينشتاين 1905',
     equations: [
-      { name: 'آينشتاين', formula: 'KE = hf - φ', desc: 'معادلة التأثير' },
-      { name: 'طاقة الفوتون', formula: 'E = hc/λ', desc: 'طاقة الفوتون' }
+      { name: 'معادلة أينشتاين', formula: 'KEₘₐₓ = hf - φ', desc: 'طاقة الحركة العظمى' },
+      { name: 'طاقة الفوتون', formula: 'E = hf = hc/λ', desc: 'طاقة الفوتون الساقط' },
+      { name: 'التردد الحرج', formula: 'f₀ = φ/h', desc: 'التردد الأدنى للانبعاث' },
+      { name: 'جهد الإيقاف', formula: 'V₀ = (hf - φ)/e', desc: 'جهد الإيقاف' }
     ],
     variables: [
       { name: 'wavelength', label: 'الطول الموجي', unit: 'nm', unitOptions: [
-        { label: 'نانومتر', value: 'nm', factor: 1 }
-      ], min: 100, max: 1000, default: 500 },
-      { name: 'workFunc', label: 'دالة الشغل', unit: 'eV', unitOptions: [
-        { label: 'eV', value: 'eV', factor: 1 },
-        { label: 'جول', value: 'J', factor: 1.602e-19 }
-      ], min: 1, max: 10, default: 4.5 }
+        { label: 'نانومتر (nm)', value: 'nm', factor: 1 }
+      ], min: 200, max: 800, default: 500 },
+      { name: 'intensity', label: 'شدة الضوء', unit: '%', unitOptions: [
+        { label: 'نسبة مئوية (%)', value: '%', factor: 1 }
+      ], min: 1, max: 100, default: 80 },
+      { name: 'material', label: 'المادة', unit: '', unitOptions: [
+        { label: 'السيزيوم (Cs)', value: 'Cs', factor: 2.1 },
+        { label: 'البوتاسيوم (K)', value: 'K', factor: 2.3 },
+        { label: 'الصوديوم (Na)', value: 'Na', factor: 2.75 },
+        { label: 'الكالسيوم (Ca)', value: 'Ca', factor: 2.87 },
+        { label: 'الزنك (Zn)', value: 'Zn', factor: 4.3 }
+      ], min: 0, max: 5, default: 0 }
     ],
     results: [
       { name: 'طاقة الفوتون', formula: 'E = hc/λ', unit: 'eV', color: 'amber' },
-      { name: 'الطاقة الحركية', formula: 'KE = hf - φ', unit: 'eV', color: 'cyan' }
+      { name: 'دالة الشغل', formula: 'φ', unit: 'eV', color: 'rose' },
+      { name: 'طاقة الحركة', formula: 'KE = E - φ', unit: 'eV', color: 'cyan' },
+      { name: 'جهد الإيقاف', formula: 'V₀ = KE/e', unit: 'V', color: 'emerald' },
+      { name: 'التردد', formula: 'f = c/λ', unit: 'Hz', color: 'violet' },
+      { name: 'التيار', formula: 'I ∝ شدة', unit: 'μA', color: 'blue' }
     ],
     simulationType: 'photoelectric',
-    aiExplanation: 'التأثير الكهروضوئي يُظهر طبيعة الضوء كمادة (فوتونات).',
-    realWorld: 'الألواح الشمسية، أجهزة photoelectric',
+    aiExplanation: 'الظاهرة الكهروضوئية تُثبت أن الضوء يسلك كجسيمات (فوتونات). عندما يصطدم فوتون ذو طاقة كافية (hf > φ) بسطح المعدن، يُمكنه تحرير إلكترون. طاقة الحركة للإلكترون تعتمد على تردد الضوء وليس شدته! هذا ما فسره أينشتاين في ورقة 1905.',
+    realWorld: 'الخلايا الشمسية، حساسات الضوء، الكاميرات الرقمية، أبواب المراحيض الأوتوماتيكية',
     tips: [
-      'الطاقة الحركية لا تعتمد على شدة الضوء',
-      'لا يحدث تأثير إذا كان التردد أقل من الحد الأدنى',
-      'الضوء يسلك كجسيمات (فوتونات)'
+      'الطول الموجي الحرج للسيزيوم: 590nm (أصفر)',
+      'الطول الموجي الحرج للزنك: 288nm (فوق بنفسجي)',
+      'طاقة الفوتون = h × c / λ = 1240 / λ(nm) eV',
+      'التيار يزداد مع الشدة لكن KE لا تعتمد عليها',
+      'لا يوجد انبعاث إذا كان λ > λc'
     ],
     chartTypes: [
-      { x: 'التردد (Hz)', y: 'KE (eV)', type: 'scatter' }
+      { x: 'التردد f (×10¹⁴ Hz)', y: 'KEₘₐₓ (eV)', type: 'scatter' },
+      { x: 'الطول الموجي λ (nm)', y: 'التيار (μA)', type: 'line' },
+      { x: 'الجهد V (V)', y: 'التيار I (μA)', type: 'line' }
     ]
   },
   // ═══════════════════════════════════════════════════════════
@@ -1784,7 +1800,7 @@ const EXPERIMENTS: Experiment[] = [
       ], min: 0.1, max: 10, default: 1 },
       { name: 'T', label: 'الحرارة', unit: 'K', unitOptions: [
         { label: 'K', value: 'K', factor: 1 },
-        { label: '°C', value: '°C', factor: 1, convert: (v) => v + 273 }
+        { label: '°C', value: '°C', factor: 1 }
       ], min: 200, max: 500, default: 300 },
       { name: 'P', label: 'الضغط', unit: 'atm', unitOptions: [
         { label: 'atm', value: 'atm', factor: 1 },
@@ -2007,7 +2023,7 @@ const EXPERIMENTS: Experiment[] = [
       { name: 'N0', label: 'الذرات الابتدائية', unit: '', unitOptions: [
         { label: '', value: '', factor: 1 }
       ], min: 100, max: 10000, default: 1000 },
-      { name: 'lambda', label: 'ثابت التحلل', formula: (v) => Math.log(2)/v, unit: '1/s', unitOptions: [
+      { name: 'lambda', label: 'ثابت التحلل', unit: '1/s', unitOptions: [
         { label: '1/s', value: '1/s', factor: 1 }
       ], min: 0.01, max: 1, default: 0.1 }
     ],
@@ -3408,13 +3424,42 @@ export default function PhysicsLab() {
         res.radius = (me * vel) / (q * B);
         break;
       case 'photoelectric':
-        const wl = (v.wavelength || 500) * 1e-9;
-        const phi = (v.workFunc || 4.5) * 1.602e-19;
+        // المواد ودوال الشغل (eV)
+        const workFuncs: Record<string, number> = {
+          'Cs': 2.1, 'K': 2.3, 'Na': 2.75, 'Ca': 2.87, 'Zn': 4.3
+        };
+        const matKey = String(v.material || 'Cs');
+        const phi_eV = workFuncs[matKey] || 2.1;
+        const phi_J = phi_eV * 1.602e-19;
+        const wl_nm = v.wavelength || 500;
+        const wl_m = wl_nm * 1e-9;
         const hPlanck = 6.626e-34;
         const c = 3e8;
-        const E = (hPlanck * c) / wl;
-        res.photonEnergy = E / 1.602e-19;
-        res.ke2 = Math.max(0, E - phi) / 1.602e-19;
+        const intensity = v.intensity || 80;
+        
+        // طاقة الفوتون
+        const E_J = (hPlanck * c) / wl_m;
+        const E_eV = E_J / 1.602e-19;
+        res.photonEnergy = E_eV;
+        res.workFunc = phi_eV;
+        res.ke2 = Math.max(0, E_eV - phi_eV);
+        
+        // التردد
+        const freq = c / wl_m;
+        res.frequency = freq;
+        
+        // جهد الإيقاف
+        res.stoppingVoltage = Math.max(0, E_eV - phi_eV);
+        
+        // التيار (يتناسب مع الشدة)
+        const lambda_c = (1240 / phi_eV);
+        const isAboveThreshold = wl_nm < lambda_c;
+        res.current = isAboveThreshold ? (intensity / 100) * 100 : 0;
+        
+        // هل يوجد انبعاث؟
+        res.emission = E_eV > phi_eV ? 1 : 0;
+        res.criticalWavelength = lambda_c;
+        
         break;
       default:
         Object.values(v).forEach(val => {
