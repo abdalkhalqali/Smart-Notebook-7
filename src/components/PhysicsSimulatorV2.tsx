@@ -316,36 +316,123 @@ function PhotoelectricSimulation({
       }
     });
     
-    // Draw info panel
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-    ctx.fillRect(10, 10, 280, 120);
-    ctx.strokeStyle = '#4a5568';
-    ctx.strokeRect(10, 10, 280, 120);
+    // ═══════════════════════════════════════════════════════════
+    // 🎯 لوحة المعلومات الشاملة للمتغيرات الفيزيائية
+    // ═══════════════════════════════════════════════════════════
     
-    ctx.fillStyle = '#e2e8f0';
-    ctx.font = 'bold 14px sans-serif';
-    ctx.fillText('⚡ التأثير الكهروضوئي', 20, 35);
+    // Panel 1: Input Variables (Left)
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+    ctx.fillRect(10, 10, 200, 160);
+    ctx.strokeStyle = '#3b82f6';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(10, 10, 200, 160);
     
-    ctx.font = '12px monospace';
+    ctx.fillStyle = '#60a5fa';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillText('📥 المدخلات', 20, 28);
+    
+    ctx.font = '11px monospace';
     ctx.fillStyle = '#94a3b8';
-    ctx.fillText(`λ = ${wavelength} nm (${getWavelengthColor(wavelength)})`, 20, 60);
-    ctx.fillText(`f = ${(frequency / 1e14).toFixed(2)} × 10¹⁴ Hz`, 20, 80);
-    ctx.fillText(`E_photon = ${photonEnergy.toFixed(2)} eV`, 20, 100);
-    ctx.fillText(`φ (دالة الشغل) = ${workFunction.toFixed(1)} eV`, 20, 120);
+    ctx.fillText(`الطول الموجي: λ = ${wavelength} nm`, 20, 50);
     
-    // Result
-    const resultY = effectOccurs ? 60 : 95;
+    // Show color indicator
+    ctx.fillStyle = getWavelengthColor(wavelength);
+    ctx.beginPath();
+    ctx.arc(195, 46, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillText(`دالة الشغل: φ = ${workFunction.toFixed(2)} eV`, 20, 70);
+    
+    // Panel 2: Calculated Values (Middle)
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+    ctx.fillRect(220, 10, 220, 160);
+    ctx.strokeStyle = '#22c55e';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(220, 10, 220, 160);
+    
+    ctx.fillStyle = '#4ade80';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillText('📐 القيم المحسوبة', 230, 28);
+    
+    ctx.font = '11px monospace';
+    ctx.fillStyle = '#86efac';
+    
+    // Frequency (f = c/λ)
+    const fDisplay = (frequency / 1e14).toFixed(3);
+    ctx.fillText(`التردد: f = ${fDisplay} × 10¹⁴ Hz`, 230, 50);
+    
+    // Photon Energy (E = hf = hc/λ)
+    ctx.fillText(`طاقة الفوتون: E = ${photonEnergy.toFixed(3)} eV`, 230, 70);
+    
+    // Threshold frequency
+    const thresholdFreq = (workFunction * e) / h;
+    const thresholdWavelength = (h * c) / (workFunction * e);
+    ctx.fillText(`التردد الحرج: f₀ = ${(thresholdFreq/1e14).toFixed(3)} × 10¹⁴ Hz`, 230, 90);
+    ctx.fillText(`الطول الموجي الحرج: λ₀ = ${thresholdWavelength.toFixed(0)} nm`, 230, 110);
+    
+    // Kinetic Energy
+    ctx.fillStyle = effectOccurs ? '#4ade80' : '#ef4444';
+    ctx.fillText(`KE_max = ${kineticEnergy.toFixed(3)} eV`, 230, 130);
+    
+    // Status indicator
     ctx.fillStyle = effectOccurs ? '#22c55e' : '#ef4444';
-    ctx.font = 'bold 14px sans-serif';
-    ctx.fillText(
-      effectOccurs 
-        ? `✅ KE_electron = ${kineticEnergy.toFixed(2)} eV` 
-        : '❌ لا يوجد تأثير (hf < φ)',
-      150,
-      resultY
-    );
+    ctx.font = 'bold 10px sans-serif';
+    ctx.fillText(effectOccurs ? '✅ تأثير كهروضوئي ✓' : '❌ لا يوجد تأثير', 230, 150);
     
-  }, [state.particles, width, height, wavelength, frequency, photonEnergy, workFunction, effectOccurs, kineticEnergy]);
+    // Panel 3: Physics Equations (Right)
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+    ctx.fillRect(450, 10, 160, 160);
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(450, 10, 160, 160);
+    
+    ctx.fillStyle = '#fbbf24';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillText('📝 المعادلات', 460, 28);
+    
+    ctx.font = '10px monospace';
+    ctx.fillStyle = '#fcd34d';
+    ctx.fillText('E = hf = hc/λ', 460, 50);
+    ctx.fillText('KE = hf - φ', 460, 70);
+    ctx.fillText('f₀ = φ/h', 460, 90);
+    ctx.fillText('λ₀ = hc/φ', 460, 110);
+    
+    // Visual comparison bar
+    ctx.fillStyle = '#1e293b';
+    ctx.fillRect(460, 125, 140, 20);
+    
+    // Energy comparison
+    const barWidth = 140;
+    const photonBar = Math.min((photonEnergy / 10) * barWidth, barWidth);
+    const workBar = Math.min((workFunction / 10) * barWidth, barWidth);
+    
+    ctx.fillStyle = '#3b82f6';
+    ctx.fillRect(460, 125, photonBar, 8);
+    ctx.fillStyle = '#ef4444';
+    ctx.fillRect(460, 137, workBar, 8);
+    
+    ctx.font = '8px sans-serif';
+    ctx.fillStyle = '#3b82f6';
+    ctx.fillText('Eγ', 465, 132);
+    ctx.fillStyle = '#ef4444';
+    ctx.fillText('φ', 465, 144);
+    
+    // Result indicator below canvas
+    if (effectOccurs) {
+      ctx.fillStyle = '#22c55e';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.fillText(`✅ KE_electron = ${kineticEnergy.toFixed(3)} eV | vf = √(2KE/m)`, width / 2 - 100, height - 10);
+    } else {
+      ctx.fillStyle = '#ef4444';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.fillText(`❌ لا يوجد تأثير كهروضوئي (hf < φ)`, width / 2 - 120, height - 10);
+    }
+    
+  }, [state.particles, width, height, wavelength, frequency, photonEnergy, workFunction, effectOccurs, kineticEnergy, state.time, state.isPlaying]);
   
   // Start/reset
   const start = () => setState(prev => ({ 

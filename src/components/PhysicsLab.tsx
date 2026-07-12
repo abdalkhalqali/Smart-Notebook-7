@@ -7,7 +7,7 @@ import {
   Zap, Compass, Target, Award, Flame, Sparkles, RefreshCw,
   Copy, Clock, Users, Timer, BookOpen, Lightbulb,
   ArrowRight, ArrowLeft, Minus, Grid3X3, Maximize2, Minimize2,
-  Sun, Moon, VolumeX, Volume1
+  Sun, Moon, VolumeX, Volume1, Activity
 } from 'lucide-react';
 import { resolveApiUrl } from '../utils/apiBase';
 import PhysicsChart from './PhysicsChart';
@@ -3929,6 +3929,359 @@ export default function PhysicsLab() {
                           </div>
                         ))}
                       </div>
+                    </div>
+
+                    {/* ═══ 🔬 لوحة المتغيرات الحية (Live Variables) ═══ */}
+                    <div className="bg-gradient-to-r from-purple-950/40 to-violet-950/40 rounded-2xl p-4 border border-purple-800/30">
+                      <h4 className="text-xs font-bold text-purple-300 mb-3 flex items-center gap-2">
+                        <Activity className="w-4 h-4" />
+                        📊 المتغيرات الفيزيائية الحية
+                        <span className="text-[9px] bg-purple-600/30 px-2 py-0.5 rounded-full mr-auto">تحديث تلقائي</span>
+                      </h4>
+                      
+                      {/* المتغيرات الأساسية */}
+                      <div className="mb-4">
+                        <p className="text-[10px] text-purple-400 mb-2 font-bold">📥 المتغيرات المُدخلة:</p>
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                          {exp.variables.map((vv, idx) => {
+                            const val = vars[vv.name] ?? vv.default;
+                            const range = vv.max - vv.min;
+                            const percentage = ((val - vv.min) / range) * 100;
+                            return (
+                              <div key={vv.name} className="bg-slate-800/50 rounded-lg p-2 border border-slate-700">
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-[9px] text-slate-400">{vv.label}</span>
+                                  <span className="text-xs font-bold text-purple-300">{val.toFixed(2)} {vv.unit}</span>
+                                </div>
+                                <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                                  <div 
+                                    className="h-full bg-gradient-to-r from-purple-500 to-cyan-400 rounded-full transition-all duration-300"
+                                    style={{ width: `${percentage}%` }}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      
+                      {/* القيم المحسوبة */}
+                      {Object.keys(results).length > 0 && (
+                        <div className="mb-4">
+                          <p className="text-[10px] text-green-400 mb-2 font-bold">📐 القيم المحسوبة:</p>
+                          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                            {exp.results.map((r, idx) => {
+                              const val = Object.values(results)[idx];
+                              if (val === undefined) return null;
+                              return (
+                                <div key={r.name} className="bg-slate-800/50 rounded-lg p-2 border border-slate-700">
+                                  <div className="flex items-center justify-between mb-1">
+                                    <span className="text-[9px] text-slate-400">{r.name}</span>
+                                    <span className="text-xs font-bold" style={{ color: COLOR_MAP[r.color] }}>
+                                      {typeof val === 'number' ? val.toFixed(4) : val}
+                                    </span>
+                                  </div>
+                                  <p className="text-[8px] text-slate-500">{r.unit}</p>
+                                  <p className="text-[8px] text-amber-400/70 font-mono mt-0.5">{r.formula}</p>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* تجربة التأثير الكهروضوئي - معلومات إضافية */}
+                      {exp.id === 'photoelectric' && (
+                        <div className="mt-3 p-3 bg-slate-800/30 rounded-xl border border-slate-700">
+                          <p className="text-[10px] text-cyan-400 mb-2 font-bold">⚡ معادلات التأثير الكهروضوئي:</p>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[9px]">
+                            <div className="bg-slate-900/50 p-2 rounded-lg text-center">
+                              <p className="text-amber-400 font-mono mb-1">E = hf = hc/λ</p>
+                              <p className="text-slate-400">طاقة الفوتون</p>
+                            </div>
+                            <div className="bg-slate-900/50 p-2 rounded-lg text-center">
+                              <p className="text-amber-400 font-mono mb-1">KE = hf - φ</p>
+                              <p className="text-slate-400">الطاقة الحركية</p>
+                            </div>
+                            <div className="bg-slate-900/50 p-2 rounded-lg text-center">
+                              <p className="text-amber-400 font-mono mb-1">f₀ = φ/h</p>
+                              <p className="text-slate-400">التردد الحرج</p>
+                            </div>
+                            <div className="bg-slate-900/50 p-2 rounded-lg text-center">
+                              <p className="text-amber-400 font-mono mb-1">λ₀ = hc/φ</p>
+                              <p className="text-slate-400">الطول الموجي الحرج</p>
+                            </div>
+                          </div>
+                          {vars.wavelength && vars.workFunc && (
+                            <div className="mt-3 flex flex-wrap gap-3 text-[10px]">
+                              {(() => {
+                                const h = 6.626e-34, c = 3e8, e = 1.602e-19;
+                                const wavelength = vars.wavelength * 1e-9;
+                                const freq = c / wavelength;
+                                const photonE = (h * freq) / e;
+                                const workF = vars.workFunc;
+                                const kineticE = Math.max(0, photonE - workF);
+                                const thresholdFreq = (workF * e) / h;
+                                const thresholdLambda = (h * c) / (workF * e);
+                                return (
+                                  <>
+                                    <span className="bg-blue-900/30 px-2 py-1 rounded">التردد: {(freq/1e14).toFixed(3)}×10¹⁴ Hz</span>
+                                    <span className="bg-green-900/30 px-2 py-1 rounded">KE: {kineticE.toFixed(3)} eV</span>
+                                    <span className="bg-red-900/30 px-2 py-1 rounded">λ₀: {thresholdLambda.toFixed(0)} nm</span>
+                                    <span className="bg-purple-900/30 px-2 py-1 rounded">f₀: {(thresholdFreq/1e14).toFixed(3)}×10¹⁴ Hz</span>
+                                  </>
+                                );
+                              })()}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
+                      {/* تجربة السقوط الحر */}
+                      {exp.id === 'free-fall' && vars.height && vars.gravity && (
+                        <div className="mt-3 p-3 bg-slate-800/30 rounded-xl border border-slate-700">
+                          <p className="text-[10px] text-cyan-400 mb-2 font-bold">🏃 معادلات السقوط الحر:</p>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[9px]">
+                            <div className="bg-slate-900/50 p-2 rounded-lg text-center">
+                              <p className="text-amber-400 font-mono mb-1">h = ½gt²</p>
+                              <p className="text-slate-400">الارتفاع</p>
+                            </div>
+                            <div className="bg-slate-900/50 p-2 rounded-lg text-center">
+                              <p className="text-amber-400 font-mono mb-1">v = gt</p>
+                              <p className="text-slate-400">السرعة</p>
+                            </div>
+                            <div className="bg-slate-900/50 p-2 rounded-lg text-center">
+                              <p className="text-amber-400 font-mono mb-1">KE = ½mv²</p>
+                              <p className="text-slate-400">الطاقة الحركية</p>
+                            </div>
+                            <div className="bg-slate-900/50 p-2 rounded-lg text-center">
+                              <p className="text-amber-400 font-mono mb-1">PE = mgh</p>
+                              <p className="text-slate-400">الطاقة الكامنة</p>
+                            </div>
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2 text-[10px]">
+                            <span className="bg-blue-900/30 px-2 py-1 rounded">
+                              زمن السقوط: {Math.sqrt(2 * vars.height / vars.gravity).toFixed(3)} s
+                            </span>
+                            <span className="bg-green-900/30 px-2 py-1 rounded">
+                              السرعة النهائية: {(vars.gravity * Math.sqrt(2 * vars.height / vars.gravity)).toFixed(3)} m/s
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* تجربة المقذوفات */}
+                      {exp.id === 'projectile' && vars.velocity && vars.angle && (
+                        <div className="mt-3 p-3 bg-slate-800/30 rounded-xl border border-slate-700">
+                          <p className="text-[10px] text-cyan-400 mb-2 font-bold">🎯 معادلات الحركة القذفية:</p>
+                          <div className="mt-2 flex flex-wrap gap-2 text-[10px]">
+                            <span className="bg-blue-900/30 px-2 py-1 rounded">
+                              المدى: {((vars.velocity ** 2 * Math.sin(2 * vars.angle * Math.PI / 180)) / 9.8).toFixed(3)} m
+                            </span>
+                            <span className="bg-green-900/30 px-2 py-1 rounded">
+                              أقصى ارتفاع: {((vars.velocity ** 2 * Math.sin(vars.angle * Math.PI / 180) ** 2) / (2 * 9.8)).toFixed(3)} m
+                            </span>
+                            <span className="bg-purple-900/30 px-2 py-1 rounded">
+                              زمن الرحلة: {(2 * vars.velocity * Math.sin(vars.angle * Math.PI / 180) / 9.8).toFixed(3)} s
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* تجربة قانون أوم */}
+                      {exp.id === 'ohms-law' && vars.voltage && vars.resistance && (
+                        <div className="mt-3 p-3 bg-slate-800/30 rounded-xl border border-slate-700">
+                          <p className="text-[10px] text-cyan-400 mb-2 font-bold">⚡ معادلات قانون أوم:</p>
+                          <div className="grid grid-cols-3 gap-2 text-[9px]">
+                            <div className="bg-slate-900/50 p-2 rounded-lg text-center">
+                              <p className="text-amber-400 font-mono mb-1">V = IR</p>
+                              <p className="text-slate-400">الجهد</p>
+                            </div>
+                            <div className="bg-slate-900/50 p-2 rounded-lg text-center">
+                              <p className="text-amber-400 font-mono mb-1">P = VI</p>
+                              <p className="text-slate-400">القدرة</p>
+                            </div>
+                            <div className="bg-slate-900/50 p-2 rounded-lg text-center">
+                              <p className="text-amber-400 font-mono mb-1">W = Pt</p>
+                              <p className="text-slate-400">الشغل</p>
+                            </div>
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-2 text-[10px]">
+                            <span className="bg-blue-900/30 px-2 py-1 rounded">
+                              التيار: {(vars.voltage / vars.resistance).toFixed(3)} A
+                            </span>
+                            <span className="bg-green-900/30 px-2 py-1 rounded">
+                              القدرة: {(vars.voltage * (vars.voltage / vars.resistance)).toFixed(3)} W
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* تجربة البندول */}
+                      {exp.id === 'pendulum' && vars.length && (
+                        <div className="mt-3 p-3 bg-slate-800/30 rounded-xl border border-slate-700">
+                          <p className="text-[10px] text-cyan-400 mb-2 font-bold">🔔 معادلات البندول البسيط:</p>
+                          <div className="grid grid-cols-2 gap-2 text-[9px] mb-2">
+                            <div className="bg-slate-900/50 p-2 rounded-lg text-center">
+                              <p className="text-amber-400 font-mono mb-1">T = 2π√(L/g)</p>
+                              <p className="text-slate-400">الزمن الدوري</p>
+                            </div>
+                            <div className="bg-slate-900/50 p-2 rounded-lg text-center">
+                              <p className="text-amber-400 font-mono mb-1">f = 1/T</p>
+                              <p className="text-slate-400">التردد</p>
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-2 text-[10px]">
+                            <span className="bg-blue-900/30 px-2 py-1 rounded">
+                              T = {(2 * Math.PI * Math.sqrt(vars.length / 9.8)).toFixed(3)} s
+                            </span>
+                            <span className="bg-green-900/30 px-2 py-1 rounded">
+                              f = {(1 / (2 * Math.PI * Math.sqrt(vars.length / 9.8))).toFixed(3)} Hz
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* تجربة الموجات */}
+                      {exp.id === 'wave' && vars.frequency && vars.amplitude && (
+                        <div className="mt-3 p-3 bg-slate-800/30 rounded-xl border border-slate-700">
+                          <p className="text-[10px] text-cyan-400 mb-2 font-bold">🌊 معادلات الموجات:</p>
+                          <div className="grid grid-cols-3 gap-2 text-[9px] mb-2">
+                            <div className="bg-slate-900/50 p-2 rounded-lg text-center">
+                              <p className="text-amber-400 font-mono mb-1">v = fλ</p>
+                              <p className="text-slate-400">السرعة</p>
+                            </div>
+                            <div className="bg-slate-900/50 p-2 rounded-lg text-center">
+                              <p className="text-amber-400 font-mono mb-1">ω = 2πf</p>
+                              <p className="text-slate-400">السرعة الزاوية</p>
+                            </div>
+                            <div className="bg-slate-900/50 p-2 rounded-lg text-center">
+                              <p className="text-amber-400 font-mono mb-1">T = 1/f</p>
+                              <p className="text-slate-400">الدور</p>
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-2 text-[10px]">
+                            <span className="bg-blue-900/30 px-2 py-1 rounded">
+                              λ = {(1 / vars.frequency).toFixed(3)} m
+                            </span>
+                            <span className="bg-green-900/30 px-2 py-1 rounded">
+                              ω = {(2 * Math.PI * vars.frequency).toFixed(3)} rad/s
+                            </span>
+                            <span className="bg-purple-900/30 px-2 py-1 rounded">
+                              T = {(1 / vars.frequency).toFixed(3)} s
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* تجربة الانكسار */}
+                      {exp.id === 'refraction' && vars.n1 && vars.n2 && vars.angle1 && (
+                        <div className="mt-3 p-3 bg-slate-800/30 rounded-xl border border-slate-700">
+                          <p className="text-[10px] text-cyan-400 mb-2 font-bold">🔮 معادلات الانكسار:</p>
+                          <div className="flex flex-wrap gap-2 text-[10px]">
+                            {(() => {
+                              const n1 = vars.n1, n2 = vars.n2;
+                              const a1 = vars.angle1 * Math.PI / 180;
+                              const sin2 = (n1 * Math.sin(a1)) / n2;
+                              const a2 = sin2 <= 1 ? Math.asin(sin2) * 180 / Math.PI : 0;
+                              return (
+                                <>
+                                  <span className="bg-blue-900/30 px-2 py-1 rounded">
+                                    زاوية الانكسار: {a2.toFixed(2)}°
+                                  </span>
+                                  <span className="bg-green-900/30 px-2 py-1 rounded">
+                                    الانحراف: {(vars.angle1 - a2).toFixed(2)}°
+                                  </span>
+                                  <span className="bg-purple-900/30 px-2 py-1 rounded">
+                                    sin(θ₂) = {sin2.toFixed(4)}
+                                  </span>
+                                </>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* تجربة النشاط الإشعاعي */}
+                      {exp.id === 'radioactivity' && vars.N0 && vars.halfLife && vars.time && (
+                        <div className="mt-3 p-3 bg-slate-800/30 rounded-xl border border-slate-700">
+                          <p className="text-[10px] text-cyan-400 mb-2 font-bold">☢️ معادلات النشاط الإشعاعي:</p>
+                          <div className="flex flex-wrap gap-2 text-[10px]">
+                            {(() => {
+                              const N0 = vars.N0, tH = vars.halfLife, t = vars.time;
+                              const lambda = Math.log(2) / tH;
+                              const remaining = N0 * Math.exp(-lambda * t);
+                              return (
+                                <>
+                                  <span className="bg-blue-900/30 px-2 py-1 rounded">
+                                    λ = {lambda.toFixed(4)} s⁻¹
+                                  </span>
+                                  <span className="bg-green-900/30 px-2 py-1 rounded">
+                                    N = {remaining.toFixed(0)} ذرة
+                                  </span>
+                                  <span className="bg-red-900/30 px-2 py-1 rounded">
+                                    النسبة: {((remaining/N0)*100).toFixed(1)}%
+                                  </span>
+                                </>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* تجربة الديناميكا الحرارية */}
+                      {exp.id === 'thermodynamics' && vars.mass && vars.c && vars.deltaT && (
+                        <div className="mt-3 p-3 bg-slate-800/30 rounded-xl border border-slate-700">
+                          <p className="text-[10px] text-cyan-400 mb-2 font-bold">🌡️ معادلات الديناميكا:</p>
+                          <div className="flex flex-wrap gap-2 text-[10px]">
+                            <span className="bg-blue-900/30 px-2 py-1 rounded">
+                              Q = {(vars.mass * vars.c * vars.deltaT).toFixed(2)} J
+                            </span>
+                            <span className="bg-green-900/30 px-2 py-1 rounded">
+                              الحرارة النوعية: {vars.c} J/kg·K
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* تجربة التصادم */}
+                      {exp.id === 'collision' && vars.m1 && vars.v1 && vars.m2 && vars.v2 !== undefined && (
+                        <div className="mt-3 p-3 bg-slate-800/30 rounded-xl border border-slate-700">
+                          <p className="text-[10px] text-cyan-400 mb-2 font-bold">💥 معادلات التصادم:</p>
+                          <div className="flex flex-wrap gap-2 text-[10px]">
+                            <span className="bg-blue-900/30 px-2 py-1 rounded">
+                              p = {(vars.m1 * vars.v1 + vars.m2 * vars.v2).toFixed(2)} kg·m/s
+                            </span>
+                            <span className="bg-green-900/30 px-2 py-1 rounded">
+                              KE قبل: {(0.5 * vars.m1 * vars.v1 ** 2 + 0.5 * vars.m2 * vars.v2 ** 2).toFixed(2)} J
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* تجربة المجال المغناطيسي */}
+                      {exp.id === 'magnetic' && vars.charge && vars.velocity && vars.B && (
+                        <div className="mt-3 p-3 bg-slate-800/30 rounded-xl border border-slate-700">
+                          <p className="text-[10px] text-cyan-400 mb-2 font-bold">🧲 معادلات المجال المغناطيسي:</p>
+                          <div className="flex flex-wrap gap-2 text-[10px]">
+                            {(() => {
+                              const q = vars.charge * 1e-6, v = vars.velocity, B = vars.B;
+                              const F = q * v * B;
+                              const r = (9.11e-31 * v) / (q * B);
+                              return (
+                                <>
+                                  <span className="bg-blue-900/30 px-2 py-1 rounded">
+                                    F = {F.toExponential(3)} N
+                                  </span>
+                                  <span className="bg-green-900/30 px-2 py-1 rounded">
+                                    r = {r.toExponential(3)} m
+                                  </span>
+                                </>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {/* ═══ 📈 النتائج ═══ */}
