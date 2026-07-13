@@ -1,0 +1,1 @@
+- [Gemini Live voice model quirks](gemini-live-voice.md) — wrong model name/modality combo fails silently (WS closes with no client-visible error); how to find the right ones.
