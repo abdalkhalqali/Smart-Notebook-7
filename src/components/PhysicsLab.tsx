@@ -13,6 +13,7 @@ import { resolveApiUrl } from '../utils/apiBase';
 import PhysicsChart from './PhysicsChart';
 import PhysicsSimulatorV2 from './PhysicsSimulatorV2';
 import ModernPhysicsCanvas, { isModernPhysicsExperiment } from './ModernPhysicsSimulations';
+import ElectricityMechanicsCanvas, { isElectricityMechanicsExperiment } from './ElectricityMechanicsSimulations';
 
 // ============================================================
 // 📚 قاعدة التجارب الفيزيائية الشاملة
@@ -3932,6 +3933,13 @@ export default function PhysicsLab() {
                     <div className="bg-slate-950 rounded-2xl border border-slate-800 overflow-hidden">
                       {isModernPhysicsExperiment(exp.id) ? (
                         <ModernPhysicsCanvas
+                          experimentId={exp.id}
+                          vars={vars}
+                          results={results}
+                          isPlaying={isPlaying}
+                        />
+                      ) : isElectricityMechanicsExperiment(exp.id) ? (
+                        <ElectricityMechanicsCanvas
                           experimentId={exp.id}
                           vars={vars}
                           results={results}
