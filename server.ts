@@ -9,6 +9,55 @@ import "dotenv/config";
 // Helper to get server Gemini key — checks both env var names for backward compatibility
 const getServerGeminiKey = () => (process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_AL || "").trim();
 
+// Wrap raw 16-bit PCM audio (as returned by Gemini TTS) in a valid WAV container
+function pcm16ToWavBase64(pcmBase64: string, sampleRate = 24000, channels = 1): string {
+  const pcmData = Buffer.from(pcmBase64, "base64");
+  const byteRate = sampleRate * channels * 2;
+  const blockAlign = channels * 2;
+  const header = Buffer.alloc(44);
+  header.write("RIFF", 0);
+  header.writeUInt32LE(36 + pcmData.length, 4);
+  header.write("WAVE", 8);
+  header.write("fmt ", 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20); // PCM
+  header.writeUInt16LE(channels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(byteRate, 28);
+  header.writeUInt16LE(blockAlign, 32);
+  header.writeUInt16LE(16, 34); // bits per sample
+  header.write("data", 36);
+  header.writeUInt32LE(pcmData.length, 40);
+  return Buffer.concat([header, pcmData]).toString("base64");
+}
+
+// Real Gemini text-to-speech (replaces the previous silent/placeholder audio and the
+// unreachable third-party Edge TTS service). Returns a data: URL playable in <audio>.
+const GEMINI_VOICE_MAP: Record<string, string> = {
+  "ar-SA-HamedNeural": "Charon",
+  "ar-SA-ZariydaNeural": "Kore",
+  "ar-SA-ShakurRTLNeural": "Fenrir",
+  "en-US-GuyNeural": "Puck",
+  "en-US-JennyNeural": "Kore",
+};
+
+async function synthesizeSpeech(text: string, apiKey: string, voiceName = "Charon"): Promise<string> {
+  const ai = new GoogleGenAI({ apiKey });
+  const resp = await ai.models.generateContent({
+    model: "gemini-2.5-flash-preview-tts",
+    contents: [{ role: "user", parts: [{ text: `Say clearly and naturally: ${text}` }] }],
+    config: {
+      responseModalities: ["AUDIO"],
+      speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
+    },
+  } as any);
+  const parts = (resp as any)?.candidates?.[0]?.content?.parts || [];
+  const audioPart = parts.find((p: any) => p?.inlineData?.mimeType?.startsWith("audio/"));
+  if (!audioPart) throw new Error("لم يتمكن Gemini من توليد صوت لهذا النص");
+  const wavBase64 = pcm16ToWavBase64(audioPart.inlineData.data, 24000, 1);
+  return `data:audio/wav;base64,${wavBase64}`;
+}
+
 const app = express();
 const PORT = parseInt(process.env.PORT || "5000");
 
@@ -1444,63 +1493,24 @@ app.post("/api/ai/generate-avatar-video", async (req, res) => {
       return res.status(400).json({ success: false, error: "الصورة والنص مطلوبان" });
     }
 
-    const hasKey = (customKey && customKey.trim() !== "") || getServerGeminiKey();
-    if (!hasKey) {
-      // Return mock response for demo
+    const apiKey = (customKey && customKey.trim()) || getServerGeminiKey();
+    if (!apiKey) {
       return res.json({
-        success: true,
-        videoUrl: avatarImage, // Fallback: just return the image
-        audioUrl: "",
-        message: "تم إنشاء فيديو تجريبي (الصوت غير متاح)"
+        success: false,
+        error: "لم يتم تفعيل مفتاح Gemini API على الخادم.",
       });
     }
 
-    // Step 1: Generate speech from text using Web Speech API simulation
-    // In production, you would use a TTS service like:
-    // - Google Cloud Text-to-Speech
-    // - AWS Polly
-    // - ElevenLabs API
-    // For now, we'll use a base64 encoded silent audio as placeholder
-    
-    // Create a simple WAV audio header (silent audio placeholder)
-    const sampleRate = 44100;
-    const duration = Math.min(script.length / 10, 60); // Max 60 seconds
-    const numSamples = Math.floor(sampleRate * duration);
-    const audioData = Buffer.alloc(numSamples * 2); // 16-bit samples
-    const wavBuffer = Buffer.concat([
-      Buffer.from('RIFF'),
-      Buffer.alloc(4),
-      Buffer.from('WAVE'),
-      Buffer.from('fmt '),
-      Buffer.from([16, 0, 0, 0, 1, 0, 1, 0]),
-      Buffer.from([0x44, 0xac, 0, 0]), // 44100 Hz
-      Buffer.from([0x88, 0x58, 0x01, 0]), // byte rate
-      Buffer.from([2, 0, 16, 0]),
-      Buffer.from('data'),
-      Buffer.alloc(4),
-    ]);
-    
-    // Update file size
-    const fileSize = 36 + audioData.length;
-    wavBuffer.writeUInt32LE(fileSize - 8, 4);
-    wavBuffer.writeUInt32LE(audioData.length, wavBuffer.length - 4);
-    
-    const fullWav = Buffer.concat([wavBuffer, audioData]);
-    const audioBase64 = `data:audio/wav;base64,${fullWav.toString('base64')}`;
+    // Real narration via Gemini TTS (no full talking-avatar video generation yet —
+    // that requires a dedicated video provider like D-ID/HeyGen; see project tasks).
+    const audioUrl = await synthesizeSpeech(script, apiKey, GEMINI_VOICE_MAP[voiceId] || "Charon");
 
-    // Step 2: For video generation, we return the avatar image as a "video frame"
-    // In production, you would use FFmpeg or a video generation service like:
-    // - HeyGen API
-    // - Synthesia API
-    // - D-ID API
-    // - Runway ML
-    
-    // Return success with the avatar image as video placeholder
     res.json({
       success: true,
-      videoUrl: avatarImage, // Return image as video placeholder
-      audioUrl: audioBase64,
-      message: "تم إنشاء فيديو تجريبي. للنسخة الكاملة، يرجى ربط خدمة TTS و FFmpeg."
+      videoUrl: avatarImage, // Static avatar image — real talking-head video generation is not yet implemented
+      audioUrl,
+      isStaticImage: true,
+      message: "تم توليد الصوت بنجاح. ملاحظة: تحريك الصورة كفيديو ناطق يتطلب ربط خدمة فيديو متخصصة (لم تُفعّل بعد)."
     });
 
   } catch (error: any) {
@@ -1524,89 +1534,69 @@ app.post("/api/ai/text-to-speech", async (req, res) => {
       return res.status(400).json({ success: false, error: "النص مطلوب" });
     }
 
-    const hasKey = (customKey && customKey.trim() !== "") || getServerGeminiKey();
+    const apiKey = (customKey && customKey.trim()) || getServerGeminiKey();
 
-    // Check if using custom voice (requires API key for ElevenLabs or similar)
+    // Custom voice clone (user's own uploaded sample) — real voice cloning requires a
+    // dedicated provider (e.g. ElevenLabs) which is not connected yet, so we cannot
+    // reshape Gemini's TTS output into the user's voice. We're honest about that here
+    // instead of silently echoing the raw uploaded sample back as if it were synthesized.
     if (voiceId === 'my-voice' && customVoiceBase64) {
       return res.json({
-        success: true,
-        audioUrl: `data:audio/mp3;base64,${customVoiceBase64}`,
-        message: "تم استخدام صوتك المخصص (Voice Clone)"
+        success: false,
+        error: "استنساخ الصوت الشخصي (Voice Clone) يتطلب ربط خدمة متخصصة (مثل ElevenLabs) لم تُفعّل بعد. استخدم صوت AI الجاهز بدلاً من ذلك مؤقتاً.",
       });
     }
 
-    // Generate speech using Web Speech API simulation
-    const sampleRate = 44100;
-    const duration = Math.min(text.length / 8, 120);
-    const numSamples = Math.floor(sampleRate * duration);
-    const audioData = Buffer.alloc(numSamples * 2);
-    const wavBuffer = Buffer.concat([
-      Buffer.from('RIFF'),
-      Buffer.alloc(4),
-      Buffer.from('WAVE'),
-      Buffer.from('fmt '),
-      Buffer.from([16, 0, 0, 0, 1, 0, 1, 0]),
-      Buffer.from([0x44, 0xac, 0, 0]),
-      Buffer.from([0x88, 0x58, 0x01, 0]),
-      Buffer.from([2, 0, 16, 0]),
-      Buffer.from('data'),
-      Buffer.alloc(4),
-    ]);
-    
-    const fileSize = 36 + audioData.length;
-    wavBuffer.writeUInt32LE(fileSize - 8, 4);
-    wavBuffer.writeUInt32LE(audioData.length, wavBuffer.length - 4);
-    
-    const fullWav = Buffer.concat([wavBuffer, audioData]);
-    const audioBase64 = fullWav.toString('base64');
+    if (!apiKey) {
+      return res.json({ success: false, error: "لم يتم تفعيل مفتاح Gemini API على الخادم." });
+    }
+
+    const audioUrl = await synthesizeSpeech(text, apiKey, GEMINI_VOICE_MAP[voiceId] || "Charon");
 
     res.json({
       success: true,
-      audioUrl: `data:audio/wav;base64,${audioBase64}`,
-      message: hasKey ? "تم توليد الصوت بنجاح" : "تم توليد صوت تجريبي"
+      audioUrl,
+      message: "تم توليد الصوت بنجاح"
     });
 
   } catch (error: any) {
     console.error("TTS error:", error);
-    res.status(500).json({ success: false, error: "فشل تحويل النص إلى صوت" });
+    res.status(500).json({ success: false, error: error.message || "فشل تحويل النص إلى صوت" });
   }
 });
 
 // ==========================================
-// Edge TTS - Free High Quality Text-to-Speech
+// Text-to-Speech (real Gemini TTS — the previous free "Edge TTS" third-party
+// service is unreachable from this environment, so it's replaced with a
+// working provider using the same GEMINI_API_KEY already configured)
 // ==========================================
 app.post("/api/ai/tts-edge", async (req, res) => {
-  const { text, voiceName = 'ar-SA-HamedNeural', rate = '+0%', pitch = '+0%', volume = '+0%' } = req.body;
+  const { text, voiceName = 'ar-SA-HamedNeural' } = req.body;
+  const customKey = req.headers["x-custom-api-key"] as string;
 
   try {
     if (!text || text.trim() === "") {
       return res.status(400).json({ success: false, error: "النص مطلوب" });
     }
 
-    // Use Edge TTS REST API (free)
-    const edgeTtsUrl = `https://edge-tts.jaeyoon.dev/api/tts?text=${encodeURIComponent(text)}&voice=${voiceName}&rate=${rate}&pitch=${pitch}`;
-
-    const response = await fetch(edgeTtsUrl);
-    
-    if (!response.ok) {
-      throw new Error(`Edge TTS failed: ${response.status}`);
+    const apiKey = (customKey && customKey.trim()) || getServerGeminiKey();
+    if (!apiKey) {
+      return res.json({ success: false, error: "لم يتم تفعيل مفتاح Gemini API على الخادم.", audioUrl: null });
     }
 
-    const audioBuffer = await response.arrayBuffer();
-    const audioBase64 = Buffer.from(audioBuffer).toString('base64');
+    const audioUrl = await synthesizeSpeech(text, apiKey, GEMINI_VOICE_MAP[voiceName] || "Charon");
 
     res.json({
       success: true,
-      audioUrl: `data:audio/mp3;base64,${audioBase64}`,
-      message: "تم توليد الصوت باستخدام Edge TTS (مجاني وعالي الجودة)"
+      audioUrl,
+      message: "تم توليد الصوت بنجاح (Gemini TTS)"
     });
 
   } catch (error: any) {
-    console.error("Edge TTS error:", error);
-    // Fallback: generate silent audio placeholder
+    console.error("TTS error:", error);
     res.json({
       success: false,
-      error: "فشل الاتصال بـ Edge TTS. جرب صوت المتصفح.",
+      error: error.message || "فشل توليد الصوت.",
       audioUrl: null
     });
   }
@@ -1622,24 +1612,36 @@ app.post("/api/ai/generate-video-with-voice", async (req, res) => {
       return res.status(400).json({ success: false, error: "الصورة والنص مطلوبان" });
     }
 
-    const hasKey = (customKey && customKey.trim() !== "") || getServerGeminiKey();
+    const apiKey = (customKey && customKey.trim()) || getServerGeminiKey();
+    if (!apiKey) {
+      return res.json({ success: false, error: "لم يتم تفعيل مفتاح Gemini API على الخادم." });
+    }
 
-    // في الإنتاج، استخدم HeyGen أو Synthesia API لإنشاء فيديو مع Avatar متحرك
-    // أو استخدم D-ID API لتحريك الصورة مع الصوت
+    // Custom voice clone requires a dedicated provider (not connected yet) — be honest
+    // instead of echoing the raw uploaded sample back as if it were synthesized speech.
+    if (customVoiceBase64) {
+      return res.json({
+        success: false,
+        error: "استنساخ الصوت الشخصي يتطلب ربط خدمة متخصصة (مثل ElevenLabs) لم تُفعّل بعد. استخدم صوت AI الجاهز مؤقتاً.",
+      });
+    }
 
-    // Return placeholder response
+    // في الإنتاج، استخدم HeyGen أو Synthesia أو D-ID API لإنشاء فيديو Avatar متحرك فعلي.
+    // حالياً: نولّد سرداً صوتياً حقيقياً عبر Gemini TTS، ونعرضه مع الصورة الثابتة كـ"صورة ناطقة"
+    // بدل فيديو متحرك حقيقي، لتفادي الوعد بميزة غير متوفرة.
+    const audioUrl = await synthesizeSpeech(script, apiKey, GEMINI_VOICE_MAP[voiceId] || "Charon");
+
     res.json({
       success: true,
       videoUrl: avatarImage,
-      audioUrl: customVoiceBase64 ? `data:audio/mp3;base64,${customVoiceBase64}` : null,
-      message: hasKey 
-        ? "تم إنشاء فيديو Avatar بصوتك المخصص - للنسخة الكاملة أضف مفتاح HeyGen/Synthesia"
-        : "تم إنشاء فيديو تجريبي - أضف مفتاح API لاستخدام Voice Clone"
+      audioUrl,
+      isStaticImage: true,
+      message: "تم توليد صوت السرد بنجاح. ملاحظة: تحريك الصورة كفيديو ناطق يتطلب ربط خدمة فيديو متخصصة (لم تُفعّل بعد)."
     });
 
   } catch (error: any) {
     console.error("Avatar video with voice error:", error);
-    res.status(500).json({ success: false, error: "فشل إنشاء الفيديو" });
+    res.status(500).json({ success: false, error: error.message || "فشل إنشاء الفيديو" });
   }
 });
 
@@ -1778,19 +1780,17 @@ async function startServer() {
 
     try {
       geminiSession = await (ai as any).live.connect({
-        model: "gemini-2.0-flash-live-001",
+        model: "gemini-2.5-flash-native-audio-latest",
         callbacks: {
           onopen: () => send({ type: "ready" }),
           onmessage: (msg: any) => {
             try {
-              // Audio chunks from model
+              // Audio chunks from model (skip internal "thought" parts — not the spoken reply)
               const parts = msg?.serverContent?.modelTurn?.parts || [];
               for (const part of parts) {
+                if (part?.thought) continue;
                 if (part?.inlineData?.mimeType?.startsWith("audio/")) {
                   send({ type: "audio", data: part.inlineData.data });
-                }
-                if (part?.text) {
-                  send({ type: "transcript", text: part.text, role: "model" });
                 }
               }
               // Interrupted — user started talking while AI was speaking
@@ -1801,22 +1801,28 @@ async function startServer() {
               if (msg?.serverContent?.turnComplete) {
                 send({ type: "turn_complete" });
               }
-              // Input transcript (what user said)
               if (msg?.toolCallCancellation) {
                 send({ type: "interrupted" });
               }
-              // User speech transcript
-              const inputTrans = msg?.serverContent?.inputTranscript;
+              // Real spoken transcript (model's actual reply, from outputAudioTranscription)
+              const outputTrans = msg?.serverContent?.outputTranscription;
+              if (outputTrans?.text) {
+                send({ type: "transcript", text: outputTrans.text, role: "model" });
+              }
+              // What the user said (from inputAudioTranscription)
+              const inputTrans = msg?.serverContent?.inputTranscription;
               if (inputTrans?.text) {
                 send({ type: "transcript", text: inputTrans.text, role: "user" });
               }
             } catch (_) {}
           },
-          onerror: (e: any) => send({ type: "error", message: String(e) }),
-          onclose: () => { try { clientWs.close(); } catch (_) {} },
+          onerror: (e: any) => { console.error("[voice-chat] Gemini Live error:", e); send({ type: "error", message: String(e) }); },
+          onclose: (e: any) => { console.error("[voice-chat] Gemini Live closed:", e?.code, e?.reason); try { clientWs.close(); } catch (_) {} },
         },
         config: {
-          responseModalities: [Modality.AUDIO, Modality.TEXT],
+          responseModalities: [Modality.AUDIO],
+          outputAudioTranscription: {},
+          inputAudioTranscription: {},
           systemInstruction: { parts: [{ text: systemPrompt }] },
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } },

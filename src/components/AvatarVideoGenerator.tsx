@@ -25,7 +25,7 @@ export default function AvatarVideoGenerator({ isOpen, onClose, lectureText = ''
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationProgress, setGenerationProgress] = useState(0);
   const [generationStatus, setGenerationStatus] = useState('');
-  const [generatedVideo, setGeneratedVideo] = useState<{ videoUrl: string; audioUrl: string } | null>(null);
+  const [generatedVideo, setGeneratedVideo] = useState<{ videoUrl: string; audioUrl: string; isStaticImage?: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
   
   // Custom Voice Support
@@ -122,7 +122,7 @@ export default function AvatarVideoGenerator({ isOpen, onClose, lectureText = ''
       const data: VideoGenerationResponse = await response.json();
 
       if (data.success && data.videoUrl) {
-        setGeneratedVideo({ videoUrl: data.videoUrl, audioUrl: data.audioUrl || '' });
+        setGeneratedVideo({ videoUrl: data.videoUrl, audioUrl: data.audioUrl || '', isStaticImage: !!(data as any).isStaticImage });
         setGenerationProgress(100);
         setGenerationStatus(useCustomVoice && customVoice ? 'تم إنشاء الفيديو بصوتك المخصص! 🎤' : 'تم إنشاء الفيديو بنجاح!');
       } else {
@@ -360,12 +360,24 @@ export default function AvatarVideoGenerator({ isOpen, onClose, lectureText = ''
               </div>
               
               <div className="relative rounded-xl overflow-hidden bg-slate-800">
-                <video
-                  src={generatedVideo.videoUrl}
-                  controls
-                  className="w-full aspect-video"
-                  poster={selectedAvatar?.imageUrl}
-                />
+                {generatedVideo.isStaticImage ? (
+                  <div className="w-full aspect-video flex flex-col">
+                    <img src={generatedVideo.videoUrl} alt="Avatar" className="w-full flex-1 object-cover" />
+                    {generatedVideo.audioUrl && (
+                      <audio src={generatedVideo.audioUrl} controls autoPlay className="w-full" />
+                    )}
+                    <p className="text-[10px] text-amber-300/80 bg-slate-900/80 px-2 py-1 text-center">
+                      ⚠️ صورة ثابتة + سرد صوتي حقيقي — فيديو Avatar متحرك حقيقي يتطلب ربط خدمة فيديو متخصصة (غير مفعّلة بعد)
+                    </p>
+                  </div>
+                ) : (
+                  <video
+                    src={generatedVideo.videoUrl}
+                    controls
+                    className="w-full aspect-video"
+                    poster={selectedAvatar?.imageUrl}
+                  />
+                )}
               </div>
               
               <div className="flex gap-2">
