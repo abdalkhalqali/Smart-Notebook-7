@@ -1,7 +1,9 @@
 import express from "express";
 import path from "path";
+import http from "http";
+import { WebSocketServer, WebSocket } from "ws";
 import { createServer as createViteServer } from "vite";
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Modality, Type } from "@google/genai";
 import "dotenv/config";
 
 // Helper to get server Gemini key — checks both env var names for backward compatibility
@@ -1730,7 +1732,143 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  const httpServer = http.createServer(app);
+
+  // ── Gemini Live Voice Chat WebSocket Proxy ──────────────────────
+  const wss = new WebSocketServer({ noServer: true });
+
+  httpServer.on("upgrade", (req, socket, head) => {
+    if (req.url && req.url.startsWith("/ws/voice-chat")) {
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        wss.emit("connection", ws, req);
+      });
+    } else {
+      socket.destroy();
+    }
+  });
+
+  wss.on("connection", async (clientWs: WebSocket, req: http.IncomingMessage) => {
+    // Extract API key from query params (passed by frontend from localStorage)
+    const urlObj = new URL(req.url || "/ws/voice-chat", `http://localhost`);
+    const customKey = urlObj.searchParams.get("key") || "";
+    const apiKey = customKey.trim() || getServerGeminiKey();
+    const systemLang = urlObj.searchParams.get("lang") || "ar";
+    const subjectCtx = urlObj.searchParams.get("subject") || "";
+
+    const systemPrompt = systemLang === "ar"
+      ? `أنت مساعد دراسي ذكي اسمه UnNoted. تتحدث بالعربية الفصحى السهلة. كن واضحاً ومختصراً وودوداً. اشرح المفاهيم بأسلوب بسيط وممتع.${subjectCtx ? ` المادة الحالية: ${subjectCtx}` : ""}`
+      : `You are UnNoted, a smart academic assistant. Speak clearly and concisely in English. Explain concepts in a simple, engaging way.${subjectCtx ? ` Current subject: ${subjectCtx}` : ""}`;
+
+    if (!apiKey || apiKey === "MOCK_KEY") {
+      clientWs.send(JSON.stringify({ type: "error", message: "no_api_key" }));
+      clientWs.close();
+      return;
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
+    let geminiSession: any = null;
+    let audioBuffer: Int16Array[] = [];
+    let flushTimer: NodeJS.Timeout | null = null;
+
+    const send = (obj: object) => {
+      if (clientWs.readyState === WebSocket.OPEN) {
+        clientWs.send(JSON.stringify(obj));
+      }
+    };
+
+    try {
+      geminiSession = await (ai as any).live.connect({
+        model: "gemini-2.0-flash-live-001",
+        callbacks: {
+          onopen: () => send({ type: "ready" }),
+          onmessage: (msg: any) => {
+            try {
+              // Audio chunks from model
+              const parts = msg?.serverContent?.modelTurn?.parts || [];
+              for (const part of parts) {
+                if (part?.inlineData?.mimeType?.startsWith("audio/")) {
+                  send({ type: "audio", data: part.inlineData.data });
+                }
+                if (part?.text) {
+                  send({ type: "transcript", text: part.text, role: "model" });
+                }
+              }
+              // Interrupted — user started talking while AI was speaking
+              if (msg?.serverContent?.interrupted) {
+                send({ type: "interrupted" });
+              }
+              // Turn complete
+              if (msg?.serverContent?.turnComplete) {
+                send({ type: "turn_complete" });
+              }
+              // Input transcript (what user said)
+              if (msg?.toolCallCancellation) {
+                send({ type: "interrupted" });
+              }
+              // User speech transcript
+              const inputTrans = msg?.serverContent?.inputTranscript;
+              if (inputTrans?.text) {
+                send({ type: "transcript", text: inputTrans.text, role: "user" });
+              }
+            } catch (_) {}
+          },
+          onerror: (e: any) => send({ type: "error", message: String(e) }),
+          onclose: () => { try { clientWs.close(); } catch (_) {} },
+        },
+        config: {
+          responseModalities: [Modality.AUDIO, Modality.TEXT],
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          speechConfig: {
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } },
+          },
+          realtimeInputConfig: {
+            automaticActivityDetection: {
+              disabled: false,
+              startOfSpeechSensitivity: "START_SENSITIVITY_HIGH",
+              endOfSpeechSensitivity: "END_SENSITIVITY_HIGH",
+              prefixPaddingMs: 200,
+              silenceDurationMs: 800,
+            },
+          },
+        },
+      });
+    } catch (e: any) {
+      send({ type: "error", message: e?.message || "Gemini Live connection failed" });
+      clientWs.close();
+      return;
+    }
+
+    clientWs.on("message", (raw: Buffer) => {
+      try {
+        const msg = JSON.parse(raw.toString());
+        if (msg.type === "audio" && msg.data) {
+          // Relay PCM16 audio chunk to Gemini Live
+          geminiSession?.sendRealtimeInput?.({
+            audio: { data: msg.data, mimeType: "audio/pcm;rate=16000" },
+          });
+        } else if (msg.type === "text" && msg.text) {
+          geminiSession?.sendClientContent?.({
+            turns: [{ role: "user", parts: [{ text: msg.text }] }],
+            turnComplete: true,
+          });
+        } else if (msg.type === "interrupt") {
+          // Signal AI to stop if mid-speech
+          geminiSession?.sendRealtimeInput?.({ activityEnd: {} });
+        }
+      } catch (_) {}
+    });
+
+    clientWs.on("close", () => {
+      if (flushTimer) clearTimeout(flushTimer);
+      try { geminiSession?.close?.(); } catch (_) {}
+    });
+
+    clientWs.on("error", () => {
+      try { geminiSession?.close?.(); } catch (_) {}
+    });
+  });
+
+  httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`🚀 Smart Lecture Notebook Server running on http://localhost:${PORT}`);
   });
 }

@@ -12,6 +12,7 @@ import AvatarVideoGenerator from "./components/AvatarVideoGenerator";
 import AIChat from "./components/AIChat";
 import SmartBoard from "./components/SmartBoard";
 import PhysicsLab from "./components/PhysicsLab";
+import VoiceConversation from "./components/VoiceConversation";
 import { resolveApiUrl } from "./utils/apiBase";
 
 // Lucide icons
@@ -540,7 +541,7 @@ export default function App() {
   const [activeMainTab, setActiveMainTab] = useState<'editor' | 'stats' | 'cloud' | 'security' | 'training' | 'handwriting-ai' | 'file-manager'>('editor');
 
   // Real-time floating overlay view modes
-  const [activeOverlay, setActiveOverlay] = useState<'materials' | 'lecture-hub' | 'stats' | 'training' | 'handwriting-ai' | 'cloud' | 'security' | 'file-manager' | 'settings' | 'ai-advisor' | 'changelog' | 'homework' | 'media-studio' | 'ai-chat' | 'smart-board' | 'physics-lab' | null>(null);
+  const [activeOverlay, setActiveOverlay] = useState<'materials' | 'lecture-hub' | 'stats' | 'training' | 'handwriting-ai' | 'cloud' | 'security' | 'file-manager' | 'settings' | 'ai-advisor' | 'changelog' | 'homework' | 'media-studio' | 'ai-chat' | 'smart-board' | 'physics-lab' | 'voice-chat' | null>(null);
 
   // Homework / Assignments state
   const [assignments, setAssignments] = useState<Assignment[]>(() => {
@@ -3794,6 +3795,20 @@ export default function App() {
                 </div>
                 <span className="text-[9px] text-cyan-400 bg-cyan-500/10 px-1.5 py-0.5 rounded font-mono font-bold border border-cyan-500/20">PHYSICS</span>
               </button>
+
+              {/* 🎙 Voice Conversation - الحوار الصوتي الذكي */}
+              <button
+                onClick={() => { setActiveOverlay('voice-chat'); setIsAiAdvisorCollapsed(false); setIsSidebarOpen(false); }}
+                className={`w-full p-2 rounded-xl text-right text-xs font-black transition flex items-center justify-between gap-2 ${activeOverlay === 'voice-chat' ? 'bg-gradient-to-l from-purple-600/25 to-blue-600/25 text-purple-200 border-r-4 border-purple-500 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
+              >
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 bg-gradient-to-br from-purple-500 to-blue-500 rounded flex items-center justify-center">
+                    <span className="text-[8px] text-white">🎙</span>
+                  </div>
+                  <span>الحوار الصوتي الذكي</span>
+                </div>
+                <span className="text-[9px] text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded font-mono font-bold border border-purple-500/20">LIVE</span>
+              </button>
             </div>
 
             {/* Core Navigation Selector: Universities & Academic years */}
@@ -4366,6 +4381,7 @@ export default function App() {
                     {activeOverlay === 'smart-board' && 'السبورة الذكية 📝'}
                     {activeOverlay === 'media-studio' && 'استوديو الوسائط المتعددة 🎬'}
                     {activeOverlay === 'physics-lab' && 'مختبر الفيزياء التفاعلي 🔬'}
+                    {activeOverlay === 'voice-chat' && 'الحوار الصوتي الذكي 🎙'}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -4494,6 +4510,7 @@ export default function App() {
                         {activeOverlay === 'smart-board' && 'السبورة الذكية 📝'}
                         {activeOverlay === 'media-studio' && 'استوديو الوسائط المتعددة 🎬'}
                         {activeOverlay === 'physics-lab' && 'مختبر الفيزياء التفاعلي 🔬'}
+                        {activeOverlay === 'voice-chat' && 'الحوار الصوتي الذكي 🎙'}
                       </span>
                       
                       <div className="p-1 px-2.5 bg-indigo-650/15 border border-indigo-900/40 text-indigo-400 rounded-lg text-[9px] font-extrabold select-none">
@@ -4521,6 +4538,7 @@ export default function App() {
                       {activeOverlay === 'smart-board' && 'تعليمات: استخدم السبورة الذكية للرسم والتخطيط والتوضيح بشكل تفاعلي.'}
                       {activeOverlay === 'media-studio' && 'تعليمات: حوّل النصوص والمحاضرات إلى صوت أو فيديو مع أفاتار متحركة.'}
                       {activeOverlay === 'physics-lab' && 'تعليمات: اختر تجربة فيزيائية من القائمة، أدخل البيانات، وشاهد المحاكاة التفاعلية مع شرح الذكاء الاصطناعي.'}
+                      {activeOverlay === 'voice-chat' && 'تعليمات: اضغط "ابدأ المحادثة" وتكلّم مباشرة مع المساعد الذكي صوتياً. يدعم العربية والإنجليزية ويرد بصوت طبيعي دون انقطاع.'}
                     </div>
                   {/* 1. Materials Search & Selection Area */}
                   {activeOverlay === 'materials' && (
@@ -5347,6 +5365,13 @@ export default function App() {
                   {activeOverlay === 'physics-lab' && (
                     <div className="h-full min-h-[500px]">
                       <PhysicsLab />
+                    </div>
+                  )}
+
+                  {/* 15. Voice Conversation - الحوار الصوتي الذكي */}
+                  {activeOverlay === 'voice-chat' && (
+                    <div className="h-full min-h-[520px]">
+                      <VoiceConversation onClose={() => setActiveOverlay(null)} />
                     </div>
                   )}
 
