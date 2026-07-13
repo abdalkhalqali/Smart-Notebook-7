@@ -1756,10 +1756,18 @@ async function startServer() {
     const apiKey = customKey.trim() || getServerGeminiKey();
     const systemLang = urlObj.searchParams.get("lang") || "ar";
     const subjectCtx = urlObj.searchParams.get("subject") || "";
+    const isLectureMode = urlObj.searchParams.get("mode") === "lecture";
+    const requestedVoice = urlObj.searchParams.get("voice") || "Aoede";
+    const VALID_VOICES = new Set(["Aoede", "Charon", "Kore", "Puck", "Fenrir", "Zephyr", "Leda", "Orus"]);
+    const voiceName = VALID_VOICES.has(requestedVoice) ? requestedVoice : "Aoede";
 
-    const systemPrompt = systemLang === "ar"
-      ? `أنت مساعد دراسي ذكي اسمه UnNoted. تتحدث بالعربية الفصحى السهلة. كن واضحاً ومختصراً وودوداً. اشرح المفاهيم بأسلوب بسيط وممتع.${subjectCtx ? ` المادة الحالية: ${subjectCtx}` : ""}`
-      : `You are UnNoted, a smart academic assistant. Speak clearly and concisely in English. Explain concepts in a simple, engaging way.${subjectCtx ? ` Current subject: ${subjectCtx}` : ""}`;
+    const systemPrompt = isLectureMode
+      ? (systemLang === "ar"
+          ? `أنت "UnNoted"، معلّم افتراضي يشرح محاضرة لطالب عبر القراءة الصوتية. ستستلم نص المحاضرة على شكل أجزاء متتالية، مهمتك أن تقرأ كل جزء بالضبط كما هو حرفياً بصوت واضح وطبيعي ونغمة تعليمية شارحة، دون تلخيص أو حذف أو إضافة أي كلمة. إذا قاطعك الطالب بسؤال في أي لحظة، توقف فوراً عن القراءة وأجب على سؤاله بوضوح وود، ثم انتظر — سيُطلب منك تلقائياً استكمال القراءة من حيث توقفت.${subjectCtx ? ` المادة: ${subjectCtx}` : ""}`
+          : `You are "UnNoted", a virtual teacher narrating a lecture aloud to a student. You will receive the lecture text in sequential chunks; read each chunk exactly verbatim, clearly and naturally, without summarizing or adding anything. If the student interrupts with a question, stop immediately and answer clearly, then wait — you'll automatically be asked to resume reading where you left off.${subjectCtx ? ` Subject: ${subjectCtx}` : ""}`)
+      : (systemLang === "ar"
+          ? `أنت مساعد دراسي ذكي اسمه UnNoted. تتحدث بالعربية الفصحى السهلة. كن واضحاً ومختصراً وودوداً. اشرح المفاهيم بأسلوب بسيط وممتع.${subjectCtx ? ` المادة الحالية: ${subjectCtx}` : ""}`
+          : `You are UnNoted, a smart academic assistant. Speak clearly and concisely in English. Explain concepts in a simple, engaging way.${subjectCtx ? ` Current subject: ${subjectCtx}` : ""}`);
 
     if (!apiKey || apiKey === "MOCK_KEY") {
       clientWs.send(JSON.stringify({ type: "error", message: "no_api_key" }));
@@ -1777,6 +1785,45 @@ async function startServer() {
         clientWs.send(JSON.stringify(obj));
       }
     };
+
+    // ── Lecture narration state (mode=lecture) ──────────────────
+    let lectureChunks: string[] = [];
+    let lectureIdx = 0;
+    let lecturePhase: "idle" | "narrating" | "awaiting_answer" = "idle";
+
+    function splitLectureIntoChunks(text: string): string[] {
+      const sentences = text.replace(/\s+/g, " ").trim().match(/[^.!?؟\n]+[.!?؟]?/g) || [text];
+      const chunks: string[] = [];
+      let cur = "";
+      for (const s of sentences) {
+        if (cur && (cur + s).length > 260) {
+          chunks.push(cur.trim());
+          cur = s;
+        } else {
+          cur += s;
+        }
+      }
+      if (cur.trim()) chunks.push(cur.trim());
+      return chunks;
+    }
+
+    function sendLectureChunk(i: number) {
+      if (!lectureChunks.length) return;
+      if (i >= lectureChunks.length) {
+        lecturePhase = "idle";
+        send({ type: "lecture_complete" });
+        return;
+      }
+      lecturePhase = "narrating";
+      send({ type: "lecture_progress", index: i, total: lectureChunks.length, text: lectureChunks[i] });
+      geminiSession?.sendClientContent?.({
+        turns: [{
+          role: "user",
+          parts: [{ text: `اقرأ النص الموجود بين علامتي الاقتباس بالضبط حرفياً دون أي تعليق أو تلخيص أو حذف، بصوت واضح وطبيعي ونغمة تعليمية: """${lectureChunks[i]}"""` }],
+        }],
+        turnComplete: true,
+      });
+    }
 
     try {
       geminiSession = await (ai as any).live.connect({
@@ -1796,10 +1843,18 @@ async function startServer() {
               // Interrupted — user started talking while AI was speaking
               if (msg?.serverContent?.interrupted) {
                 send({ type: "interrupted" });
+                if (lecturePhase === "narrating") lecturePhase = "awaiting_answer";
               }
               // Turn complete
               if (msg?.serverContent?.turnComplete) {
                 send({ type: "turn_complete" });
+                if (lecturePhase === "narrating") {
+                  lectureIdx++;
+                  setTimeout(() => sendLectureChunk(lectureIdx), 500);
+                } else if (lecturePhase === "awaiting_answer") {
+                  // Resume reading the same chunk that was cut short by the question
+                  setTimeout(() => sendLectureChunk(lectureIdx), 500);
+                }
               }
               if (msg?.toolCallCancellation) {
                 send({ type: "interrupted" });
@@ -1825,7 +1880,7 @@ async function startServer() {
           inputAudioTranscription: {},
           systemInstruction: { parts: [{ text: systemPrompt }] },
           speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } },
+            voiceConfig: { prebuiltVoiceConfig: { voiceName } },
           },
           realtimeInputConfig: {
             automaticActivityDetection: {
@@ -1860,8 +1915,16 @@ async function startServer() {
         } else if (msg.type === "interrupt") {
           // Signal AI to stop if mid-speech
           geminiSession?.sendRealtimeInput?.({ activityEnd: {} });
+        } else if (msg.type === "start_lecture" && msg.text) {
+          lectureChunks = splitLectureIntoChunks(String(msg.text));
+          lectureIdx = 0;
+          send({ type: "lecture_started", total: lectureChunks.length });
+          sendLectureChunk(0);
+        } else if (msg.type === "stop_lecture") {
+          lectureChunks = [];
+          lecturePhase = "idle";
         }
-      } catch (_) {}
+      } catch (e) { console.error("[voice-chat] message handler error:", e); }
     });
 
     clientWs.on("close", () => {

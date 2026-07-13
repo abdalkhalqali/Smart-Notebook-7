@@ -13,6 +13,7 @@ import AIChat from "./components/AIChat";
 import SmartBoard from "./components/SmartBoard";
 import PhysicsLab from "./components/PhysicsLab";
 import VoiceConversation from "./components/VoiceConversation";
+import LectureNarrator from "./components/LectureNarrator";
 import { resolveApiUrl } from "./utils/apiBase";
 
 // Lucide icons
@@ -3809,6 +3810,20 @@ export default function App() {
                 </div>
                 <span className="text-[9px] text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded font-mono font-bold border border-purple-500/20">LIVE</span>
               </button>
+
+              {/* 📖 Lecture Narrator - قارئ المحاضرات التفاعلي */}
+              <button
+                onClick={() => { setActiveOverlay('lecture-narrator'); setIsAiAdvisorCollapsed(false); setIsSidebarOpen(false); }}
+                className={`w-full p-2 rounded-xl text-right text-xs font-black transition flex items-center justify-between gap-2 ${activeOverlay === 'lecture-narrator' ? 'bg-gradient-to-l from-amber-600/25 to-orange-600/25 text-amber-200 border-r-4 border-amber-500 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
+              >
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 bg-gradient-to-br from-amber-500 to-orange-500 rounded flex items-center justify-center">
+                    <span className="text-[8px] text-white">📖</span>
+                  </div>
+                  <span>قارئ المحاضرات التفاعلي</span>
+                </div>
+                <span className="text-[9px] text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded font-mono font-bold border border-amber-500/20">جديد</span>
+              </button>
             </div>
 
             {/* Core Navigation Selector: Universities & Academic years */}
@@ -4382,6 +4397,7 @@ export default function App() {
                     {activeOverlay === 'media-studio' && 'استوديو الوسائط المتعددة 🎬'}
                     {activeOverlay === 'physics-lab' && 'مختبر الفيزياء التفاعلي 🔬'}
                     {activeOverlay === 'voice-chat' && 'الحوار الصوتي الذكي 🎙'}
+                    {activeOverlay === 'lecture-narrator' && 'قارئ المحاضرات التفاعلي 📖'}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -4511,6 +4527,7 @@ export default function App() {
                         {activeOverlay === 'media-studio' && 'استوديو الوسائط المتعددة 🎬'}
                         {activeOverlay === 'physics-lab' && 'مختبر الفيزياء التفاعلي 🔬'}
                         {activeOverlay === 'voice-chat' && 'الحوار الصوتي الذكي 🎙'}
+                        {activeOverlay === 'lecture-narrator' && 'قارئ المحاضرات التفاعلي 📖'}
                       </span>
                       
                       <div className="p-1 px-2.5 bg-indigo-650/15 border border-indigo-900/40 text-indigo-400 rounded-lg text-[9px] font-extrabold select-none">
@@ -5372,6 +5389,13 @@ export default function App() {
                   {activeOverlay === 'voice-chat' && (
                     <div className="h-full min-h-[520px]">
                       <VoiceConversation onClose={() => setActiveOverlay(null)} />
+                    </div>
+                  )}
+
+                  {/* 16. Lecture Narrator - قارئ المحاضرات التفاعلي */}
+                  {activeOverlay === 'lecture-narrator' && (
+                    <div className="h-full min-h-[560px]">
+                      <LectureNarrator onClose={() => setActiveOverlay(null)} />
                     </div>
                   )}
 
