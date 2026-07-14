@@ -8,6 +8,8 @@ import "dotenv/config";
 
 // Helper to get server Gemini key — checks both env var names for backward compatibility
 const getServerGeminiKey = () => (process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_AL || "").trim();
+// Helper to get server OpenAI key, used as fallback when provider=openai and no personal key was entered
+const getServerOpenAIKey = () => (process.env.OPENAI_API_KEY || "").trim();
 
 // Wrap raw 16-bit PCM audio (as returned by Gemini TTS) in a valid WAV container
 function pcm16ToWavBase64(pcmBase64: string, sampleRate = 24000, channels = 1): string {
@@ -200,6 +202,34 @@ async function executeGeminiOrOpenRouterCall(req: express.Request, systemPrompt:
     if (hfText.startsWith("```json")) hfText = hfText.replace(/^```json\s*/, "").replace(/\s*```$/, "");
     else if (hfText.startsWith("```")) hfText = hfText.replace(/^```\s*/, "").replace(/\s*```$/, "");
     return hfText.trim();
+  } else if (provider === "openai" || provider === "custom") {
+    const openaiKey = trimmedKey || getServerOpenAIKey();
+    if (!openaiKey) throw new Error("API_KEY_MISSING");
+    const endpointUrl = provider === "custom"
+      ? ((req.headers["x-custom-endpoint-url"] as string) || "").trim()
+      : "https://api.openai.com/v1/chat/completions";
+    if (!endpointUrl) throw new Error("CUSTOM_ENDPOINT_MISSING");
+    const customModel = ((req.headers["x-custom-model"] as string) || "").trim() || (provider === "openai" ? "gpt-4o-mini" : "gpt-4o-mini");
+    const oaMessages: any[] = [];
+    if (systemPrompt) oaMessages.push({ role: "system", content: systemPrompt });
+    const oaUserContent = systemSchema
+      ? `${userPrompt}\n\nSTRICT INSTRUCTION: Your output MUST be a valid JSON object strictly matching this schema format: ${JSON.stringify(systemSchema)}. Output ONLY raw JSON, with NO preamble, NO conversational text, and NO markdown ticks or code blocks.`
+      : userPrompt;
+    oaMessages.push({ role: "user", content: oaUserContent });
+    const oaRes = await callWithRetry(async () => {
+      const resp = await fetch(endpointUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${openaiKey}` },
+        body: JSON.stringify({ model: customModel, messages: oaMessages, max_tokens: 2000 })
+      });
+      if (!resp.ok) { const t = await resp.text(); throw new Error(`${provider === "openai" ? "OpenAI" : "Custom endpoint"} failed: ${resp.status} - ${t}`); }
+      return resp;
+    });
+    const oaData: any = await oaRes.json();
+    let oaText = (oaData.choices?.[0]?.message?.content || "").trim();
+    if (oaText.startsWith("```json")) oaText = oaText.replace(/^```json\s*/, "").replace(/\s*```$/, "");
+    else if (oaText.startsWith("```")) oaText = oaText.replace(/^```\s*/, "").replace(/\s*```$/, "");
+    return oaText.trim();
   } else {
     // Check if we have neither a custom key nor a server key
     if (!hasCustomKey && !serverKey) {
@@ -294,6 +324,32 @@ async function executeVisionCall(req: express.Request, promptText: string, base6
     });
     const hfVisionData: any = await hfVisionRes.json();
     return hfVisionData.choices?.[0]?.message?.content || "";
+  } else if (provider === "openai" || provider === "custom") {
+    const openaiKey = trimmedKey || getServerOpenAIKey();
+    if (!openaiKey) throw new Error("API_KEY_MISSING");
+    const endpointUrl = provider === "custom"
+      ? ((req.headers["x-custom-endpoint-url"] as string) || "").trim()
+      : "https://api.openai.com/v1/chat/completions";
+    if (!endpointUrl) throw new Error("CUSTOM_ENDPOINT_MISSING");
+    const customModel = ((req.headers["x-custom-model"] as string) || "").trim() || "gpt-4o-mini";
+    const oaVisionRes = await callWithRetry(async () => {
+      const resp = await fetch(endpointUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${openaiKey}` },
+        body: JSON.stringify({
+          model: customModel,
+          max_tokens: 1500,
+          messages: [{ role: "user", content: [
+            { type: "text", text: promptText },
+            { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Data}` } }
+          ]}]
+        })
+      });
+      if (!resp.ok) { const t = await resp.text(); throw new Error(`${provider === "openai" ? "OpenAI" : "Custom endpoint"} vision failed: ${resp.status} - ${t}`); }
+      return resp;
+    });
+    const oaVisionData: any = await oaVisionRes.json();
+    return oaVisionData.choices?.[0]?.message?.content || "";
   } else {
     if (!hasCustomKey && !serverKey) {
       throw new Error("API_KEY_MISSING");
@@ -574,20 +630,58 @@ app.post("/api/ai/validate-key", async (req, res) => {
         status: "مفتاح HuggingFace فَعَّال ونشط ✅"
       });
 
-    } else {
-      const permissions = [
-        "صلاحية خاصة موجهة ومحددة لموارد الدفتر الذكي"
-      ];
+    } else if (prov === "openai") {
+      const oaResp = await fetch("https://api.openai.com/v1/models", {
+        headers: { "Authorization": `Bearer ${trimmedKey}` }
+      });
+      if (!oaResp.ok) {
+        const errTxt = await oaResp.text();
+        let displayError = errTxt;
+        try { const parsed = JSON.parse(errTxt); if (parsed.error?.message) displayError = parsed.error.message; } catch (_) {}
+        throw new Error(`فشل التحقق من مفتاح OpenAI: ${oaResp.status} - ${displayError}`);
+      }
       return res.json({
         valid: true,
-        provider: "academic_custom",
-        owner: "مفتاح دراسي مخصص تم ربطه تلقائياً",
-        permissions,
-        quotaAllowed: "غير محدود",
-        quotaUsed: `${extraUsed} طلب مستهلك فعلي`,
-        quotaRemaining: "مفتوح الاستهلاك بالكامل",
+        provider: "openai",
+        owner: "حساب OpenAI مفعّل ✅",
+        permissions: [
+          "الوصول الكامل لجميع ميزات الدفتر النصية 🚀",
+          "التحليل الدراسي الشامل وحفظ المراجعات المخططة 📝",
+          "حل الاستفسارات وحفظ الملخصات والبطاقات الأكاديمية 🧠",
+          "تحليل الصور عبر نماذج GPT متعددة الوسائط 🖼️"
+        ],
+        quotaAllowed: "حسب خطة OpenAI",
+        quotaUsed: `${extraUsed} طلب مستهلك`,
+        quotaRemaining: "حسب رصيد الحساب",
         expiryDate: "نشط ومستمر",
-        status: "تم فحص الرمز مخصص ويبدو جاهزاً للاستعمال ⚡"
+        status: "مفتاح OpenAI فَعَّال ونشط ✅"
+      });
+    } else {
+      // "custom" endpoint provider — requires the user to also provide the endpoint URL,
+      // since we can't guess it. We genuinely call it rather than pretending success.
+      const endpointUrl = (req.body.endpointUrl || "").trim();
+      if (!endpointUrl) {
+        throw new Error("يرجى إدخال رابط المخدم الخاص (Endpoint URL) بالإضافة إلى المفتاح للتحقق منه.");
+      }
+      const customResp = await fetch(endpointUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${trimmedKey}` },
+        body: JSON.stringify({ model: (req.body.model || "gpt-4o-mini"), messages: [{ role: "user", content: "ping" }], max_tokens: 1 })
+      });
+      if (!customResp.ok) {
+        const errTxt = await customResp.text();
+        throw new Error(`فشل التحقق من المخدم الخاص: ${customResp.status} - ${errTxt.slice(0, 200)}`);
+      }
+      return res.json({
+        valid: true,
+        provider: "custom",
+        owner: `مخدم خاص: ${endpointUrl}`,
+        permissions: ["صلاحية خاصة موجهة ومحددة لموارد الدفتر الذكي عبر المخدم المدخل"],
+        quotaAllowed: "حسب المخدم الخاص",
+        quotaUsed: `${extraUsed} طلب مستهلك فعلي`,
+        quotaRemaining: "حسب المخدم الخاص",
+        expiryDate: "نشط ومستمر",
+        status: "تم التحقق من المخدم الخاص بنجاح ⚡"
       });
     }
 

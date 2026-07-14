@@ -103,6 +103,7 @@ export default function App() {
   });
   const [aiProvider, setAiProvider] = useState(() => localStorage.getItem("aiProvider") || "gemini");
   const [customAiKey, setCustomAiKey] = useState(() => localStorage.getItem("customAiKey") || "");
+  const [customEndpointUrl, setCustomEndpointUrl] = useState(() => localStorage.getItem("customEndpointUrl") || "");
   const [showAiKeyModal, setShowAiKeyModal] = useState(false);
   const [serverUrl, setServerUrl] = useState(() => {
     const stored = localStorage.getItem("serverUrl");
@@ -410,7 +411,8 @@ export default function App() {
         body: JSON.stringify({ 
           key: keyToCheck, 
           provider: providerToCheck,
-          localUsedCount: localCount
+          localUsedCount: localCount,
+          endpointUrl: providerToCheck === "custom" ? customEndpointUrl.trim() : undefined
         })
       });
       const data = await response.json();
@@ -987,6 +989,22 @@ export default function App() {
     return found;
   };
 
+  // Shared headers for every /api/ai/* call so the AI provider/key chosen in the sidebar
+  // (Gemini / OpenRouter / HuggingFace / Custom Endpoint) is actually honored everywhere,
+  // not just in a few components. Falls back to the server's own key when nothing is set.
+  const getAiHeaders = (): Record<string, string> => {
+    const headers: Record<string, string> = {};
+    const key = customAiKey.trim();
+    if (key) {
+      headers["x-custom-api-key"] = key;
+      headers["x-custom-provider"] = aiProvider;
+      if (aiProvider === "custom" && customEndpointUrl.trim()) {
+        headers["x-custom-endpoint-url"] = customEndpointUrl.trim();
+      }
+    }
+    return headers;
+  };
+
   const getSelectedSubject = (): SubjectItem | undefined => {
     return appState.subjects.find(s => s.id === activeSubId);
   };
@@ -1244,7 +1262,7 @@ export default function App() {
 
       const res = await fetch("/api/ai/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAiHeaders() },
         body: JSON.stringify({
           message: msgText,
           context: contextText
@@ -1436,7 +1454,7 @@ export default function App() {
       const subject = appState.subjects.find(s => s.id === lecture.subjectId)?.name || "عامة";
       const res = await fetch("/api/ai/extract-homework", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAiHeaders() },
         body: JSON.stringify({ lectureText: textSource, lectureTitle: lecture.title, subject })
       });
       const data = await res.json();
@@ -1482,7 +1500,7 @@ export default function App() {
     try {
       const res = await fetch("/api/ai/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAiHeaders() },
         body: JSON.stringify({
           message: `أعطني تلميحات لحل هذا الواجب دون إعطاء الحل كاملاً: "${hw.title}" - ${hw.description}`,
           context: "مساعد دراسي يعطي تلميحات وليس حلولاً كاملة"
@@ -1793,7 +1811,7 @@ export default function App() {
           try {
             const res = await fetch("/api/ai/ocr", {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: { "Content-Type": "application/json", ...getAiHeaders() },
               body: JSON.stringify({ imageData: base64 })
             });
             const data = await res.json();
@@ -2530,7 +2548,7 @@ export default function App() {
       if (isDocument) {
         const response = await fetch("/api/ai/parse-document", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...getAiHeaders() },
           body: JSON.stringify({
             fileName: file.name,
             fileType: file.type,
@@ -2653,7 +2671,7 @@ export default function App() {
     try {
       const res = await fetch("/api/ai/ocr", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAiHeaders() },
         body: JSON.stringify({ imageData: doc.base64 })
       });
       const data = await res.json();
@@ -2761,7 +2779,7 @@ export default function App() {
     try {
       const response = await fetch("/api/ai/parse-document", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAiHeaders() },
         body: JSON.stringify({
           fileName: doc.name,
           fileType: doc.type,
@@ -2854,7 +2872,7 @@ export default function App() {
 
       const res = await fetch("/api/ai/transcribe", {
         method: "POST",
-        headers: { "Content-Type": doc.type },
+        headers: { "Content-Type": doc.type, ...getAiHeaders() },
         body: blob
       });
 
@@ -2898,7 +2916,7 @@ export default function App() {
     try {
       const res = await fetch("/api/ai/ocr", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAiHeaders() },
         body: JSON.stringify({ imageData: doc.base64 })
       });
       if (!res.ok) throw new Error("فشل الخادم في قراءة الصورة واكتشاف النصوص.");
@@ -2936,7 +2954,7 @@ export default function App() {
       
       const response = await fetch("/api/ai/analyze-document", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAiHeaders() },
         body: JSON.stringify({
           fileName: doc.name,
           fileType: doc.type,
@@ -3193,7 +3211,7 @@ export default function App() {
       });
       const res = await fetch("/api/ai/ocr", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAiHeaders() },
         body: JSON.stringify({ imageData: base64 })
       });
       const data = await res.json();
