@@ -1523,6 +1523,38 @@ app.post("/api/ai/generate-avatar-video", async (req, res) => {
 });
 
 // ==========================================
+// Lecture math preprocessing — wraps math expressions in $...$ (LaTeX)
+// so the narrator whiteboard can render them with real math typesetting.
+// ==========================================
+app.post("/api/ai/lecture-prep", async (req, res) => {
+  try {
+    const { text } = req.body || {};
+    const customKey = (req.headers["x-custom-api-key"] as string || "").trim();
+    const apiKey = customKey || getServerGeminiKey();
+    if (!text || typeof text !== "string") {
+      return res.status(400).json({ success: false, error: "missing_text" });
+    }
+    if (!apiKey) {
+      // No key — just return the original text, math simply won't be typeset.
+      return res.json({ success: true, processedText: text });
+    }
+    const ai = new GoogleGenAI({ apiKey });
+    const prompt = `أعد كتابة النص التالي حرفياً كما هو دون أي تغيير في الكلمات أو الترتيب أو الحذف أو الإضافة، والتزم فقط بتنفيذ هذا التعديل الوحيد: كل تعبير أو رمز رياضي موجود في النص (معادلات، كسور، جذور، أُسس، رموز يونانية، متغيرات...) أعد كتابته بصيغة LaTeX صحيحة ثم ضعه بين علامتي $ (مثال: $x^2 + y^2 = z^2$). إن لم يوجد أي رمز رياضي في النص أعده كما هو دون أي علامات $. أعد فقط النص النهائي بدون أي شرح إضافي.\n\nالنص:\n"""${text}"""`;
+    const result: any = await generateContentWithRetryAndFallback(ai, {
+      model: "gemini-2.5-flash",
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config: { thinkingConfig: { thinkingBudget: 0 } },
+    });
+    const out = result?.text || text;
+    res.json({ success: true, processedText: (out || text).trim() || text });
+  } catch (error: any) {
+    console.error("lecture-prep error:", error);
+    // Fail safe: narration/whiteboard still work with the original plain text.
+    res.json({ success: true, processedText: (req.body && req.body.text) || "" });
+  }
+});
+
+// ==========================================
 // Voice Cloning & TTS Endpoint
 // ==========================================
 app.post("/api/ai/text-to-speech", async (req, res) => {
@@ -1789,7 +1821,7 @@ async function startServer() {
     // ── Lecture narration state (mode=lecture) ──────────────────
     let lectureChunks: string[] = [];
     let lectureIdx = 0;
-    let lecturePhase: "idle" | "narrating" | "awaiting_answer" = "idle";
+    let lecturePhase: "idle" | "narrating" | "awaiting_answer" | "paused" = "idle";
 
     function splitLectureIntoChunks(text: string): string[] {
       const sentences = text.replace(/\s+/g, " ").trim().match(/[^.!?؟\n]+[.!?؟]?/g) || [text];
@@ -1819,7 +1851,7 @@ async function startServer() {
       geminiSession?.sendClientContent?.({
         turns: [{
           role: "user",
-          parts: [{ text: `اقرأ النص الموجود بين علامتي الاقتباس بالضبط حرفياً دون أي تعليق أو تلخيص أو حذف، بصوت واضح وطبيعي ونغمة تعليمية: """${lectureChunks[i]}"""` }],
+          parts: [{ text: `اقرأ النص الموجود بين علامتي الاقتباس بالضبط حرفياً دون أي تعليق أو تلخيص أو حذف، بصوت واضح وطبيعي ونغمة تعليمية. إن وجدت رموزاً رياضية بصيغة LaTeX بين علامتي $ فاقرأها بصيغتها المنطوقة الطبيعية (مثل "x تربيع" بدل قراءة رموز البرمجة حرفياً): """${lectureChunks[i]}"""` }],
         }],
         turnComplete: true,
       });
@@ -1850,11 +1882,12 @@ async function startServer() {
                 send({ type: "turn_complete" });
                 if (lecturePhase === "narrating") {
                   lectureIdx++;
-                  setTimeout(() => sendLectureChunk(lectureIdx), 500);
+                  setTimeout(() => sendLectureChunk(lectureIdx), 120);
                 } else if (lecturePhase === "awaiting_answer") {
                   // Resume reading the same chunk that was cut short by the question
-                  setTimeout(() => sendLectureChunk(lectureIdx), 500);
+                  setTimeout(() => sendLectureChunk(lectureIdx), 120);
                 }
+                // if lecturePhase === "paused", do nothing until resume_lecture arrives
               }
               if (msg?.toolCallCancellation) {
                 send({ type: "interrupted" });
@@ -1887,8 +1920,8 @@ async function startServer() {
               disabled: false,
               startOfSpeechSensitivity: "START_SENSITIVITY_HIGH",
               endOfSpeechSensitivity: "END_SENSITIVITY_HIGH",
-              prefixPaddingMs: 200,
-              silenceDurationMs: 800,
+              prefixPaddingMs: 40,
+              silenceDurationMs: 300,
             },
           },
         },
@@ -1913,8 +1946,12 @@ async function startServer() {
             turnComplete: true,
           });
         } else if (msg.type === "interrupt") {
-          // Signal AI to stop if mid-speech
-          geminiSession?.sendRealtimeInput?.({ activityEnd: {} });
+          // Manual "ask a question" button — user wants to cut in right now.
+          // Client already silences local playback instantly; here we make sure
+          // the lecture state machine knows to resume the SAME chunk afterwards
+          // instead of auto-advancing, even if the model's own VAD is a beat slow.
+          if (lecturePhase === "narrating") lecturePhase = "awaiting_answer";
+          try { geminiSession?.sendRealtimeInput?.({ activityStart: {} }); } catch (_) {}
         } else if (msg.type === "start_lecture" && msg.text) {
           lectureChunks = splitLectureIntoChunks(String(msg.text));
           lectureIdx = 0;
@@ -1923,6 +1960,10 @@ async function startServer() {
         } else if (msg.type === "stop_lecture") {
           lectureChunks = [];
           lecturePhase = "idle";
+        } else if (msg.type === "pause_lecture") {
+          lecturePhase = "paused";
+        } else if (msg.type === "resume_lecture") {
+          if (lectureChunks.length) sendLectureChunk(lectureIdx);
         }
       } catch (e) { console.error("[voice-chat] message handler error:", e); }
     });
