@@ -177,7 +177,11 @@ export default function LectureNarrator({ onClose, initialText = '' }: LectureNa
     }
 
     setStatus('connecting');
-    const customKey = localStorage.getItem('geminiApiKey') || localStorage.getItem('ai_api_key') || '';
+    // Same key the sidebar "مفتاح الذكاء الاصطناعي" field saves to.
+    // Lecture narration runs on Gemini Live specifically, so only use the stored key when the
+    // selected provider is Gemini — a key from another provider (OpenRouter/HF/custom) won't work here.
+    const storedProvider = localStorage.getItem('aiProvider') || 'gemini';
+    const customKey = storedProvider === 'gemini' ? (localStorage.getItem('customAiKey') || '') : '';
     const params = new URLSearchParams({ key: customKey, lang: 'ar', mode: 'lecture', voice });
     audioCtxRef.current = new AudioContext({ sampleRate: 16000 });
     playTimeRef.current = audioCtxRef.current.currentTime;
