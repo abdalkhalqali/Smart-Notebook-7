@@ -1738,6 +1738,78 @@ Provide a deep, comprehensive academic explanation as if lecturing university st
 });
 
 // ==========================================
+// Lecture Narrator — Chart / Diagram Analyzer
+// ==========================================
+app.post("/api/ai/lecture-chart-analyze", async (req, res) => {
+  try {
+    const { text } = req.body || {};
+    if (!text || typeof text !== "string" || text.trim().length < 20) {
+      return res.json({ hasChart: false, chartType: "none" });
+    }
+    const customKey = (req.headers["x-custom-api-key"] as string || "").trim();
+    const apiKey = customKey || getServerGeminiKey();
+    if (!apiKey) return res.json({ hasChart: false, chartType: "none" });
+
+    const ai = new GoogleGenAI({ apiKey });
+    const schema = {
+      type: Type.OBJECT,
+      properties: {
+        hasChart:     { type: Type.BOOLEAN },
+        chartType:    { type: Type.STRING },
+        title:        { type: Type.STRING },
+        labels:       { type: Type.ARRAY, items: { type: Type.STRING } },
+        datasets: { type: Type.ARRAY, items: {
+          type: Type.OBJECT,
+          properties: { name: { type: Type.STRING }, values: { type: Type.ARRAY, items: { type: Type.NUMBER } } },
+          required: ["name","values"]
+        }},
+        tableHeaders: { type: Type.ARRAY, items: { type: Type.STRING } },
+        tableRows:    { type: Type.ARRAY, items: { type: Type.ARRAY, items: { type: Type.STRING } } },
+        diagramNodes: { type: Type.ARRAY, items: {
+          type: Type.OBJECT,
+          properties: { id: { type: Type.STRING }, label: { type: Type.STRING }, shape: { type: Type.STRING } },
+          required: ["id","label","shape"]
+        }},
+        diagramEdges: { type: Type.ARRAY, items: {
+          type: Type.OBJECT,
+          properties: { from: { type: Type.STRING }, to: { type: Type.STRING }, label: { type: Type.STRING } },
+          required: ["from","to","label"]
+        }}
+      },
+      required: ["hasChart","chartType"]
+    };
+
+    const snippet = text.slice(0, 1200);
+    const prompt = "أنت محلل بيانات أكاديمي. حلّل المقطع التالي وحدّد إذا كان يصف بيانات يمكن تمثيلها بصرياً.\n\n" +
+      "الأنواع (chartType):\n" +
+      "\"bar\"    → مقارنة بين فئات بأرقام واضحة\n" +
+      "\"line\"   → بيانات تتطور عبر الزمن أو متغير\n" +
+      "\"pie\"    → نسب مئوية أو أجزاء من كل\n" +
+      "\"table\"  → جدول بيانات منظّم\n" +
+      "\"diagram\" → هيكل أو مراحل أو علاقات بين عناصر\n" +
+      "\"none\"   → نص شرحي فقط بلا بيانات مرئية\n\n" +
+      "قواعد: للـ bar/line/pie أعطِ labels وdatasets. للـ table أعطِ tableHeaders وtableRows. للـ diagram أعطِ diagramNodes (shape: box/circle/diamond) وdiagramEdges.\n\n" +
+      "المقطع:\n\"\"\"" + snippet + "\"\"\"";
+
+    const result: any = await generateContentWithRetryAndFallback(ai, {
+      model: "gemini-2.5-flash",
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config: {
+        thinkingConfig: { thinkingBudget: 0 },
+        responseMimeType: "application/json",
+        responseSchema: schema
+      }
+    });
+    let chartData: any = { hasChart: false, chartType: "none" };
+    try { chartData = JSON.parse(result?.text || "{}"); } catch (_) {}
+    return res.json(chartData);
+  } catch (err: any) {
+    console.error("lecture-chart-analyze error:", err);
+    return res.json({ hasChart: false, chartType: "none" });
+  }
+});
+
+// ==========================================
 // Lecture math preprocessing — wraps math expressions in $...$ (LaTeX)
 // so the narrator whiteboard can render them with real math typesetting.
 // ==========================================
