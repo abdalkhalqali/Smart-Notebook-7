@@ -61,6 +61,9 @@ interface ChartData {
   diagramNodes?:DiagNode[]; diagramEdges?:DiagEdge[];
 }
 
+// Detects model saying "drawing on board now" in any form
+const DRAW_CONFIRM = /جاري الرسم|سأرسم الآن|سأرسم لك|Drawing on the board|drawing now|على السبورة الآن/i;
+
 const VOICES = [
   {id:'Charon',label:'🎓 رجالي هادئ'},
   {id:'Kore',  label:'👩‍🏫 نسائي واضح'},
@@ -654,8 +657,20 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
             if(last&&last.role===msg.role) return[...prev.slice(0,-1),{...last,text:last.text+msg.text}];
             return[...prev,{id:Date.now()+Math.random()+'',role:msg.role,text:msg.text}];
           });
-          // Detect draw command in user transcript
-          if(msg.role==='user'&&DRAW_CMD.test(msg.text)) handleDirectDraw(msg.text);
+          // User says "ارسم..." → trigger direct draw with full utterance
+          if(msg.role==='user'&&DRAW_CMD.test(msg.text)){
+            handleDirectDraw(msg.text);
+          }
+          // Model says "جاري الرسم على السبورة" → analyze its own description for chart data
+          if(msg.role==='model'&&DRAW_CONFIRM.test(msg.text)){
+            // Build context from recent QA + current chunk
+            setQa(prev=>{
+              const modelMsgs=prev.filter(q=>q.role==='model').slice(-3).map(q=>q.text).join(' ');
+              const ctx=modelMsgs||chunkText;
+              if(ctx.trim()) analyzeChart(ctx);
+              return prev;
+            });
+          }
         }else if(msg.type==='interrupted'){hardStop();setStatus('listening');}
         else if(msg.type==='lecture_complete'){setStatus('done');}
         else if(msg.type==='error'){
