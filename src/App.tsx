@@ -3831,7 +3831,7 @@ export default function App() {
 
               {/* 📖 Lecture Narrator - قارئ المحاضرات التفاعلي */}
               <button
-                onClick={() => { setActiveOverlay('lecture-narrator'); setIsAiAdvisorCollapsed(false); setIsSidebarOpen(false); }}
+                onClick={() => { setActiveOverlay('lecture-narrator'); setOverlayIsFullscreen(true); setIsAiAdvisorCollapsed(false); setIsSidebarOpen(false); }}
                 className={`w-full p-2 rounded-xl text-right text-xs font-black transition flex items-center justify-between gap-2 ${activeOverlay === 'lecture-narrator' ? 'bg-gradient-to-l from-amber-600/25 to-orange-600/25 text-amber-200 border-r-4 border-amber-500 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
               >
                 <div className="flex items-center gap-2">
