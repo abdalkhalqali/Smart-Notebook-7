@@ -7007,9 +7007,30 @@ export default function App() {
                       <option value="gemini">Google Gemini AI (الافتراضي)</option>
                       <option value="openrouter">OpenRouter API (مستقل متعدد النماذج)</option>
                       <option value="huggingface">HuggingFace Inference API (نماذج مفتوحة المصدر)</option>
+                      <option value="openai">OpenAI API (GPT-4o / GPT-4o-mini)</option>
                       <option value="custom">مخدم ذكاء اصطناعي خاص (Custom Endpoint)</option>
                     </select>
                   </div>
+
+                  {/* رابط المخدم الخاص — يظهر فقط عند اختيار Custom Endpoint */}
+                  {aiProvider === "custom" && (
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] text-slate-300 font-bold block">رابط المخدم الخاص (Endpoint URL)</label>
+                      <input
+                        type="url"
+                        placeholder="https://your-server.com/v1/chat/completions"
+                        value={customEndpointUrl}
+                        autoComplete="off"
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setCustomEndpointUrl(val);
+                          localStorage.setItem("customEndpointUrl", val);
+                        }}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-200 placeholder-slate-600 focus:ring-1 focus:ring-indigo-500 outline-none font-mono"
+                      />
+                      <p className="text-[10px] text-slate-500">أدخل رابط API متوافق مع OpenAI (chat/completions)</p>
+                    </div>
+                  )}
 
                    <div className="space-y-1.5">
                     <label className="text-[11px] text-slate-300 font-bold block">كود تشغيل التطبيق الشخصي (API Key)</label>

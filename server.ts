@@ -1617,6 +1617,127 @@ app.post("/api/ai/generate-avatar-video", async (req, res) => {
 });
 
 // ==========================================
+// Lecture Narrator — File Text Extraction
+// Accepts base64 file + metadata, returns real extracted text.
+// Uses officeparser (Buffer API) for office/PDF, Gemini vision for images,
+// and plain UTF-8 decode for text/markdown/html files.
+// ==========================================
+app.post("/api/ai/lecture-extract-file", async (req, res) => {
+  try {
+    const { fileName, fileType, fileData } = req.body || {};
+    if (!fileData || typeof fileData !== "string") {
+      return res.status(400).json({ success: false, error: "fileData مطلوب (base64)" });
+    }
+    const buf = Buffer.from(fileData, "base64");
+    const mime = (fileType || "").toLowerCase();
+    const name = (fileName || "").toLowerCase();
+    let extractedText = "";
+
+    if (
+      mime.startsWith("text/") ||
+      mime === "application/json" ||
+      name.endsWith(".txt") || name.endsWith(".md") ||
+      name.endsWith(".csv") || name.endsWith(".html") || name.endsWith(".htm")
+    ) {
+      extractedText = buf.toString("utf8");
+
+    } else if (mime.startsWith("image/")) {
+      const customKey = (req.headers["x-custom-api-key"] as string || "").trim();
+      const apiKey = customKey || getServerGeminiKey();
+      if (!apiKey) return res.status(400).json({ success: false, error: "API key مطلوب لمعالجة الصور" });
+      const ai = new GoogleGenAI({ apiKey });
+      const result: any = await generateContentWithRetryAndFallback(ai, {
+        model: "gemini-2.5-flash",
+        contents: [{ role: "user", parts: [
+          { inlineData: { mimeType: mime || "image/png", data: fileData } },
+          { text: "استخرج كل النصوص الموجودة في هذه الصورة بدقة كاملة، محافظاً على التنسيق الأصلي قدر الإمكان. أعِد النص فقط دون أي تعليق." }
+        ]}],
+        config: { thinkingConfig: { thinkingBudget: 0 } }
+      });
+      extractedText = (result?.text || "").trim();
+
+    } else {
+      const { OfficeParser } = await import("officeparser");
+      const ast = await OfficeParser.parseOffice(buf);
+      extractedText = ast.toText ? ast.toText() : "";
+    }
+
+    if (!extractedText || !extractedText.trim()) {
+      return res.status(422).json({ success: false, error: "لم يُستخرج أي نص من الملف. تأكد أن الملف يحتوي على نص قابل للقراءة." });
+    }
+    return res.json({ success: true, text: extractedText.trim() });
+  } catch (err: any) {
+    console.error("lecture-extract-file error:", err);
+    return res.status(500).json({ success: false, error: `فشل استخراج النص: ${err.message || err}` });
+  }
+});
+
+// ==========================================
+// Lecture Narrator — Topic Explanation Generator
+// Takes the extracted document text + user's chosen topic and generates
+// a detailed, lecture-ready explanation with LaTeX math where appropriate.
+// ==========================================
+app.post("/api/ai/lecture-explain-topic", async (req, res) => {
+  try {
+    const { documentText, topic, lang = "ar" } = req.body || {};
+    if (!documentText || typeof documentText !== "string") {
+      return res.status(400).json({ success: false, error: "documentText مطلوب" });
+    }
+    if (!topic || typeof topic !== "string" || !topic.trim()) {
+      return res.status(400).json({ success: false, error: "topic مطلوب" });
+    }
+    const customKey = (req.headers["x-custom-api-key"] as string || "").trim();
+    const apiKey = customKey || getServerGeminiKey();
+    if (!apiKey) return res.status(400).json({ success: false, error: "API key مطلوب" });
+
+    const isAr = lang === "ar";
+    const docSnippet = documentText.slice(0, 28000);
+    const prompt = isAr
+      ? `أنت أستاذ أكاديمي متخصص. المستخدم أرفق وثيقة أكاديمية وطلب شرحاً مفصّلاً جداً وشاملاً لموضوع بعينه استناداً لمحتواها.
+
+الوثيقة:
+"""
+${docSnippet}
+"""
+
+الموضوع: ${topic.trim()}
+
+اشرح هذا الموضوع شرحاً أكاديمياً عميقاً ومفصّلاً كأنك تُلقي محاضرة كاملة لطلاب جامعيين:
+- ابدأ بالتعريف الدقيق، ثم المفاهيم الأساسية، ثم الجوانب المتقدمة، ثم الأمثلة والتطبيقات، وأخيراً الخلاصة.
+- كل معادلة أو رمز رياضي أو صيغة علمية: اكتبها بلاتكس بين علامتَي $ (مثال: $E = mc^2$ أو $\\frac{d}{dx}\\sin(x) = \\cos(x)$).
+- اكتب بالعربية الفصحى الواضحة. لا تُلخّص — اشرح بالتفصيل الكامل.
+- ابدأ مباشرةً بالمحتوى الأكاديمي دون أي مقدمة من عندك.`
+      : `You are an expert academic professor. A student uploaded a document and wants an extremely detailed lecture-style explanation of a specific topic from it.
+
+Document:
+"""
+${docSnippet}
+"""
+
+Topic: ${topic.trim()}
+
+Provide a deep, comprehensive academic explanation as if lecturing university students:
+- Cover: definition, core concepts, advanced aspects, examples/applications, and summary.
+- Wrap ALL mathematical expressions in $ signs using LaTeX (e.g. $E = mc^2$).
+- Do NOT summarize — elaborate fully in academic depth.
+- Start directly with the academic content, no preambles.`;
+
+    const ai = new GoogleGenAI({ apiKey });
+    const result: any = await generateContentWithRetryAndFallback(ai, {
+      model: "gemini-2.5-flash",
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config: { thinkingConfig: { thinkingBudget: 8192 } }
+    });
+    const explanation = (result?.text || "").trim();
+    if (!explanation) throw new Error("لم يُعِد الذكاء الاصطناعي أي محتوى");
+    return res.json({ success: true, explanation });
+  } catch (err: any) {
+    console.error("lecture-explain-topic error:", err);
+    return res.status(500).json({ success: false, error: `فشل توليد الشرح: ${err.message || err}` });
+  }
+});
+
+// ==========================================
 // Lecture math preprocessing — wraps math expressions in $...$ (LaTeX)
 // so the narrator whiteboard can render them with real math typesetting.
 // ==========================================
