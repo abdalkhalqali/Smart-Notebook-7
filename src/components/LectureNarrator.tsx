@@ -531,6 +531,9 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   const statusRef=useRef<Status>('idle');
   const chartCacheRef=useRef<Map<string,ChartData>>(new Map());
   const qaEndRef=useRef<HTMLDivElement>(null);
+  // Buffer model transcript between turns so DRAW_CONFIRM analysis runs on full description
+  const modelTransBuf=useRef('');
+  const drawPendingRef=useRef(false);
   statusRef.current=status;
 
   useEffect(()=>{qaEndRef.current?.scrollIntoView({behavior:'smooth'});},[qa]);
@@ -652,25 +655,37 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
           if(statusRef.current!=='paused') playChunk(msg.data);
           setStatus(s=>s==='listening'||s==='answering'?'answering':'narrating');
         }else if(msg.type==='transcript'){
+          const role=msg.role as 'user'|'model';
+          const txt=msg.text as string;
           setQa(prev=>{
             const last=prev[prev.length-1];
-            if(last&&last.role===msg.role) return[...prev.slice(0,-1),{...last,text:last.text+msg.text}];
-            return[...prev,{id:Date.now()+Math.random()+'',role:msg.role,text:msg.text}];
+            if(last&&last.role===role) return[...prev.slice(0,-1),{...last,text:last.text+txt}];
+            return[...prev,{id:Date.now()+Math.random()+'',role,text:txt}];
           });
-          // User says "ارسم..." → trigger direct draw with full utterance
-          if(msg.role==='user'&&DRAW_CMD.test(msg.text)){
-            handleDirectDraw(msg.text);
+          // Accumulate model transcript into buffer
+          if(role==='model'){
+            modelTransBuf.current+=txt+' ';
+            // Mark draw pending if model announces drawing
+            if(DRAW_CONFIRM.test(txt)) drawPendingRef.current=true;
           }
-          // Model says "جاري الرسم على السبورة" → analyze its own description for chart data
-          if(msg.role==='model'&&DRAW_CONFIRM.test(msg.text)){
-            // Build context from recent QA + current chunk
-            setQa(prev=>{
-              const modelMsgs=prev.filter(q=>q.role==='model').slice(-3).map(q=>q.text).join(' ');
-              const ctx=modelMsgs||chunkText;
-              if(ctx.trim()) analyzeChart(ctx);
-              return prev;
+          // User says "ارسم..." → draw immediately using the utterance text
+          if(role==='user'&&DRAW_CMD.test(txt)){
+            handleDirectDraw(txt);
+          }
+        }else if(msg.type==='turn_complete'){
+          // After model finishes its full turn, check if drawing was announced
+          if(drawPendingRef.current&&modelTransBuf.current.trim()){
+            const fullDesc=modelTransBuf.current.trim();
+            drawPendingRef.current=false;
+            // Call chart API directly (bypass chartScore — model explicitly described data)
+            setIsDrawingChart(true);
+            callChartAnalyze(fullDesc).then(c=>{
+              chartCacheRef.current.set(fullDesc,c);
+              setCurrentChart(c.hasChart?c:null);
+              setIsDrawingChart(false);
             });
           }
+          modelTransBuf.current=''; // reset buffer for next turn
         }else if(msg.type==='interrupted'){hardStop();setStatus('listening');}
         else if(msg.type==='lecture_complete'){setStatus('done');}
         else if(msg.type==='error'){
