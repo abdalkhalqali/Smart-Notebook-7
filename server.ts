@@ -1738,6 +1738,185 @@ Provide a deep, comprehensive academic explanation as if lecturing university st
 });
 
 // ==========================================
+// QR Scan Upload — lets user snap a handwritten page with their phone
+// ==========================================
+interface QrSession {
+  apiKey: string;
+  createdAt: number;
+  status: "waiting" | "processing" | "done" | "error";
+  result?: { success: boolean; text?: string; error?: string };
+}
+const qrSessions = new Map<string, QrSession>();
+
+// Auto-cleanup sessions older than 15 minutes
+setInterval(() => {
+  const cutoff = Date.now() - 15 * 60 * 1000;
+  for (const [id, s] of qrSessions) if (s.createdAt < cutoff) qrSessions.delete(id);
+}, 5 * 60 * 1000);
+
+// Mobile upload page (served to the phone after scanning QR)
+app.get("/qr-upload/:sessionId", (req, res) => {
+  const { sessionId } = req.params;
+  const session = qrSessions.get(sessionId);
+  if (!session) return res.status(404).send("انتهت صلاحية الجلسة أو رمز QR غير صحيح.");
+
+  const html = `<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
+  <title>مسح الملاحظات — الشارح الذكي</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#0d0d1a;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;gap:20px}
+    h1{font-size:1.3rem;font-weight:800;text-align:center;background:linear-gradient(135deg,#a78bfa,#60a5fa);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+    p{font-size:.85rem;color:#94a3b8;text-align:center;line-height:1.6}
+    .card{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:20px;padding:28px;width:100%;max-width:400px;display:flex;flex-direction:column;align-items:center;gap:18px}
+    label.cam-btn,button.action{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:16px;border-radius:14px;font-size:1rem;font-weight:700;cursor:pointer;border:none;transition:.2s}
+    label.cam-btn{background:linear-gradient(135deg,#7c3aed,#4f46e5);color:#fff}
+    button.action{background:linear-gradient(135deg,#059669,#0d9488);color:#fff}
+    button.action:disabled{opacity:.4;cursor:not-allowed}
+    #preview{width:100%;max-height:340px;object-fit:contain;border-radius:12px;border:2px solid rgba(99,102,241,.4);display:none}
+    #status{font-size:.9rem;font-weight:700;text-align:center;padding:12px;border-radius:12px;width:100%;display:none}
+    .status-ok{background:rgba(5,150,105,.15);color:#34d399;border:1px solid rgba(52,211,153,.3)}
+    .status-err{background:rgba(239,68,68,.1);color:#f87171;border:1px solid rgba(248,113,113,.2)}
+    .spin{width:28px;height:28px;border:3px solid rgba(255,255,255,.2);border-top-color:#a78bfa;border-radius:50%;animation:spin .8s linear infinite;display:none;margin:auto}
+    @keyframes spin{to{transform:rotate(360deg)}}
+  </style>
+</head>
+<body>
+  <h1>📸 مسح الملاحظات اليدوية</h1>
+  <p>التقط صورة واضحة للملاحظات أو الكتاب — حتى الخط اليدوي مدعوم</p>
+  <div class="card">
+    <label class="cam-btn" for="cam">📷 فتح الكاميرا / اختيار صورة</label>
+    <input type="file" id="cam" accept="image/*" capture="environment" style="display:none"/>
+    <img id="preview" alt="معاينة الصورة"/>
+    <button class="action" id="sendBtn" disabled>⬆️ إرسال للشارح الذكي</button>
+    <div class="spin" id="spin"></div>
+    <div id="status"></div>
+  </div>
+  <script>
+    const SID='${sessionId}';
+    const cam=document.getElementById('cam');
+    const preview=document.getElementById('preview');
+    const sendBtn=document.getElementById('sendBtn');
+    const spin=document.getElementById('spin');
+    const status=document.getElementById('status');
+    let selectedFile=null;
+
+    cam.addEventListener('change',e=>{
+      selectedFile=e.target.files[0];
+      if(!selectedFile)return;
+      const url=URL.createObjectURL(selectedFile);
+      preview.src=url; preview.style.display='block';
+      sendBtn.disabled=false;
+    });
+
+    sendBtn.addEventListener('click',async()=>{
+      if(!selectedFile)return;
+      sendBtn.disabled=true; spin.style.display='block';
+      status.style.display='none';
+      try{
+        const b64=await toB64(selectedFile);
+        const r=await fetch('/api/qr-session/'+SID+'/upload',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({fileData:b64,fileType:selectedFile.type,fileName:selectedFile.name})
+        });
+        const d=await r.json();
+        spin.style.display='none';
+        if(d.ok){
+          status.className='status-ok'; status.textContent='✅ تم الإرسال! عد للتطبيق على الحاسوب';
+        }else{
+          status.className='status-err'; status.textContent='❌ فشل: '+(d.error||'خطأ غير معروف');
+          sendBtn.disabled=false;
+        }
+        status.style.display='block';
+      }catch(err){
+        spin.style.display='none';
+        status.className='status-err'; status.textContent='❌ تعذّر الاتصال بالخادم';
+        status.style.display='block'; sendBtn.disabled=false;
+      }
+    });
+
+    function toB64(file){return new Promise((res,rej)=>{
+      const r=new FileReader();
+      r.onload=ev=>{const d=ev.target.result;res(d.includes(',')?d.split(',')[1]:d);};
+      r.onerror=rej; r.readAsDataURL(file);
+    });}
+  </script>
+</body>
+</html>`;
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.send(html);
+});
+
+// Create a new QR session — client calls this, stores the API key server-side for image processing
+app.post("/api/qr-session/create", (req, res) => {
+  const customKey = (req.headers["x-custom-api-key"] as string || "").trim();
+  const apiKey = customKey || getServerGeminiKey();
+  if (!apiKey) return res.status(400).json({ ok: false, error: "API key مطلوب" });
+
+  const sessionId = Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+  qrSessions.set(sessionId, { apiKey, createdAt: Date.now(), status: "waiting" });
+
+  // Build the mobile page URL using the request host so it works on any domain
+  const proto = req.headers["x-forwarded-proto"] || req.protocol || "https";
+  const host = req.headers["x-forwarded-host"] || req.get("host") || "";
+  const uploadPageUrl = `${proto}://${host}/qr-upload/${sessionId}`;
+
+  res.json({ ok: true, sessionId, uploadPageUrl });
+});
+
+// Phone uploads the captured image here
+app.post("/api/qr-session/:sessionId/upload", async (req, res) => {
+  const { sessionId } = req.params;
+  const session = qrSessions.get(sessionId);
+  if (!session) return res.status(404).json({ ok: false, error: "الجلسة غير موجودة أو انتهت صلاحيتها" });
+  if (session.status !== "waiting") return res.status(409).json({ ok: false, error: "تم استخدام هذا الرمز مسبقاً" });
+
+  const { fileData, fileType, fileName } = req.body || {};
+  if (!fileData || typeof fileData !== "string") return res.status(400).json({ ok: false, error: "fileData مطلوب" });
+
+  session.status = "processing";
+  res.json({ ok: true, message: "جاري المعالجة…" });
+
+  // Process image asynchronously — extract text with Gemini Vision
+  try {
+    const ai = new GoogleGenAI({ apiKey: session.apiKey });
+    const mime = (fileType || "image/jpeg") as string;
+    const result: any = await generateContentWithRetryAndFallback(ai, {
+      model: "gemini-2.5-flash",
+      contents: [{ role: "user", parts: [
+        { inlineData: { mimeType: mime, data: fileData } },
+        { text: `أنت خبير في قراءة النصوص والخطوط اليدوية.\nاستخرج كل ما هو مكتوب في هذه الصورة بدقة تامة، بما في ذلك:\n- الخط اليدوي بأي لغة\n- المعادلات الرياضية\n- الجداول والقوائم\n- العناوين والرموز\nحافظ على التنسيق الأصلي قدر الإمكان. أعِد النص فقط دون أي تعليق أو مقدمة.` }
+      ]}],
+      config: { thinkingConfig: { thinkingBudget: 512 } }
+    });
+    const text = (result?.text || "").trim();
+    if (!text) {
+      session.status = "error";
+      session.result = { success: false, error: "لم يُستخرج أي نص من الصورة. تأكد أن الصورة واضحة." };
+    } else {
+      session.status = "done";
+      session.result = { success: true, text };
+    }
+  } catch (err: any) {
+    console.error("qr-session upload error:", err);
+    session.status = "error";
+    session.result = { success: false, error: err?.message || "فشلت معالجة الصورة" };
+  }
+});
+
+// Client polls this to check if image has been processed
+app.get("/api/qr-session/:sessionId/result", (req, res) => {
+  const { sessionId } = req.params;
+  const session = qrSessions.get(sessionId);
+  if (!session) return res.json({ status: "expired" });
+  res.json({ status: session.status, result: session.result });
+});
+
+// ==========================================
 // Lecture Narrator — Chart / Diagram Analyzer
 // ==========================================
 app.post("/api/ai/lecture-chart-analyze", async (req, res) => {

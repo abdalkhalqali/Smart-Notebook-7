@@ -517,6 +517,13 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   const [topicInput,setTopicInput]=useState('');
   const [uploadMsg,setUploadMsg]=useState('');
 
+  // QR scan state
+  const [qrSessionId,setQrSessionId]=useState<string|null>(null);
+  const [qrPageUrl,setQrPageUrl]=useState<string|null>(null);
+  const [qrStatus,setQrStatus]=useState<'idle'|'waiting'|'processing'|'done'|'error'>('idle');
+  const [qrError,setQrError]=useState('');
+  const qrPollRef=useRef<ReturnType<typeof setInterval>|null>(null);
+
   // Direct draw command (user types "ارسم ...")
   const [directCmd,setDirectCmd]=useState('');
   const [showCmdBar,setShowCmdBar]=useState(false);
@@ -606,6 +613,56 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     setCurrentChart(c.hasChart?c:null);
     setIsDrawingChart(false);
   },[]);
+
+  // ── QR Scan session ──────────────────────────────────────────────
+  const stopQrPoll=useCallback(()=>{
+    if(qrPollRef.current){clearInterval(qrPollRef.current);qrPollRef.current=null;}
+  },[]);
+
+  const startQrSession=useCallback(async()=>{
+    setQrError(''); setQrStatus('waiting'); setQrSessionId(null); setQrPageUrl(null);
+    try{
+      const r=await fetch(resolveApiUrl('/api/qr-session/create'),{
+        method:'POST',headers:{'Content-Type':'application/json',...getAiHeaders()}
+      });
+      const d=await r.json();
+      if(!d.ok) throw new Error(d.error||'فشل إنشاء الجلسة');
+      setQrSessionId(d.sessionId); setQrPageUrl(d.uploadPageUrl);
+
+      // Start polling every 2 seconds
+      stopQrPoll();
+      qrPollRef.current=setInterval(async()=>{
+        try{
+          const pr=await fetch(resolveApiUrl(`/api/qr-session/${d.sessionId}/result`));
+          const pd=await pr.json();
+          if(pd.status==='processing') setQrStatus('processing');
+          else if(pd.status==='done'&&pd.result?.success){
+            stopQrPoll();
+            setQrStatus('done');
+            // Process extracted text exactly like a file upload
+            const text=pd.result.text as string;
+            setExtractedDoc(text);
+            if(chartScore(text.slice(0,2000))>=2){
+              const c=await callChartAnalyze(text.slice(0,2000));
+              if(c.hasChart) setCurrentChart(c);
+            }
+            setUploadStep('ask_topic');
+            setUploadMsg('');
+            // Close QR modal after short delay
+            setTimeout(()=>{setQrStatus('idle');setQrSessionId(null);setQrPageUrl(null);},1200);
+          }else if(pd.status==='error'){
+            stopQrPoll(); setQrStatus('error');
+            setQrError(pd.result?.error||'فشلت معالجة الصورة');
+          }else if(pd.status==='expired'){
+            stopQrPoll(); setQrStatus('error'); setQrError('انتهت صلاحية الجلسة');
+          }
+        }catch(_){}
+      },2000);
+    }catch(e:any){setQrStatus('error');setQrError(e.message);}
+  },[stopQrPoll]);
+
+  // Cleanup poll on unmount
+  useEffect(()=>()=>{stopQrPoll();},[stopQrPoll]);
 
   // Direct draw command (from text bar OR from user voice "ارسم...")
   const handleDirectDraw=useCallback(async(cmd:string)=>{
@@ -817,15 +874,28 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
         {inputMode==='upload'&&(
           <>
             {uploadStep==='select'&&(
-              <label className="flex flex-col items-center justify-center gap-3 w-full h-40 border-2 border-dashed border-white/15 rounded-2xl cursor-pointer hover:border-amber-500/40 hover:bg-amber-500/5 transition">
-                <span className="text-4xl">📂</span>
-                <div className="text-center">
-                  <p className="text-xs font-bold text-slate-300">اضغط لاختيار ملف أو صورة</p>
-                  <p className="text-[10px] text-slate-500 mt-1">PDF · Word · PPT · Excel · صور · نصوص</p>
-                  <p className="text-[10px] text-indigo-400 mt-1">🎨 صور الرسوم والمخططات ستُرسم تلقائياً على السبورة</p>
-                </div>
-                <input type="file" accept={ACCEPTED} className="hidden" onChange={e=>{const f=e.target.files?.[0];if(f)handleFile(f);}}/>
-              </label>
+              <div className="space-y-3">
+                {/* Regular file upload */}
+                <label className="flex flex-col items-center justify-center gap-3 w-full h-36 border-2 border-dashed border-white/15 rounded-2xl cursor-pointer hover:border-amber-500/40 hover:bg-amber-500/5 transition">
+                  <span className="text-3xl">📂</span>
+                  <div className="text-center">
+                    <p className="text-xs font-bold text-slate-300">اضغط لاختيار ملف أو صورة</p>
+                    <p className="text-[10px] text-slate-500 mt-1">PDF · Word · PPT · Excel · صور · نصوص</p>
+                    <p className="text-[10px] text-indigo-400 mt-1">🎨 المخططات ستُرسم تلقائياً على السبورة</p>
+                  </div>
+                  <input type="file" accept={ACCEPTED} className="hidden" onChange={e=>{const f=e.target.files?.[0];if(f)handleFile(f);}}/>
+                </label>
+                {/* QR scan button */}
+                <button
+                  onClick={startQrSession}
+                  className="w-full flex items-center justify-center gap-3 py-3.5 rounded-2xl border-2 border-dashed border-violet-500/40 bg-violet-500/5 hover:bg-violet-500/10 hover:border-violet-400/60 transition text-violet-300 font-bold text-sm">
+                  <span className="text-2xl">📱</span>
+                  <div className="text-right">
+                    <p className="text-xs font-bold">مسح بالهاتف عبر QR</p>
+                    <p className="text-[10px] text-violet-400/70">للخط اليدوي · الكتب · ملاحظات الورق</p>
+                  </div>
+                </button>
+              </div>
             )}
             {(uploadStep==='extracting'||uploadStep==='generating')&&(
               <div className="flex flex-col items-center gap-4 py-8">
@@ -1004,6 +1074,75 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
       <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
         {inSession ? renderSession() : renderSetupPanel()}
       </div>
+
+      {/* ── QR Scan Modal ─────────────────────────────────────── */}
+      {qrStatus!=='idle'&&(
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" dir="rtl">
+          <div className="bg-[#0f0f1e] border border-white/10 rounded-3xl p-6 w-80 flex flex-col items-center gap-4 shadow-2xl">
+            {/* Header */}
+            <div className="text-center">
+              <p className="text-base font-black text-white">📱 مسح الملاحظات بالهاتف</p>
+              <p className="text-[11px] text-slate-400 mt-1">امسح الرمز بكاميرا هاتفك لفتح صفحة التقاط الصورة</p>
+            </div>
+
+            {/* QR code image */}
+            {qrPageUrl&&qrStatus==='waiting'&&(
+              <div className="flex flex-col items-center gap-3">
+                <div className="p-2 bg-white rounded-2xl">
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrPageUrl)}&color=0d0d1a&bgcolor=ffffff&format=png&margin=2`}
+                    alt="QR Code"
+                    width={200} height={200}
+                    className="rounded-lg"/>
+                </div>
+                <p className="text-[10px] text-slate-500 text-center break-all px-2">{qrPageUrl}</p>
+                <div className="flex items-center gap-2 text-amber-300 text-xs animate-pulse">
+                  <div className="w-2 h-2 rounded-full bg-amber-400 animate-ping"/>
+                  في انتظار التقاط الصورة…
+                </div>
+              </div>
+            )}
+
+            {/* Processing state */}
+            {qrStatus==='processing'&&(
+              <div className="flex flex-col items-center gap-3 py-4">
+                <div className="w-10 h-10 border-3 border-violet-500 border-t-transparent rounded-full animate-spin border-[3px]"/>
+                <p className="text-sm text-violet-300 font-bold">جاري قراءة الخط اليدوي بالذكاء الاصطناعي…</p>
+                <p className="text-[10px] text-slate-500">يستخرج Gemini Vision النص من صورتك</p>
+              </div>
+            )}
+
+            {/* Done state */}
+            {qrStatus==='done'&&(
+              <div className="flex flex-col items-center gap-2 py-4">
+                <div className="text-5xl">✅</div>
+                <p className="text-sm font-bold text-emerald-300">تم استخراج النص بنجاح!</p>
+                <p className="text-[11px] text-slate-400">جاري الإغلاق…</p>
+              </div>
+            )}
+
+            {/* Error state */}
+            {qrStatus==='error'&&(
+              <div className="flex flex-col items-center gap-3 py-2">
+                <div className="text-4xl">❌</div>
+                <p className="text-sm font-bold text-red-300">{qrError||'حدث خطأ'}</p>
+                <button onClick={startQrSession}
+                  className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition">
+                  إعادة المحاولة
+                </button>
+              </div>
+            )}
+
+            {/* Cancel button */}
+            {qrStatus!=='done'&&(
+              <button onClick={()=>{stopQrPoll();setQrStatus('idle');setQrSessionId(null);setQrPageUrl(null);}}
+                className="text-xs text-slate-500 hover:text-slate-300 transition">
+                إلغاء
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
