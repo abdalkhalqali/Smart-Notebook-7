@@ -534,6 +534,8 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   // Buffer model transcript between turns so DRAW_CONFIRM analysis runs on full description
   const modelTransBuf=useRef('');
   const drawPendingRef=useRef(false);
+  // Generation counter — incremented on every new draw request; stale async results are discarded
+  const drawGenRef=useRef(0);
   statusRef.current=status;
 
   useEffect(()=>{qaEndRef.current?.scrollIntoView({behavior:'smooth'});},[qa]);
@@ -605,13 +607,19 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     setIsDrawingChart(false);
   },[]);
 
-  // Direct draw command
+  // Direct draw command (from text bar OR from user voice "ارسم...")
   const handleDirectDraw=useCallback(async(cmd:string)=>{
+    const gen=++drawGenRef.current;
     const text=cmd.replace(DRAW_CMD,'').trim()||cmd;
-    setIsDrawingChart(true); setChunkText(cmd);
+    setIsDrawingChart(true); setChunkText(cmd); setDirectCmd('');
     const c=await callChartAnalyze(text);
-    setCurrentChart(c.hasChart?c:null);
-    setIsDrawingChart(false); setDirectCmd('');
+    // Only apply if no newer draw operation has taken over
+    if(drawGenRef.current===gen){
+      setCurrentChart(c.hasChart?c:null);
+      // Keep isDrawingChart=true if model is about to describe the chart
+      // (drawPendingRef will become true once model transcript arrives)
+      if(!drawPendingRef.current) setIsDrawingChart(false);
+    }
   },[]);
 
   // Start session
@@ -673,19 +681,27 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
             handleDirectDraw(txt);
           }
         }else if(msg.type==='turn_complete'){
-          // After model finishes its full turn, check if drawing was announced
-          if(drawPendingRef.current&&modelTransBuf.current.trim()){
-            const fullDesc=modelTransBuf.current.trim();
-            drawPendingRef.current=false;
-            // Call chart API directly (bypass chartScore — model explicitly described data)
-            setIsDrawingChart(true);
-            callChartAnalyze(fullDesc).then(c=>{
-              chartCacheRef.current.set(fullDesc,c);
-              setCurrentChart(c.hasChart?c:null);
-              setIsDrawingChart(false);
-            });
-          }
-          modelTransBuf.current=''; // reset buffer for next turn
+          // Wait 250ms so any in-flight transcript WS messages arrive before we process
+          setTimeout(()=>{
+            if(drawPendingRef.current&&modelTransBuf.current.trim()){
+              const fullDesc=modelTransBuf.current.trim();
+              drawPendingRef.current=false;
+              modelTransBuf.current='';
+              // Claim this generation — cancels any pending handleDirectDraw result
+              const gen=++drawGenRef.current;
+              setIsDrawingChart(true);
+              callChartAnalyze(fullDesc).then(c=>{
+                if(drawGenRef.current===gen){
+                  chartCacheRef.current.set(fullDesc,c);
+                  setCurrentChart(c.hasChart?c:null);
+                  setIsDrawingChart(false);
+                }
+              });
+            }else{
+              drawPendingRef.current=false;
+              modelTransBuf.current='';
+            }
+          },250);
         }else if(msg.type==='interrupted'){hardStop();setStatus('listening');}
         else if(msg.type==='lecture_complete'){setStatus('done');}
         else if(msg.type==='error'){

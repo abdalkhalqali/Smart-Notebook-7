@@ -2177,7 +2177,22 @@ Drawing rules — very important:
                 send({ type: "interrupted" });
                 if (lecturePhase === "narrating") lecturePhase = "awaiting_answer";
               }
-              // Turn complete
+              if (msg?.toolCallCancellation) {
+                send({ type: "interrupted" });
+              }
+              // ── Transcripts MUST arrive before turn_complete so the client
+              //    can buffer the full model description before chart analysis runs.
+              // Real spoken transcript (model's actual reply, from outputAudioTranscription)
+              const outputTrans = msg?.serverContent?.outputTranscription;
+              if (outputTrans?.text) {
+                send({ type: "transcript", text: outputTrans.text, role: "model" });
+              }
+              // What the user said (from inputAudioTranscription)
+              const inputTrans = msg?.serverContent?.inputTranscription;
+              if (inputTrans?.text) {
+                send({ type: "transcript", text: inputTrans.text, role: "user" });
+              }
+              // Turn complete — send AFTER transcripts so client buffer is populated
               if (msg?.serverContent?.turnComplete) {
                 send({ type: "turn_complete" });
                 if (lecturePhase === "narrating") {
@@ -2188,19 +2203,6 @@ Drawing rules — very important:
                   setTimeout(() => sendLectureChunk(lectureIdx), 120);
                 }
                 // if lecturePhase === "paused", do nothing until resume_lecture arrives
-              }
-              if (msg?.toolCallCancellation) {
-                send({ type: "interrupted" });
-              }
-              // Real spoken transcript (model's actual reply, from outputAudioTranscription)
-              const outputTrans = msg?.serverContent?.outputTranscription;
-              if (outputTrans?.text) {
-                send({ type: "transcript", text: outputTrans.text, role: "model" });
-              }
-              // What the user said (from inputAudioTranscription)
-              const inputTrans = msg?.serverContent?.inputTranscription;
-              if (inputTrans?.text) {
-                send({ type: "transcript", text: inputTrans.text, role: "user" });
               }
             } catch (_) {}
           },
