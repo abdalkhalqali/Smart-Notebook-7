@@ -698,6 +698,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
 
   // Direct draw command (from text bar OR from user voice "ارسم...")
   const handleDirectDraw=useCallback(async(cmd:string)=>{
+    userDrawLockRef.current=true;
     const gen=++drawGenRef.current;
     const text=cmd.replace(DRAW_CMD,'').trim()||cmd;
     setIsDrawingChart(true); setChunkText(cmd); setDirectCmd('');
@@ -707,7 +708,10 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
       setCurrentChart(c.hasChart?c:null);
       // Keep isDrawingChart=true if model is about to describe the chart
       // (drawPendingRef will become true once model transcript arrives)
-      if(!drawPendingRef.current) setIsDrawingChart(false);
+      if(!drawPendingRef.current){
+        setIsDrawingChart(false);
+        if(!c.hasChart) userDrawLockRef.current=false;
+      }
     }
   },[]);
 
@@ -762,8 +766,13 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
           // Accumulate model transcript into buffer
           if(role==='model'){
             modelTransBuf.current+=txt+' ';
-            // Mark draw pending if model announces drawing
-            if(DRAW_CONFIRM.test(txt)) drawPendingRef.current=true;
+            // Mark draw pending if model announces drawing; arm fallback timer
+            if(DRAW_CONFIRM.test(txt)){
+              drawPendingRef.current=true;
+              userDrawLockRef.current=true;
+              clearDrawFallback();
+              drawFallbackTimerRef.current=setTimeout(triggerChartFromBuffer,4000);
+            }
           }
           // User says "ارسم..." → draw immediately using the utterance text
           if(role==='user'&&DRAW_CMD.test(txt)){
@@ -772,20 +781,9 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
         }else if(msg.type==='turn_complete'){
           // Wait 250ms so any in-flight transcript WS messages arrive before we process
           setTimeout(()=>{
+            clearDrawFallback();
             if(drawPendingRef.current&&modelTransBuf.current.trim()){
-              const fullDesc=modelTransBuf.current.trim();
-              drawPendingRef.current=false;
-              modelTransBuf.current='';
-              // Claim this generation — cancels any pending handleDirectDraw result
-              const gen=++drawGenRef.current;
-              setIsDrawingChart(true);
-              callChartAnalyze(fullDesc).then(c=>{
-                if(drawGenRef.current===gen){
-                  chartCacheRef.current.set(fullDesc,c);
-                  setCurrentChart(c.hasChart?c:null);
-                  setIsDrawingChart(false);
-                }
-              });
+              triggerChartFromBuffer();
             }else{
               drawPendingRef.current=false;
               modelTransBuf.current='';
@@ -801,7 +799,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     };
     ws.onerror=()=>{setErrorMsg('تعذّر الاتصال بالخادم.');setStatus('error');};
     ws.onclose=()=>{stopMic();};
-  },[lectureText,voice,playChunk,hardStop,analyzeChart,handleDirectDraw]);
+  },[lectureText,voice,playChunk,hardStop,analyzeChart,handleDirectDraw,clearDrawFallback,triggerChartFromBuffer]);
 
   const stop=useCallback(()=>{
     wsRef.current?.send(JSON.stringify({type:'stop_lecture'}));
