@@ -1985,6 +1985,9 @@ app.post("/api/ai/lecture-chart-analyze", async (req, res) => {
       "- diagram: استخرج diagramNodes (shape: box|circle|diamond) وdiagramEdges بتسميات واضحة.\n" +
       "- coordinate: استخرج coordPoints (نقاط بإحداثيات x,y بما فيها السالبة مثل x=-3,y=2) و/أو coordLines (خطوط أو متجهات من (x1,y1) إلى (x2,y2)).\n" +
       "- إذا ذُكرت أرقام أو نسب أو إحداثيات، حاول دائماً استخراج بيانات حقيقية وليس فارغة.\n" +
+      "- حالات خاصة مهمة:\n" +
+      "  • إذا طُلب 'نظام الإحداثيات' أو 'ارسم المحاور' أو 'المستوى الإحداثي' بدون نقاط محددة → أعطِ chartType='coordinate' مع coordPoints=[] وcoordLines=[].\n" +
+      "  • لا تُعطِ chartType='diagram' لطلبات الرسم الإحداثي أو المحاور — diagram مخصص للهياكل والخوارزميات فقط.\n" +
       "- عند الشك بين bar وcoordinate: إذا كان المحتوى عن محاور إحداثية (x,y) أو نقاط هندسية أو متجهات → اختر coordinate.\n\n" +
       "المقطع:\n\"\"\"" + snippet + "\"\"\"";
 

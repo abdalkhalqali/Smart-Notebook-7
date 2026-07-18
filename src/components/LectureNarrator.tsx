@@ -36,6 +36,20 @@ const STYLES = `
     from { opacity:0; transform:scale(0.94); }
     to   { opacity:1; transform:scale(1); }
   }
+  @keyframes lnLaserPulse {
+    0%   { box-shadow:0 0 0 0 rgba(220,38,38,0.9), 0 0 6px 3px rgba(220,38,38,0.5); transform:scale(1); }
+    50%  { box-shadow:0 0 0 7px rgba(220,38,38,0.0), 0 0 12px 6px rgba(220,38,38,0.3); transform:scale(1.15); }
+    100% { box-shadow:0 0 0 0 rgba(220,38,38,0.9), 0 0 6px 3px rgba(220,38,38,0.5); transform:scale(1); }
+  }
+  @keyframes lnLaserDrift {
+    0%,100% { transform:translateY(0px); }
+    33%     { transform:translateY(-2px); }
+    66%     { transform:translateY(2px); }
+  }
+  @keyframes lnLaserFadeIn {
+    from { opacity:0; transform:scale(0.5); }
+    to   { opacity:1; transform:scale(1); }
+  }
   .ln-bar     { transform-origin:bottom center; animation:lnGrowUp 0.85s cubic-bezier(0.16,1,0.3,1) both; }
   .ln-line    { animation:lnDrawPath 2s ease-out forwards; }
   .ln-sector  { animation:lnFillSector 1.3s ease-out forwards; }
@@ -43,6 +57,7 @@ const STYLES = `
   .ln-chart   { animation:lnChartIn 0.5s ease-out; }
   .ln-pen     { animation:lnPenBlink 1s ease-in-out infinite; }
   .ln-text    { animation:lnSlideIn 0.35s ease-out; }
+  .ln-laser   { animation:lnLaserPulse 1.1s ease-in-out infinite, lnLaserDrift 2.4s ease-in-out infinite, lnLaserFadeIn 0.3s ease-out; }
 `;
 
 // ── Types ─────────────────────────────────────────────────────────
@@ -76,7 +91,9 @@ const VOICES = [
   {id:'Zephyr',label:'🍃 خفيف لطيف'},
 ];
 const ACCEPTED='.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.odt,.odp,.ods,.txt,.md,.csv,.html,image/*';
-const CHART_KW=/بيان|مخطط|رسم|جدول|نسب|مئو|إحصاء|مقارن|توزيع|أعمد|دائر|خط|هيكل|مرحل|خوارزم|تدفق|chart|graph|table|figure|diagram|%|٪/i;
+const CHART_KW=/بيان|مخطط|رسم|جدول|نسب|مئو|إحصاء|مقارن|توزيع|أعمد|دائر|خط|هيكل|مرحل|خوارزم|تدفق|محاور|إحداث|نظام.*إحداث|مستوى.*إحداث|coordinate|chart|graph|table|figure|diagram|%|٪/i;
+// Coordinate system request (no specific points needed — draws default axes)
+const COORD_CMD=/نظام\s*(ال)?إحداث|إحداث.*نظام|ارسم\s*(ال)?محاور|مستوى\s*(ال)?إحداث|coordinate\s*system|x.*y.*محور|محور.*x|ارسم.*إحداث/i;
 const DRAW_CMD=/^(ارسم|أرسم|draw|رسم لي|ارسم لي|أرسم لي)\s+/i;
 
 // ── Audio helpers ─────────────────────────────────────────────────
@@ -358,13 +375,18 @@ function DiagramChart({title,diagramNodes=[],diagramEdges=[]}:{title?:string;dia
 function CoordinateChart({title,coordPoints=[],coordLines=[]}:{
   title?:string; coordPoints?:CoordPoint[]; coordLines?:CoordLine[];
 }){
-  const W=560,H=320;
-  const PAD={l:64,r:36,t:42,b:52};
+  const W=560,H=340;
+  const PAD={l:64,r:36,t:48,b:52};
   const cW=W-PAD.l-PAD.r, cH=H-PAD.t-PAD.b;
   const allX=[...coordPoints.map(p=>p.x),...coordLines.flatMap(l=>[l.x1,l.x2]),0];
   const allY=[...coordPoints.map(p=>p.y),...coordLines.flatMap(l=>[l.y1,l.y2]),0];
-  const xMin=Math.floor(Math.min(...allX)-1), xMax=Math.ceil(Math.max(...allX)+1);
-  const yMin=Math.floor(Math.min(...allY)-1), yMax=Math.ceil(Math.max(...allY)+1);
+  // Ensure a minimum visible range of ±5 on both axes — avoids tiny "square" when no data
+  const rawXMin=Math.min(...allX), rawXMax=Math.max(...allX);
+  const rawYMin=Math.min(...allY), rawYMax=Math.max(...allY);
+  const xSpan=rawXMax-rawXMin, ySpan=rawYMax-rawYMin;
+  const xPad=xSpan<8?(8-xSpan)/2+1:1.2, yPad=ySpan<8?(8-ySpan)/2+1:1.2;
+  const xMin=Math.floor(rawXMin-xPad), xMax=Math.ceil(rawXMax+xPad);
+  const yMin=Math.floor(rawYMin-yPad), yMax=Math.ceil(rawYMax+yPad);
   const xRng=xMax-xMin||1, yRng=yMax-yMin||1;
   const toSvg=(x:number,y:number)=>({
     sx:PAD.l+(x-xMin)/xRng*cW,
@@ -550,9 +572,16 @@ function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart}:{
               }}>
                 <MathText text={disp} className="text-slate-900" dir="rtl"/>
                 {!done&&(
-                  <span className="inline-block" style={{marginRight:4,verticalAlign:'middle'}}>
-                    <svg className="ln-pen inline-block" width={22} height={22} viewBox="0 0 24 24" fill="none"
-                      style={{transform:'scaleX(-1)'}}>
+                  <span className="inline-block align-middle" style={{marginRight:6,position:'relative'}}>
+                    {/* Laser pointer dot — glows red, pulses, drifts slightly */}
+                    <span className="ln-laser inline-block" style={{
+                      width:11, height:11, borderRadius:'50%',
+                      background:'radial-gradient(circle at 38% 38%, #ff6b6b, #dc2626)',
+                      display:'inline-block', verticalAlign:'middle',
+                    }}/>
+                    {/* Chalk pen icon trailing behind the dot */}
+                    <svg className="ln-pen inline-block" width={18} height={18} viewBox="0 0 24 24" fill="none"
+                      style={{transform:'scaleX(-1)',marginRight:3,verticalAlign:'middle',opacity:0.55}}>
                       <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" stroke="#1a1832" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
                       <path d="m15 5 4 4" stroke="#1a1832" strokeWidth="2.2" strokeLinecap="round"/>
                     </svg>
@@ -826,6 +855,24 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     const myGen=++userDrawGenRef.current;
     const text=cmd.replace(DRAW_CMD,'').trim()||cmd;
     setIsDrawingChart(true); setChunkText(cmd); setDirectCmd('');
+
+    // ── Shortcut: coordinate system with no specific data ──────────
+    // If user just asks for "coordinate system" / "نظام الاحداثيات",
+    // skip the API and return a pre-built empty coordinate chart instantly.
+    if(COORD_CMD.test(text)&&!/\d/.test(text)){
+      const coordChart:ChartData={
+        hasChart:true, chartType:'coordinate',
+        title:'نظام الإحداثيات',
+        coordPoints:[], coordLines:[]
+      };
+      if(userDrawGenRef.current===myGen){
+        setCurrentChart({...coordChart});
+        setIsDrawingChart(false);
+        // keep lock so model doesn't overwrite it
+      }
+      return;
+    }
+
     const c=await callChartAnalyze(text);
     // Only apply if this is still the latest user-requested draw
     if(userDrawGenRef.current===myGen){
