@@ -1953,21 +1953,39 @@ app.post("/api/ai/lecture-chart-analyze", async (req, res) => {
           type: Type.OBJECT,
           properties: { from: { type: Type.STRING }, to: { type: Type.STRING }, label: { type: Type.STRING } },
           required: ["from","to","label"]
+        }},
+        coordPoints: { type: Type.ARRAY, items: {
+          type: Type.OBJECT,
+          properties: { x: { type: Type.NUMBER }, y: { type: Type.NUMBER }, label: { type: Type.STRING } },
+          required: ["x","y"]
+        }},
+        coordLines: { type: Type.ARRAY, items: {
+          type: Type.OBJECT,
+          properties: { x1: { type: Type.NUMBER }, y1: { type: Type.NUMBER }, x2: { type: Type.NUMBER }, y2: { type: Type.NUMBER }, label: { type: Type.STRING } },
+          required: ["x1","y1","x2","y2"]
         }}
       },
       required: ["hasChart","chartType"]
     };
 
-    const snippet = text.slice(0, 1200);
-    const prompt = "أنت محلل بيانات أكاديمي. حلّل المقطع التالي وحدّد إذا كان يصف بيانات يمكن تمثيلها بصرياً.\n\n" +
-      "الأنواع (chartType):\n" +
-      "\"bar\"    → مقارنة بين فئات بأرقام واضحة\n" +
-      "\"line\"   → بيانات تتطور عبر الزمن أو متغير\n" +
-      "\"pie\"    → نسب مئوية أو أجزاء من كل\n" +
-      "\"table\"  → جدول بيانات منظّم\n" +
-      "\"diagram\" → هيكل أو مراحل أو علاقات بين عناصر\n" +
-      "\"none\"   → نص شرحي فقط بلا بيانات مرئية\n\n" +
-      "قواعد: للـ bar/line/pie أعطِ labels وdatasets. للـ table أعطِ tableHeaders وtableRows. للـ diagram أعطِ diagramNodes (shape: box/circle/diamond) وdiagramEdges.\n\n" +
+    const snippet = text.slice(0, 2000);
+    const prompt =
+      "أنت محلل بيانات أكاديمي. حلّل المقطع التالي وحدّد إذا كان يصف بيانات أو أشكالاً يمكن تمثيلها بصرياً على السبورة.\n\n" +
+      "الأنواع (chartType) — اختر الأنسب:\n" +
+      "\"bar\"        → مقارنة بين فئات بأرقام واضحة (تدعم القيم السالبة)\n" +
+      "\"line\"       → بيانات تتطور عبر الزمن أو متغير متصل\n" +
+      "\"pie\"        → نسب مئوية أو أجزاء من كل\n" +
+      "\"table\"      → جدول بيانات منظّم بأعمدة وصفوف\n" +
+      "\"diagram\"    → هيكل أو مراحل أو خوارزمية أو علاقات بين عناصر\n" +
+      "\"coordinate\" → مستوى إحداثي (محور x وy) مع نقاط أو متجهات — استخدمه عند وجود أزواج (x,y) أو إحداثيات سالبة أو موجبة\n" +
+      "\"none\"       → نص شرحي فقط بلا بيانات أو أشكال مرئية واضحة\n\n" +
+      "قواعد استخراج البيانات:\n" +
+      "- bar/line/pie: استخرج labels (أسماء الفئات) وdatasets (الأرقام). القيم السالبة مسموحة.\n" +
+      "- table: استخرج tableHeaders وtableRows.\n" +
+      "- diagram: استخرج diagramNodes (shape: box|circle|diamond) وdiagramEdges بتسميات واضحة.\n" +
+      "- coordinate: استخرج coordPoints (نقاط بإحداثيات x,y بما فيها السالبة مثل x=-3,y=2) و/أو coordLines (خطوط أو متجهات من (x1,y1) إلى (x2,y2)).\n" +
+      "- إذا ذُكرت أرقام أو نسب أو إحداثيات، حاول دائماً استخراج بيانات حقيقية وليس فارغة.\n" +
+      "- عند الشك بين bar وcoordinate: إذا كان المحتوى عن محاور إحداثية (x,y) أو نقاط هندسية أو متجهات → اختر coordinate.\n\n" +
       "المقطع:\n\"\"\"" + snippet + "\"\"\"";
 
     const result: any = await generateContentWithRetryAndFallback(ai, {
@@ -2266,9 +2284,12 @@ async function startServer() {
 قواعد الرسم والمخططات — مهمة جداً:
 - أنت تعمل داخل تطبيق سبورة ذكية تقوم برسم المخططات تلقائياً.
 - عندما يطلب الطالب رسم أي شيء (مخطط، جدول، رسم بياني، هيكل، خوارزمية، دورة حياة، أي شكل...)، لا تقل أبداً أنك غير قادر على الرسم، ولا تعتذر.
-- بدلاً من ذلك، قل "جاري الرسم على السبورة" ثم اذكر البيانات أو العناصر المطلوبة بوضوح بالأرقام والتسميات، مثل: "المحور الأفقي: 2020، 2021، 2022. القيم: 50، 80، 120."
-- إذا طُلب منك رسم هيكل أو مراحل، اذكر العناصر والعلاقات بينها بوضوح.
-- التطبيق سيترجم كلامك إلى رسم فوري على السبورة.`
+- قل دائماً "جاري الرسم على السبورة" ثم اذكر البيانات بتفصيل واضح:
+  • للمخططات العمودية/الخطية: "القيم: أ=5، ب=8، ج=-3" (القيم السالبة مسموحة).
+  • للمحاور الإحداثية والنقاط الهندسية: "النقطة A عند (3، ناقص2)، النقطة B عند (ناقص1، 4)" — اذكر الإحداثيات السالبة بوضوح بكلمة "ناقص" أو بالرمز (-).
+  • للمتجهات: "المتجه من (0،0) إلى (3،-2)".
+  • للهياكل والمراحل: اذكر العناصر والعلاقات بينها بترتيب واضح.
+- التطبيق سيترجم كلامك فوراً إلى رسم على السبورة بما فيها المحاور السالبة والموجبة.`
           : `You are "UnNoted", a virtual teacher narrating a lecture aloud to a student. You will receive the lecture text in sequential chunks; read each chunk exactly verbatim, clearly and naturally, without summarizing or adding anything. If the student interrupts with a question, stop immediately and answer clearly, then wait — you'll automatically be asked to resume reading where you left off.${subjectCtx ? ` Subject: ${subjectCtx}` : ""}
 
 Drawing rules — very important:
@@ -2376,10 +2397,10 @@ Drawing rules — very important:
                 send({ type: "turn_complete" });
                 if (lecturePhase === "narrating") {
                   lectureIdx++;
-                  setTimeout(() => sendLectureChunk(lectureIdx), 120);
+                  setTimeout(() => sendLectureChunk(lectureIdx), 80);
                 } else if (lecturePhase === "awaiting_answer") {
                   // Resume reading the same chunk that was cut short by the question
-                  setTimeout(() => sendLectureChunk(lectureIdx), 120);
+                  setTimeout(() => sendLectureChunk(lectureIdx), 80);
                 }
                 // if lecturePhase === "paused", do nothing until resume_lecture arrives
               }
@@ -2401,8 +2422,8 @@ Drawing rules — very important:
               disabled: false,
               startOfSpeechSensitivity: "START_SENSITIVITY_HIGH",
               endOfSpeechSensitivity: "END_SENSITIVITY_HIGH",
-              prefixPaddingMs: 40,
-              silenceDurationMs: 300,
+              prefixPaddingMs: 20,
+              silenceDurationMs: 180,
             },
           },
         },

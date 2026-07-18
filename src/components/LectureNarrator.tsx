@@ -54,11 +54,14 @@ interface QAItem   { id:string; role:'user'|'model'; text:string; }
 interface Dataset  { name:string; values:number[]; }
 interface DiagNode { id:string; label:string; shape:'box'|'circle'|'diamond'; }
 interface DiagEdge { from:string; to:string; label:string; }
+interface CoordPoint { x:number; y:number; label?:string; }
+interface CoordLine  { x1:number; y1:number; x2:number; y2:number; label?:string; }
 interface ChartData {
-  hasChart:boolean; chartType:'bar'|'line'|'pie'|'table'|'diagram'|'none';
+  hasChart:boolean; chartType:'bar'|'line'|'pie'|'table'|'diagram'|'coordinate'|'none';
   title?:string; labels?:string[]; datasets?:Dataset[];
   tableHeaders?:string[]; tableRows?:string[][];
   diagramNodes?:DiagNode[]; diagramEdges?:DiagEdge[];
+  coordPoints?:CoordPoint[]; coordLines?:CoordLine[];
 }
 
 // Detects model saying "drawing on board now" in any form — intentionally broad
@@ -115,41 +118,49 @@ const C=['#4F46E5','#10B981','#F59E0B','#EF4444','#8B5CF6','#EC4899','#06B6D4','
 // CHART COMPONENTS — pure animated SVG
 // ══════════════════════════════════════════════════════════════════
 
-// Bar chart
+// Bar chart — supports negative values
 function BarChart({title,labels=[],datasets=[]}:{title?:string;labels?:string[];datasets?:Dataset[]}){
-  const W=560,H=320,PL=56,PR=20,PT=44,PB=64;
+  const W=560,H=320,PL=60,PR=20,PT=44,PB=64;
   const cW=W-PL-PR,cH=H-PT-PB;
   const vals=datasets.flatMap(d=>d.values).filter(v=>!isNaN(v));
-  const maxV=vals.length?Math.max(...vals,0.01):1;
+  const rawMax=vals.length?Math.max(...vals):1;
+  const rawMin=vals.length?Math.min(...vals):0;
+  const maxV=Math.max(rawMax,0.01);
+  const minV=Math.min(rawMin,0);
+  const rng=maxV-minV||1;
   const n=labels.length||1, nDs=datasets.length||1;
   const gW=cW/n, bW=Math.min(40,gW*0.75/nDs);
   const ticks=4;
+  // y position of the zero line
+  const zeroY=PT+cH-((0-minV)/rng)*cH;
   return(
     <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{overflow:'visible'}}>
       {title&&<text x={W/2} y={24} textAnchor="middle" fontSize={15} fontWeight="800" fill="#1e1b4b">{title}</text>}
       {Array.from({length:ticks+1},(_,i)=>{
-        const v=Math.round(maxV*i/ticks);
-        const y=PT+cH-cH*i/ticks;
+        const v=minV+rng*i/ticks;
+        const y=PT+cH-((v-minV)/rng)*cH;
         return(<g key={i}>
-          <line x1={PL} y1={y} x2={PL+cW} y2={y} stroke="#e0e7ff" strokeWidth={i===0?1.5:1}/>
-          <text x={PL-8} y={y+4} textAnchor="end" fontSize={11} fill="#6b7280">{v}</text>
+          <line x1={PL} y1={y} x2={PL+cW} y2={y} stroke="#e0e7ff" strokeWidth={Math.abs(v)<0.01?2:1}/>
+          <text x={PL-8} y={y+4} textAnchor="end" fontSize={11} fill="#6b7280">{Math.round(v*10)/10}</text>
         </g>);
       })}
+      {/* Zero line bold when there are negative values */}
+      {minV<0&&<line x1={PL} y1={zeroY} x2={PL+cW} y2={zeroY} stroke="#1e1b4b" strokeWidth={2}/>}
       <line x1={PL} y1={PT} x2={PL} y2={PT+cH} stroke="#1e1b4b" strokeWidth={2}/>
-      <line x1={PL} y1={PT+cH} x2={PL+cW} y2={PT+cH} stroke="#1e1b4b" strokeWidth={2}/>
+      <line x1={PL} y1={PT+cH} x2={PL+cW} y2={PT+cH} stroke="#1e1b4b" strokeWidth={1.5}/>
       {labels.map((lbl,li)=>(
         <g key={li}>
           {datasets.map((ds,di)=>{
             const v=ds.values[li]??0;
-            const bH=Math.max((v/maxV)*cH,2);
+            const bH=Math.max(Math.abs(v/rng)*cH,2);
             const x=PL+li*gW+di*(bW+3)+(gW-nDs*(bW+3))/2;
-            const y=PT+cH;
+            const barY=v>=0?zeroY-bH:zeroY;
             const col=C[di%C.length];
             return(
-              <g key={di} style={{transformOrigin:`${x+bW/2}px ${y}px`}}>
-                <rect className="ln-bar" x={x} y={y-bH} width={bW} height={bH} fill={col} rx={4}
+              <g key={di} style={{transformOrigin:`${x+bW/2}px ${zeroY}px`}}>
+                <rect className="ln-bar" x={x} y={barY} width={bW} height={bH} fill={col} rx={4}
                   style={{animationDelay:`${li*0.09+di*0.04}s`}}/>
-                <text x={x+bW/2} y={y-bH-5} textAnchor="middle" fontSize={10} fill={col} fontWeight="700">{v}</text>
+                <text x={x+bW/2} y={v>=0?barY-5:barY+bH+13} textAnchor="middle" fontSize={10} fill={col} fontWeight="700">{v}</text>
               </g>
             );
           })}
@@ -343,15 +354,110 @@ function DiagramChart({title,diagramNodes=[],diagramEdges=[]}:{title?:string;dia
   );
 }
 
+// Coordinate / axes chart — draws x-y plane with negative values, points, vectors
+function CoordinateChart({title,coordPoints=[],coordLines=[]}:{
+  title?:string; coordPoints?:CoordPoint[]; coordLines?:CoordLine[];
+}){
+  const W=560,H=320;
+  const PAD={l:64,r:36,t:42,b:52};
+  const cW=W-PAD.l-PAD.r, cH=H-PAD.t-PAD.b;
+  const allX=[...coordPoints.map(p=>p.x),...coordLines.flatMap(l=>[l.x1,l.x2]),0];
+  const allY=[...coordPoints.map(p=>p.y),...coordLines.flatMap(l=>[l.y1,l.y2]),0];
+  const xMin=Math.floor(Math.min(...allX)-1), xMax=Math.ceil(Math.max(...allX)+1);
+  const yMin=Math.floor(Math.min(...allY)-1), yMax=Math.ceil(Math.max(...allY)+1);
+  const xRng=xMax-xMin||1, yRng=yMax-yMin||1;
+  const toSvg=(x:number,y:number)=>({
+    sx:PAD.l+(x-xMin)/xRng*cW,
+    sy:PAD.t+(yMax-y)/yRng*cH,
+  });
+  const {sx:zeroX,sy:zeroY}=toSvg(0,0);
+  const xTicks=Array.from({length:xMax-xMin+1},(_,i)=>xMin+i);
+  const yTicks=Array.from({length:yMax-yMin+1},(_,i)=>yMin+i);
+  return(
+    <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{overflow:'visible'}}>
+      <defs>
+        <marker id="cnarr" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+          <path d="M0,0 L0,6 L8,3 z" fill="#1e1b4b"/>
+        </marker>
+        <marker id="cnarrC" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+          <path d="M0,0 L0,6 L8,3 z" fill="#4F46E5"/>
+        </marker>
+      </defs>
+      {title&&<text x={W/2} y={22} textAnchor="middle" fontSize={15} fontWeight="800" fill="#1e1b4b">{title}</text>}
+      {/* Grid vertical lines */}
+      {xTicks.map(v=>{const {sx}=toSvg(v,0);return(
+        <line key={v} x1={sx} y1={PAD.t} x2={sx} y2={PAD.t+cH}
+          stroke={v===0?'#1e1b4b':'#e5e7eb'} strokeWidth={v===0?2:1}
+          strokeDasharray={v===0?'':'3,3'}/>
+      );})}
+      {/* Grid horizontal lines */}
+      {yTicks.map(v=>{const {sy}=toSvg(0,v);return(
+        <line key={v} x1={PAD.l} y1={sy} x2={PAD.l+cW} y2={sy}
+          stroke={v===0?'#1e1b4b':'#e5e7eb'} strokeWidth={v===0?2:1}
+          strokeDasharray={v===0?'':'3,3'}/>
+      );})}
+      {/* X axis arrow */}
+      <line x1={PAD.l} y1={zeroY} x2={PAD.l+cW+12} y2={zeroY}
+        stroke="#1e1b4b" strokeWidth={2.5} markerEnd="url(#cnarr)"/>
+      {/* Y axis arrow */}
+      <line x1={zeroX} y1={PAD.t+cH} x2={zeroX} y2={PAD.t-12}
+        stroke="#1e1b4b" strokeWidth={2.5} markerEnd="url(#cnarr)"/>
+      {/* Axis labels */}
+      <text x={PAD.l+cW+18} y={zeroY+5} fontSize={14} fill="#1e1b4b" fontWeight="800">x</text>
+      <text x={zeroX} y={PAD.t-16} fontSize={14} fill="#1e1b4b" fontWeight="800" textAnchor="middle">y</text>
+      {/* X tick marks + labels */}
+      {xTicks.filter(v=>v!==0).map(v=>{const {sx}=toSvg(v,0);return(
+        <g key={v}>
+          <line x1={sx} y1={zeroY-4} x2={sx} y2={zeroY+4} stroke="#1e1b4b" strokeWidth={1.5}/>
+          <text x={sx} y={zeroY+17} textAnchor="middle" fontSize={11} fill="#374151">{v}</text>
+        </g>
+      );})}
+      {/* Y tick marks + labels */}
+      {yTicks.filter(v=>v!==0).map(v=>{const {sy}=toSvg(0,v);return(
+        <g key={v}>
+          <line x1={zeroX-4} y1={sy} x2={zeroX+4} y2={sy} stroke="#1e1b4b" strokeWidth={1.5}/>
+          <text x={zeroX-10} y={sy+4} textAnchor="end" fontSize={11} fill="#374151">{v}</text>
+        </g>
+      );})}
+      {/* Origin */}
+      <text x={zeroX-10} y={zeroY+17} textAnchor="end" fontSize={11} fill="#374151">0</text>
+      {/* Lines / vectors */}
+      {coordLines.map((l,i)=>{
+        const s=toSvg(l.x1,l.y1),t=toSvg(l.x2,l.y2);
+        const mx=(s.sx+t.sx)/2,my=(s.sy+t.sy)/2;
+        return(<g key={i}>
+          <line className="ln-line" x1={s.sx} y1={s.sy} x2={t.sx} y2={t.sy}
+            stroke={C[i%C.length]} strokeWidth={2.5} markerEnd="url(#cnarrC)"
+            style={{'--len':'600',strokeDasharray:'600'} as any}/>
+          {l.label&&<text x={mx+6} y={my-8} fontSize={11} fill={C[i%C.length]} fontWeight="700">{l.label}</text>}
+        </g>);
+      })}
+      {/* Points */}
+      {coordPoints.map((p,i)=>{
+        const {sx,sy}=toSvg(p.x,p.y);
+        const col=C[(i+Math.max(coordLines.length,0))%C.length];
+        return(<g key={i} style={{animation:`lnSlideIn 0.4s ease-out ${i*0.12}s both`}}>
+          <circle cx={sx} cy={sy} r={6} fill={col} stroke="#fff" strokeWidth={2.5}/>
+          {p.label&&<text x={sx+10} y={sy-8} fontSize={12} fill={col} fontWeight="700">{p.label}</text>}
+          <text x={sx} y={sy+22} textAnchor="middle" fontSize={10} fill="#6b7280">
+            ({p.x},{p.y<0?`−${Math.abs(p.y)}`:p.y})
+          </text>
+        </g>);
+      })}
+    </svg>
+  );
+}
+
 function ChartPanel({chart}:{chart:ChartData}){
   if(!chart.hasChart||chart.chartType==='none') return null;
   const w='w-full ln-chart';
   switch(chart.chartType){
-    case 'bar':     return <div className={w}><BarChart     title={chart.title} labels={chart.labels}      datasets={chart.datasets}/></div>;
-    case 'line':    return <div className={w}><LineChart    title={chart.title} labels={chart.labels}      datasets={chart.datasets}/></div>;
-    case 'pie':     return <div className={w}><PieChart     title={chart.title} labels={chart.labels}      datasets={chart.datasets}/></div>;
-    case 'table':   return <div className={w}><TableChart   title={chart.title} tableHeaders={chart.tableHeaders} tableRows={chart.tableRows}/></div>;
-    case 'diagram': return <div className={w}><DiagramChart title={chart.title} diagramNodes={chart.diagramNodes} diagramEdges={chart.diagramEdges}/></div>;
+    case 'bar':        return <div className={w}><BarChart        title={chart.title} labels={chart.labels}      datasets={chart.datasets}/></div>;
+    case 'line':       return <div className={w}><LineChart       title={chart.title} labels={chart.labels}      datasets={chart.datasets}/></div>;
+    case 'pie':        return <div className={w}><PieChart        title={chart.title} labels={chart.labels}      datasets={chart.datasets}/></div>;
+    case 'table':      return <div className={w}><TableChart      title={chart.title} tableHeaders={chart.tableHeaders} tableRows={chart.tableRows}/></div>;
+    case 'diagram':    return <div className={w}><DiagramChart    title={chart.title} diagramNodes={chart.diagramNodes} diagramEdges={chart.diagramEdges}/></div>;
+    case 'coordinate': return <div className={w}><CoordinateChart title={chart.title} coordPoints={chart.coordPoints} coordLines={chart.coordLines}/></div>;
     default: return null;
   }
 }
@@ -363,7 +469,14 @@ function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart}:{
   text:string; chart:ChartData|null; chunkIdx:number; totalChunks:number; isDrawingChart:boolean;
 }){
   const {disp,done}=useTypewriter(text,5,11);
+  const boardScrollRef=useRef<HTMLDivElement>(null);
   const hasContent=disp.trim().length>0||chart?.hasChart;
+
+  // Auto-scroll to bottom as text is typed so board always shows latest content
+  useEffect(()=>{
+    const el=boardScrollRef.current;
+    if(el) el.scrollTop=el.scrollHeight;
+  },[disp]);
 
   return(
     <div className="relative flex-1 flex flex-col min-h-0 mx-3 my-2 rounded-xl overflow-hidden"
@@ -416,8 +529,8 @@ function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart}:{
         </div>
       )}
 
-      {/* Board content */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-8 pt-10 pb-8" dir="rtl">
+      {/* Board content — auto-scrolls to bottom as text grows */}
+      <div ref={boardScrollRef} className="flex-1 min-h-0 overflow-y-auto px-8 pt-10 pb-8" dir="rtl">
         {!hasContent?(
           <div className="h-full flex items-center justify-center">
             <p className="text-slate-300 italic text-xl" style={{fontFamily:'Georgia,serif'}}>
@@ -541,8 +654,10 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   // Buffer model transcript between turns so DRAW_CONFIRM analysis runs on full description
   const modelTransBuf=useRef('');
   const drawPendingRef=useRef(false);
-  // Generation counter — incremented on every new draw request; stale async results are discarded
+  // Generation counter for model-initiated draws; stale async results are discarded
   const drawGenRef=useRef(0);
+  // Separate counter for user-initiated draws — takes priority over model draws
+  const userDrawGenRef=useRef(0);
   // Prevents lecture-chunk auto-analysis from ERASING a user-requested chart
   const userDrawLockRef=useRef(false);
   // Fallback: fires chart analysis if turn_complete is delayed or never arrives
@@ -614,12 +729,16 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     if(!fullDesc){setIsDrawingChart(false);userDrawLockRef.current=false;return;}
     const gen=++drawGenRef.current;
     setIsDrawingChart(true);
+    // Delete cache so re-draw always produces a fresh result
+    chartCacheRef.current.delete(fullDesc);
     callChartAnalyze(fullDesc).then(c=>{
       if(drawGenRef.current!==gen) return;
       chartCacheRef.current.set(fullDesc,c);
-      setCurrentChart(c.hasChart?c:null);
+      // Spread to guarantee React re-renders even when data is unchanged
+      setCurrentChart(c.hasChart?{...c}:null);
       setIsDrawingChart(false);
-      if(!c.hasChart) userDrawLockRef.current=false;
+      // Always release lock so next lecture chunk can auto-analyze
+      userDrawLockRef.current=false;
     });
   },[]);
 
@@ -627,10 +746,10 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   // Respects userDrawLockRef: never clears a user-requested chart.
   const analyzeChart=useCallback(async(text:string)=>{
     if(!text.trim()) return;
-    if(userDrawLockRef.current) return;           // user draw in progress — don't touch chart
+    if(userDrawLockRef.current) return;
     if(chartCacheRef.current.has(text)){
       const c=chartCacheRef.current.get(text)!;
-      if(!userDrawLockRef.current) setCurrentChart(c.hasChart?c:null);
+      if(!userDrawLockRef.current) setCurrentChart(c.hasChart?{...c}:null);
       return;
     }
     if(chartScore(text)<2){
@@ -640,8 +759,8 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     setIsDrawingChart(true);
     const c=await callChartAnalyze(text);
     chartCacheRef.current.set(text,c);
-    if(!userDrawLockRef.current){               // re-check after async
-      setCurrentChart(c.hasChart?c:null);
+    if(!userDrawLockRef.current){
+      setCurrentChart(c.hasChart?{...c}:null);
       setIsDrawingChart(false);
     }
   },[]);
@@ -697,23 +816,24 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   useEffect(()=>()=>{stopQrPoll();},[stopQrPoll]);
 
   // Direct draw command (from text bar OR from user voice "ارسم...")
+  // Uses a separate userDrawGenRef so concurrent model draws can't cancel it.
   const handleDirectDraw=useCallback(async(cmd:string)=>{
+    // Preempt any pending model-initiated draw
+    clearDrawFallback();
+    drawPendingRef.current=false;
+    modelTransBuf.current='';
     userDrawLockRef.current=true;
-    const gen=++drawGenRef.current;
+    const myGen=++userDrawGenRef.current;
     const text=cmd.replace(DRAW_CMD,'').trim()||cmd;
     setIsDrawingChart(true); setChunkText(cmd); setDirectCmd('');
     const c=await callChartAnalyze(text);
-    // Only apply if no newer draw operation has taken over
-    if(drawGenRef.current===gen){
-      setCurrentChart(c.hasChart?c:null);
-      // Keep isDrawingChart=true if model is about to describe the chart
-      // (drawPendingRef will become true once model transcript arrives)
-      if(!drawPendingRef.current){
-        setIsDrawingChart(false);
-        if(!c.hasChart) userDrawLockRef.current=false;
-      }
+    // Only apply if this is still the latest user-requested draw
+    if(userDrawGenRef.current===myGen){
+      setCurrentChart(c.hasChart?{...c}:null);
+      setIsDrawingChart(false);
+      if(!c.hasChart) userDrawLockRef.current=false;
     }
-  },[]);
+  },[clearDrawFallback]);
 
   // Start session
   const start=useCallback(async()=>{
@@ -751,6 +871,8 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
         }else if(msg.type==='lecture_progress'){
           setChunkIndex(msg.index); setChunkText(msg.text);
           setAskMode(false); setStatus('narrating');
+          // New chunk — release user draw lock so auto-analysis can run
+          userDrawLockRef.current=false;
           analyzeChart(msg.text);
         }else if(msg.type==='audio'){
           if(statusRef.current!=='paused') playChunk(msg.data);
