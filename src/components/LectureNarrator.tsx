@@ -61,8 +61,8 @@ interface ChartData {
   diagramNodes?:DiagNode[]; diagramEdges?:DiagEdge[];
 }
 
-// Detects model saying "drawing on board now" in any form
-const DRAW_CONFIRM = /جاري الرسم|سأرسم الآن|سأرسم لك|Drawing on the board|drawing now|على السبورة الآن/i;
+// Detects model saying "drawing on board now" in any form — intentionally broad
+const DRAW_CONFIRM = /جاري الرسم|سأرسم|رسم.*سبورة|سبورة.*رسم|Drawing on the board|drawing now|على السبورة|I'll draw|I will draw|drawing it|سأعرض.*مخطط|سأضع.*مخطط/i;
 
 const VOICES = [
   {id:'Charon',label:'🎓 رجالي هادئ'},
@@ -543,6 +543,10 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   const drawPendingRef=useRef(false);
   // Generation counter — incremented on every new draw request; stale async results are discarded
   const drawGenRef=useRef(0);
+  // Prevents lecture-chunk auto-analysis from ERASING a user-requested chart
+  const userDrawLockRef=useRef(false);
+  // Fallback: fires chart analysis if turn_complete is delayed or never arrives
+  const drawFallbackTimerRef=useRef<ReturnType<typeof setTimeout>|null>(null);
   statusRef.current=status;
 
   useEffect(()=>{qaEndRef.current?.scrollIntoView({behavior:'smooth'});},[qa]);
@@ -599,19 +603,47 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     audioCtxRef.current?.close().catch(()=>{}); audioCtxRef.current=null;
   };
 
-  // Chart analysis
+  // ── helpers for the fallback draw timer ──────────────────────────
+  const clearDrawFallback=useCallback(()=>{
+    if(drawFallbackTimerRef.current){clearTimeout(drawFallbackTimerRef.current);drawFallbackTimerRef.current=null;}
+  },[]);
+
+  const triggerChartFromBuffer=useCallback(()=>{
+    const fullDesc=modelTransBuf.current.trim();
+    drawPendingRef.current=false; modelTransBuf.current='';
+    if(!fullDesc){setIsDrawingChart(false);userDrawLockRef.current=false;return;}
+    const gen=++drawGenRef.current;
+    setIsDrawingChart(true);
+    callChartAnalyze(fullDesc).then(c=>{
+      if(drawGenRef.current!==gen) return;
+      chartCacheRef.current.set(fullDesc,c);
+      setCurrentChart(c.hasChart?c:null);
+      setIsDrawingChart(false);
+      if(!c.hasChart) userDrawLockRef.current=false;
+    });
+  },[]);
+
+  // Chart analysis — for AUTOMATIC detection from lecture chunks.
+  // Respects userDrawLockRef: never clears a user-requested chart.
   const analyzeChart=useCallback(async(text:string)=>{
     if(!text.trim()) return;
+    if(userDrawLockRef.current) return;           // user draw in progress — don't touch chart
     if(chartCacheRef.current.has(text)){
       const c=chartCacheRef.current.get(text)!;
-      setCurrentChart(c.hasChart?c:null); return;
+      if(!userDrawLockRef.current) setCurrentChart(c.hasChart?c:null);
+      return;
     }
-    if(chartScore(text)<2){setCurrentChart(null);return;}
+    if(chartScore(text)<2){
+      if(!userDrawLockRef.current) setCurrentChart(null);
+      return;
+    }
     setIsDrawingChart(true);
     const c=await callChartAnalyze(text);
     chartCacheRef.current.set(text,c);
-    setCurrentChart(c.hasChart?c:null);
-    setIsDrawingChart(false);
+    if(!userDrawLockRef.current){               // re-check after async
+      setCurrentChart(c.hasChart?c:null);
+      setIsDrawingChart(false);
+    }
   },[]);
 
   // ── QR Scan session ──────────────────────────────────────────────
