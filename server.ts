@@ -380,6 +380,25 @@ function isAuthError(error: any): boolean {
   return status === 401 || status === 403 || msg.includes("api key") || msg.includes("unauthorized") || msg.includes("invalid key");
 }
 
+// Detects Gemini 429 / quota exhaustion errors (free tier or paid limit reached)
+function isQuotaError(error: any): boolean {
+  const status = error?.status || error?.code;
+  const msg = (error?.message || "").toLowerCase();
+  return (
+    status === 429 ||
+    status === "RESOURCE_EXHAUSTED" ||
+    msg.includes("quota") ||
+    msg.includes("resource_exhausted") ||
+    msg.includes("exceeded your current quota") ||
+    msg.includes("rate limit") ||
+    msg.includes("free tier")
+  );
+}
+
+// Friendly Arabic quota error sent to the client
+const QUOTA_ERROR_AR =
+  "تجاوزت الحصة المجانية لـ Gemini API. أضف مفتاح API خاصاً بك من إعدادات الذكاء الاصطناعي (الرمز ⚙️ في الزاوية العلوية) — احصل على مفتاح مجاني من ai.google.dev";
+
 // ⏳ Robust Exponential Backoff with Jitter for Gemini API to neutralize temporary 503 spikes or 429 rate limits
 async function callWithRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 1500): Promise<T> {
   let attempt = 0;
@@ -1644,17 +1663,27 @@ app.post("/api/ai/lecture-extract-file", async (req, res) => {
     } else if (mime.startsWith("image/")) {
       const customKey = (req.headers["x-custom-api-key"] as string || "").trim();
       const apiKey = customKey || getServerGeminiKey();
-      if (!apiKey) return res.status(400).json({ success: false, error: "API key مطلوب لمعالجة الصور" });
+      if (!apiKey) return res.status(400).json({ success: false, error: "مفتاح API مطلوب لمعالجة الصور. أضفه من إعدادات الذكاء الاصطناعي." });
       const ai = new GoogleGenAI({ apiKey });
-      const result: any = await generateContentWithRetryAndFallback(ai, {
-        model: "gemini-2.5-flash",
-        contents: [{ role: "user", parts: [
-          { inlineData: { mimeType: mime || "image/png", data: fileData } },
-          { text: "استخرج كل النصوص الموجودة في هذه الصورة بدقة كاملة، محافظاً على التنسيق الأصلي قدر الإمكان. أعِد النص فقط دون أي تعليق." }
-        ]}],
-        config: { thinkingConfig: { thinkingBudget: 0 } }
-      });
-      extractedText = (result?.text || "").trim();
+      try {
+        const result: any = await generateContentWithRetryAndFallback(ai, {
+          model: "gemini-2.5-flash",
+          contents: [{ role: "user", parts: [
+            { inlineData: { mimeType: mime || "image/png", data: fileData } },
+            { text: "استخرج كل النصوص الموجودة في هذه الصورة بدقة كاملة، محافظاً على التنسيق الأصلي قدر الإمكان. أعِد النص فقط دون أي تعليق." }
+          ]}],
+          config: { thinkingConfig: { thinkingBudget: 0 } }
+        });
+        extractedText = (result?.text || "").trim();
+      } catch (imgErr: any) {
+        if (isQuotaError(imgErr)) {
+          return res.status(429).json({ success: false, error: QUOTA_ERROR_AR });
+        }
+        if (isAuthError(imgErr)) {
+          return res.status(401).json({ success: false, error: "مفتاح API غير صالح. تحقق من إعدادات الذكاء الاصطناعي." });
+        }
+        throw imgErr; // re-throw other errors to outer catch
+      }
 
     } else {
       const { OfficeParser } = await import("officeparser");
@@ -1668,7 +1697,13 @@ app.post("/api/ai/lecture-extract-file", async (req, res) => {
     return res.json({ success: true, text: extractedText.trim() });
   } catch (err: any) {
     console.error("lecture-extract-file error:", err);
-    return res.status(500).json({ success: false, error: `فشل استخراج النص: ${err.message || err}` });
+    if (isQuotaError(err)) {
+      return res.status(429).json({ success: false, error: QUOTA_ERROR_AR });
+    }
+    if (isAuthError(err)) {
+      return res.status(401).json({ success: false, error: "مفتاح API غير صالح. تحقق من إعدادات الذكاء الاصطناعي." });
+    }
+    return res.status(500).json({ success: false, error: "فشل استخراج النص من الملف. تأكد أن الملف واضح وغير تالف." });
   }
 });
 
@@ -1968,27 +2003,18 @@ app.post("/api/ai/lecture-chart-analyze", async (req, res) => {
       required: ["hasChart","chartType"]
     };
 
-    const snippet = text.slice(0, 2000);
+    const snippet = text.slice(0, 1200);
     const prompt =
-      "أنت محلل بيانات أكاديمي. حلّل المقطع التالي وحدّد إذا كان يصف بيانات أو أشكالاً يمكن تمثيلها بصرياً على السبورة.\n\n" +
-      "الأنواع (chartType) — اختر الأنسب:\n" +
-      "\"bar\"        → مقارنة بين فئات بأرقام واضحة (تدعم القيم السالبة)\n" +
-      "\"line\"       → بيانات تتطور عبر الزمن أو متغير متصل\n" +
-      "\"pie\"        → نسب مئوية أو أجزاء من كل\n" +
-      "\"table\"      → جدول بيانات منظّم بأعمدة وصفوف\n" +
-      "\"diagram\"    → هيكل أو مراحل أو خوارزمية أو علاقات بين عناصر\n" +
-      "\"coordinate\" → مستوى إحداثي (محور x وy) مع نقاط أو متجهات — استخدمه عند وجود أزواج (x,y) أو إحداثيات سالبة أو موجبة\n" +
-      "\"none\"       → نص شرحي فقط بلا بيانات أو أشكال مرئية واضحة\n\n" +
-      "قواعد استخراج البيانات:\n" +
-      "- bar/line/pie: استخرج labels (أسماء الفئات) وdatasets (الأرقام). القيم السالبة مسموحة.\n" +
-      "- table: استخرج tableHeaders وtableRows.\n" +
-      "- diagram: استخرج diagramNodes (shape: box|circle|diamond) وdiagramEdges بتسميات واضحة.\n" +
-      "- coordinate: استخرج coordPoints (نقاط بإحداثيات x,y بما فيها السالبة مثل x=-3,y=2) و/أو coordLines (خطوط أو متجهات من (x1,y1) إلى (x2,y2)).\n" +
-      "- إذا ذُكرت أرقام أو نسب أو إحداثيات، حاول دائماً استخراج بيانات حقيقية وليس فارغة.\n" +
-      "- حالات خاصة مهمة:\n" +
-      "  • إذا طُلب 'نظام الإحداثيات' أو 'ارسم المحاور' أو 'المستوى الإحداثي' بدون نقاط محددة → أعطِ chartType='coordinate' مع coordPoints=[] وcoordLines=[].\n" +
-      "  • لا تُعطِ chartType='diagram' لطلبات الرسم الإحداثي أو المحاور — diagram مخصص للهياكل والخوارزميات فقط.\n" +
-      "- عند الشك بين bar وcoordinate: إذا كان المحتوى عن محاور إحداثية (x,y) أو نقاط هندسية أو متجهات → اختر coordinate.\n\n" +
+      "محلل بيانات أكاديمي. هل يصف المقطع بيانات مرئية؟\n\n" +
+      "chartType:\n" +
+      "bar=أعمدة بأرقام | line=تسلسل زمني | pie=نسب% | table=جدول | diagram=هيكل/خوارزمية | coordinate=محاور x,y/إحداثيات/نقاط هندسية | none=نص فقط\n\n" +
+      "قواعد:\n" +
+      "- bar/line/pie: أعطِ labels وdatasets (تدعم القيم السالبة).\n" +
+      "- table: tableHeaders وtableRows.\n" +
+      "- diagram: diagramNodes(shape:box|circle|diamond) وdiagramEdges.\n" +
+      "- coordinate: coordPoints[{x,y,label}] و/أو coordLines[{x1,y1,x2,y2,label}]. سالب مقبول.\n" +
+      "- 'نظام إحداثيات/ارسم محاور/مستوى إحداثي' بدون نقاط → coordinate مع coordPoints=[] coordLines=[].\n" +
+      "- محاور x,y أو نقاط هندسية أو متجهات → coordinate لا diagram.\n\n" +
       "المقطع:\n\"\"\"" + snippet + "\"\"\"";
 
     const result: any = await generateContentWithRetryAndFallback(ai, {
