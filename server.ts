@@ -2088,7 +2088,11 @@ app.post("/api/ai/explain-drawing", async (req, res) => {
     };
 
     const prompt =
-      "أنت مدرّس ذكي. المستخدم رسم رسمًا يدويًا على السبورة.\n" +
+      "أنت مدرّس ذكي. المستخدم رسم رسمًا يدويًا على السبورة الرقمية.\n\n" +
+      "⚠️ تنبيه مهم عن نظام الإحداثيات في الصورة:\n" +
+      "الصورة مأخوذة من canvas HTML حيث y=0 في الأعلى ويزيد نحو الأسفل (عكس الرياضيات).\n" +
+      "لذلك: خط يرتفع بصرياً (من أسفل إلى أعلى في الصورة) يمثّل قيم y موجبة ومتزايدة في الرياضيات.\n" +
+      "يجب دائماً عكس محور y عند استخراج الإحداثيات الرياضية: ما يبدو في الأعلى هو y موجب، ما في الأسفل هو y سالب.\n\n" +
       "افهم الرسم ثم:\n" +
       "1. اشرح محتواه في جملة أو جملتين واضحتين بالعربية (explanation).\n" +
       "2. إذا كان الرسم يمثّل بيانات قابلة للتمثيل (مخطط، جدول، مخطط انسيابي، محاور إحداثيات) → hasChart=true وأعطِ البيانات المناسبة.\n" +
@@ -2097,7 +2101,8 @@ app.post("/api/ai/explain-drawing", async (req, res) => {
       "- bar/line/pie: labels وdatasets\n" +
       "- table: tableHeaders وtableRows\n" +
       "- diagram: diagramNodes(shape:box|circle|diamond) وdiagramEdges\n" +
-      "- coordinate: coordPoints[{x,y,label}] و/أو coordLines[{x1,y1,x2,y2,label}]";
+      "- coordinate: coordPoints[{x,y,label}] و/أو coordLines[{x1,y1,x2,y2,label}]\n" +
+      "  للميل (slope): الخط الذي يرتفع من اليسار إلى اليمين له ميل موجب (x2>x1 و y2>y1)";
 
     const result: any = await generateContentWithRetryAndFallback(ai, {
       model: "gemini-2.5-flash",
