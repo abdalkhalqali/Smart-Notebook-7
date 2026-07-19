@@ -2035,6 +2035,97 @@ app.post("/api/ai/lecture-chart-analyze", async (req, res) => {
 });
 
 // ==========================================
+// Explain hand-drawn sketch — vision + structured chart extraction
+// ==========================================
+app.post("/api/ai/explain-drawing", async (req, res) => {
+  try {
+    const { imageBase64, mimeType = "image/png" } = req.body || {};
+    if (!imageBase64) return res.status(400).json({ success: false, error: "missing image" });
+
+    const customKey = (req.headers["x-custom-api-key"] as string || "").trim();
+    const apiKey = customKey || getServerGeminiKey();
+    if (!apiKey) return res.json({ success: false, error: "no_api_key", hasChart: false, chartType: "none" });
+
+    const ai = new GoogleGenAI({ apiKey });
+
+    const schema = {
+      type: Type.OBJECT,
+      properties: {
+        explanation:  { type: Type.STRING },
+        hasChart:     { type: Type.BOOLEAN },
+        chartType:    { type: Type.STRING },
+        title:        { type: Type.STRING },
+        labels:       { type: Type.ARRAY,  items: { type: Type.STRING } },
+        datasets: { type: Type.ARRAY, items: {
+          type: Type.OBJECT,
+          properties: { name: { type: Type.STRING }, values: { type: Type.ARRAY, items: { type: Type.NUMBER } } },
+          required: ["name","values"]
+        }},
+        tableHeaders: { type: Type.ARRAY, items: { type: Type.STRING } },
+        tableRows:    { type: Type.ARRAY, items: { type: Type.ARRAY, items: { type: Type.STRING } } },
+        diagramNodes: { type: Type.ARRAY, items: {
+          type: Type.OBJECT,
+          properties: { id: { type: Type.STRING }, label: { type: Type.STRING }, shape: { type: Type.STRING } },
+          required: ["id","label","shape"]
+        }},
+        diagramEdges: { type: Type.ARRAY, items: {
+          type: Type.OBJECT,
+          properties: { from: { type: Type.STRING }, to: { type: Type.STRING }, label: { type: Type.STRING } },
+          required: ["from","to","label"]
+        }},
+        coordPoints: { type: Type.ARRAY, items: {
+          type: Type.OBJECT,
+          properties: { x: { type: Type.NUMBER }, y: { type: Type.NUMBER }, label: { type: Type.STRING } },
+          required: ["x","y"]
+        }},
+        coordLines: { type: Type.ARRAY, items: {
+          type: Type.OBJECT,
+          properties: { x1: { type: Type.NUMBER }, y1: { type: Type.NUMBER }, x2: { type: Type.NUMBER }, y2: { type: Type.NUMBER }, label: { type: Type.STRING } },
+          required: ["x1","y1","x2","y2"]
+        }}
+      },
+      required: ["explanation","hasChart","chartType"]
+    };
+
+    const prompt =
+      "أنت مدرّس ذكي. المستخدم رسم رسمًا يدويًا على السبورة.\n" +
+      "افهم الرسم ثم:\n" +
+      "1. اشرح محتواه في جملة أو جملتين واضحتين بالعربية (explanation).\n" +
+      "2. إذا كان الرسم يمثّل بيانات قابلة للتمثيل (مخطط، جدول، مخطط انسيابي، محاور إحداثيات) → hasChart=true وأعطِ البيانات المناسبة.\n" +
+      "3. إذا لم يكن قابلاً للتمثيل → hasChart=false, chartType=none.\n\n" +
+      "chartType: bar|line|pie|table|diagram|coordinate|none\n" +
+      "- bar/line/pie: labels وdatasets\n" +
+      "- table: tableHeaders وtableRows\n" +
+      "- diagram: diagramNodes(shape:box|circle|diamond) وdiagramEdges\n" +
+      "- coordinate: coordPoints[{x,y,label}] و/أو coordLines[{x1,y1,x2,y2,label}]";
+
+    const result: any = await generateContentWithRetryAndFallback(ai, {
+      model: "gemini-2.5-flash",
+      contents: [{
+        role: "user",
+        parts: [
+          { inlineData: { mimeType, data: imageBase64 } },
+          { text: prompt }
+        ]
+      }],
+      config: {
+        thinkingConfig: { thinkingBudget: 0 },
+        responseMimeType: "application/json",
+        responseSchema: schema
+      }
+    });
+
+    let data: any = { explanation: "تعذّر تحليل الرسم", hasChart: false, chartType: "none" };
+    try { data = JSON.parse(result?.text || "{}"); } catch (_) {}
+    return res.json({ success: true, ...data });
+  } catch (err: any) {
+    console.error("explain-drawing error:", err);
+    if (isQuotaError(err)) return res.json({ success: false, error: "quota", hasChart: false, chartType: "none" });
+    return res.json({ success: false, error: "فشل التحليل", hasChart: false, chartType: "none" });
+  }
+});
+
+// ==========================================
 // Lecture math preprocessing — wraps math expressions in $...$ (LaTeX)
 // so the narrator whiteboard can render them with real math typesetting.
 // ==========================================

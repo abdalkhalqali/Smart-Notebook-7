@@ -506,8 +506,6 @@ function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMs
         border:'12px solid #6b4220',
         boxShadow:'0 0 0 2px #a0784a, 0 12px 48px rgba(0,0,0,0.6), inset 0 0 0 1px rgba(255,255,255,0.2)',
         background:'#fefdf8',
-        backgroundImage:'repeating-linear-gradient(transparent,transparent 31px,#c9ddf0 31px,#c9ddf0 32px)',
-        backgroundPositionY:'10px',
       }}>
       {/* Frame inner glow */}
       <div className="absolute inset-0 pointer-events-none rounded-sm"
@@ -604,6 +602,124 @@ function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMs
             )}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════
+// DRAW PAD — full-whiteboard canvas overlay for manual sketching
+// ══════════════════════════════════════════════════════════════════
+function DrawPad({onClose,onEnhance,isEnhancing}:{
+  onClose:()=>void; onEnhance:(b64:string)=>void; isEnhancing:boolean;
+}){
+  const canvasRef=useRef<HTMLCanvasElement>(null);
+  const [isDrawing,setIsDrawing]=useState(false);
+  const [penColor,setPenColor]=useState('#1a1832');
+  const [penSize,setPenSize]=useState(3);
+  const [tool,setTool]=useState<'pen'|'eraser'>('pen');
+  const lastPos=useRef<{x:number;y:number}|null>(null);
+
+  useEffect(()=>{
+    const c=canvasRef.current; if(!c) return;
+    const ctx=c.getContext('2d')!;
+    ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,c.width,c.height);
+  },[]);
+
+  const getPos=(e:React.MouseEvent|React.TouchEvent,c:HTMLCanvasElement)=>{
+    const rect=c.getBoundingClientRect();
+    const sx=c.width/rect.width, sy=c.height/rect.height;
+    if('touches' in e){const t=e.touches[0];return{x:(t.clientX-rect.left)*sx,y:(t.clientY-rect.top)*sy};}
+    return{x:((e as React.MouseEvent).clientX-rect.left)*sx,y:((e as React.MouseEvent).clientY-rect.top)*sy};
+  };
+
+  const startDraw=(e:React.MouseEvent|React.TouchEvent)=>{
+    e.preventDefault(); setIsDrawing(true);
+    const c=canvasRef.current; if(!c) return;
+    lastPos.current=getPos(e,c);
+  };
+  const draw=(e:React.MouseEvent|React.TouchEvent)=>{
+    if(!isDrawing) return;
+    const c=canvasRef.current; if(!c) return;
+    const ctx=c.getContext('2d')!;
+    const pos=getPos(e,c);
+    if(!lastPos.current){lastPos.current=pos;return;}
+    ctx.beginPath();
+    ctx.lineWidth=tool==='eraser'?penSize*6:penSize;
+    ctx.lineCap='round'; ctx.lineJoin='round';
+    ctx.strokeStyle=tool==='eraser'?'#ffffff':penColor;
+    ctx.moveTo(lastPos.current.x,lastPos.current.y);
+    ctx.lineTo(pos.x,pos.y); ctx.stroke();
+    lastPos.current=pos;
+  };
+  const endDraw=()=>{setIsDrawing(false);lastPos.current=null;};
+
+  const clear=()=>{
+    const c=canvasRef.current; if(!c) return;
+    const ctx=c.getContext('2d')!;
+    ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,c.width,c.height);
+  };
+  const submit=()=>{
+    const c=canvasRef.current; if(!c) return;
+    onEnhance(c.toDataURL('image/png').split(',')[1]);
+  };
+
+  return(
+    <div className="absolute inset-0 z-30 flex flex-col" style={{borderRadius:'inherit',overflow:'hidden'}}>
+      {/* Toolbar */}
+      <div className="shrink-0 flex items-center gap-2 px-3 py-2 bg-slate-900/95 backdrop-blur-sm border-b border-white/10">
+        <span className="text-white text-xs font-black">✏️ ارسم هنا</span>
+        <div className="w-px h-4 bg-white/20 mx-1"/>
+        {/* Colors */}
+        {(['#1a1832','#dc2626','#2563eb','#16a34a','#d97706','#7c3aed'] as const).map(c=>(
+          <button key={c} onClick={()=>{setTool('pen');setPenColor(c);}}
+            className="w-5 h-5 rounded-full transition-transform hover:scale-110"
+            style={{background:c,outline:penColor===c&&tool==='pen'?'2.5px solid #fff':'2.5px solid transparent',outlineOffset:1}}/>
+        ))}
+        <div className="w-px h-4 bg-white/20 mx-1"/>
+        {/* Sizes */}
+        {([2,4,7] as const).map(s=>(
+          <button key={s} onClick={()=>setPenSize(s)}
+            className="flex items-center justify-center w-7 h-7 rounded-lg transition"
+            style={{background:penSize===s&&tool==='pen'?'#4f46e5':'#374151'}}>
+            <div className="rounded-full bg-white" style={{width:s+2,height:s+2}}/>
+          </button>
+        ))}
+        <div className="w-px h-4 bg-white/20 mx-1"/>
+        <button onClick={()=>setTool('eraser')}
+          className="px-2 py-1 rounded-lg text-[11px] font-bold transition"
+          style={{background:tool==='eraser'?'#4f46e5':'#374151',color:'white'}}>
+          ممحاة
+        </button>
+        <button onClick={clear}
+          className="px-2 py-1 rounded-lg text-[11px] font-bold bg-red-800/80 hover:bg-red-700 text-white transition">
+          مسح الكل
+        </button>
+        <div className="flex-1"/>
+        <button onClick={onClose} className="text-slate-400 hover:text-white transition text-sm w-7 h-7 flex items-center justify-center rounded-lg bg-white/5 hover:bg-white/15">✕</button>
+      </div>
+      {/* Canvas */}
+      <canvas
+        ref={canvasRef} width={1400} height={900}
+        className="flex-1 w-full touch-none"
+        style={{cursor:tool==='eraser'?'cell':'crosshair',background:'#fff',display:'block'}}
+        onMouseDown={startDraw} onMouseMove={draw} onMouseUp={endDraw} onMouseLeave={endDraw}
+        onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={endDraw}
+      />
+      {/* Bottom bar */}
+      <div className="shrink-0 flex items-center gap-3 px-4 py-3 bg-slate-900/95 backdrop-blur-sm border-t border-white/10">
+        <button onClick={onClose}
+          className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-bold transition">
+          إلغاء
+        </button>
+        <div className="flex-1"/>
+        <p className="text-[11px] text-slate-400">ارسم رسمك ثم اضغط — سيقوم الذكاء الاصطناعي بتحسينه وعرضه على السبورة</p>
+        <button onClick={submit} disabled={isEnhancing}
+          className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-black transition shadow-lg">
+          {isEnhancing
+            ?<><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"/>جاري التحسين…</>
+            :<>✨ شاهد رسمي</>}
+        </button>
       </div>
     </div>
   );
@@ -772,6 +888,10 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   // Direct draw command (user types "ارسم ...")
   const [directCmd,setDirectCmd]=useState('');
   const [showCmdBar,setShowCmdBar]=useState(false);
+
+  // Draw pad (manual sketching + AI enhancement)
+  const [showDrawPad,setShowDrawPad]=useState(false);
+  const [isEnhancing,setIsEnhancing]=useState(false);
 
   // Refs
   const wsRef=useRef<WebSocket|null>(null);
@@ -1010,6 +1130,45 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
       setTimeout(()=>setChartErrorMsg(''),6000);
     }
   },[clearDrawFallback]);
+
+  // Handle AI enhancement of a manual sketch
+  const handleExplainDrawing=useCallback(async(imgB64:string)=>{
+    setIsEnhancing(true);
+    try{
+      const r=await fetch(resolveApiUrl('/api/ai/explain-drawing'),{
+        method:'POST',
+        headers:{'Content-Type':'application/json',...getAiHeaders()},
+        body:JSON.stringify({imageBase64:imgB64,mimeType:'image/png'})
+      });
+      const data=await r.json();
+      // Show enhanced chart on whiteboard
+      if(data.hasChart){
+        userDrawLockRef.current=true;
+        const myGen=++userDrawGenRef.current;
+        setIsDrawingChart(true);
+        setTimeout(()=>{
+          if(userDrawGenRef.current!==myGen) return;
+          setCurrentChart({
+            hasChart:data.hasChart, chartType:data.chartType,
+            title:data.title, labels:data.labels, datasets:data.datasets,
+            tableHeaders:data.tableHeaders, tableRows:data.tableRows,
+            diagramNodes:data.diagramNodes, diagramEdges:data.diagramEdges,
+            coordPoints:data.coordPoints, coordLines:data.coordLines,
+          } as ChartData);
+          setIsDrawingChart(false);
+        },500);
+      }
+      // Add explanation to Q&A
+      if(data.explanation){
+        setQa(q=>[...q,{id:Date.now().toString(),role:'model',text:data.explanation}]);
+      }
+      setShowDrawPad(false);
+    }catch(e){
+      console.error('explain-drawing',e);
+    }finally{
+      setIsEnhancing(false);
+    }
+  },[]);
 
   // Start session
   const start=useCallback(async()=>{
@@ -1303,23 +1462,11 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   );
 
   // ── SESSION VIEW ──────────────────────────────────────────────
+  // Whiteboard fills the entire area; controls float as a glass bar at bottom
   const renderSession=()=>(
-    <div className="flex flex-col h-full min-h-0">
-      {/* Status strip */}
-      <div className="shrink-0 flex items-center justify-between px-4 py-2 border-b border-white/5">
-        <div className="flex items-center gap-2">
-          <div className={`w-2.5 h-2.5 rounded-full ${statusColor[status]}`}/>
-          <span className="text-xs font-bold text-slate-300">{statusLabel[status]}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          {isDrawingChart&&<span className="text-[10px] text-indigo-300 animate-pulse">📊 رسم بياني…</span>}
-          {currentChart?.hasChart&&!isDrawingChart&&(
-            <span className="text-[10px] text-indigo-400 flex items-center gap-1">📊 {currentChart.title||'رسم بياني'}</span>
-          )}
-        </div>
-      </div>
+    <div className="relative flex flex-col h-full min-h-0">
 
-      {/* ⭐ WHITEBOARD — takes all flex space ⭐ */}
+      {/* ⭐ WHITEBOARD — fills 100% of the space ⭐ */}
       <Whiteboard
         text={chunkText}
         chart={currentChart}
@@ -1328,68 +1475,85 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
         isDrawingChart={isDrawingChart}
         chartErrorMsg={chartErrorMsg}/>
 
-      {/* Q&A strip (collapsible) */}
-      {qa.length>0&&(
-        <div className="shrink-0 max-h-28 overflow-y-auto border-t border-white/5 px-4 py-2 space-y-1.5">
-          {qa.slice(-4).map(item=>(
-            <div key={item.id} className={`flex ${item.role==='user'?'justify-end':'justify-start'}`}>
-              <div className={`max-w-[88%] px-3 py-1.5 rounded-xl text-[12px] leading-relaxed ${
-                item.role==='user'?'bg-blue-600/30 border border-blue-500/30 text-blue-100 rounded-tr-sm'
-                :'bg-purple-600/20 border border-purple-500/20 text-purple-100 rounded-tl-sm'}`}>
-                <MathText text={item.text} dir="rtl"/>
-              </div>
+      {/* DrawPad overlay — covers the whiteboard when active */}
+      {showDrawPad&&(
+        <DrawPad
+          onClose={()=>setShowDrawPad(false)}
+          onEnhance={handleExplainDrawing}
+          isEnhancing={isEnhancing}/>
+      )}
+
+      {/* ── Floating overlay panel (bottom of whiteboard) ── */}
+      {!showDrawPad&&(
+        <div className="absolute bottom-3 left-3 right-3 z-20 flex flex-col gap-1.5 pointer-events-none">
+
+          {/* Q&A bubbles */}
+          {qa.length>0&&(
+            <div className="pointer-events-auto max-h-24 overflow-y-auto rounded-xl bg-black/70 backdrop-blur-md px-3 py-2 space-y-1.5 border border-white/10">
+              {qa.slice(-3).map(item=>(
+                <div key={item.id} className={`flex ${item.role==='user'?'justify-end':'justify-start'}`}>
+                  <div className={`max-w-[88%] px-3 py-1.5 rounded-xl text-[11px] leading-relaxed ${
+                    item.role==='user'?'bg-blue-600/50 text-blue-100':'bg-purple-600/35 text-purple-100'}`}>
+                    <MathText text={item.text} dir="rtl"/>
+                  </div>
+                </div>
+              ))}
+              <div ref={qaEndRef}/>
             </div>
-          ))}
-          <div ref={qaEndRef}/>
+          )}
+
+          {/* Direct draw command bar */}
+          {showCmdBar&&(
+            <div className="pointer-events-auto flex gap-2 rounded-xl bg-black/70 backdrop-blur-md px-3 py-2 border border-white/10">
+              <input value={directCmd} onChange={e=>setDirectCmd(e.target.value)}
+                onKeyDown={e=>{if(e.key==='Enter'&&directCmd.trim())handleDirectDraw(directCmd);if(e.key==='Escape')setShowCmdBar(false);}}
+                placeholder="ارسم مخطط عمودي للبيانات… أو ارسم دورة حياة البكتيريا"
+                className="flex-1 bg-white/10 border border-white/15 rounded-xl px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 outline-none focus:ring-1 focus:ring-indigo-500"/>
+              <button onClick={()=>{if(directCmd.trim())handleDirectDraw(directCmd);}}
+                disabled={!directCmd.trim()}
+                className="px-4 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold disabled:opacity-40 transition">
+                ارسم
+              </button>
+              <button onClick={()=>{setShowCmdBar(false);setDirectCmd('');}}
+                className="px-2.5 rounded-xl bg-white/5 text-slate-400 hover:text-slate-200 text-xs transition">✕</button>
+            </div>
+          )}
+
+          {/* Main control bar — glass morphism */}
+          <div className="pointer-events-auto flex items-center gap-2 rounded-2xl bg-black/75 backdrop-blur-md px-4 py-2.5 border border-white/10 shadow-xl">
+            {/* Status */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              <div className={`w-2 h-2 rounded-full ${statusColor[status]}`}/>
+              <span className="text-[10px] font-bold text-slate-400">{statusLabel[status]}</span>
+            </div>
+            <div className="flex-1"/>
+            {/* Buttons */}
+            <button onClick={askNow} disabled={status==='listening'||status==='paused'}
+              className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-extrabold transition ${
+                status==='listening'?'bg-blue-600/80 text-white cursor-default'
+                :'bg-blue-600/30 border border-blue-500/40 text-blue-200 hover:bg-blue-600/50'} disabled:opacity-50`}>
+              🎙 اسأل
+            </button>
+            <button onClick={()=>setShowCmdBar(s=>!s)}
+              className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-extrabold border transition ${
+                showCmdBar?'bg-indigo-600 border-indigo-500 text-white':'bg-indigo-600/20 border-indigo-500/40 text-indigo-300 hover:bg-indigo-600/35'}`}>
+              📊 ارسم نصياً
+            </button>
+            <button onClick={()=>setShowDrawPad(true)}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-extrabold border border-amber-500/40 bg-amber-600/20 text-amber-300 hover:bg-amber-600/35 transition">
+              ✏️ ارسم يدوياً
+            </button>
+            <button onClick={togglePause} disabled={status==='listening'||status==='answering'||status==='done'}
+              className="px-3 py-1.5 rounded-xl bg-white/5 border border-white/15 text-slate-200 hover:bg-white/15 text-xs font-extrabold disabled:opacity-40 transition">
+              {status==='paused'?'▶ استكمال':'⏸ توقف'}
+            </button>
+            <button onClick={stop}
+              className="px-3 py-1.5 rounded-xl bg-red-600/30 border border-red-500/40 text-red-300 hover:bg-red-600/50 text-xs font-extrabold transition">
+              ⏹ إنهاء
+            </button>
+          </div>
         </div>
       )}
-
-      {/* Direct draw command bar */}
-      {showCmdBar&&(
-        <div className="shrink-0 flex gap-2 px-4 py-2 border-t border-white/5">
-          <input value={directCmd} onChange={e=>setDirectCmd(e.target.value)}
-            onKeyDown={e=>{if(e.key==='Enter'&&directCmd.trim())handleDirectDraw(directCmd);if(e.key==='Escape')setShowCmdBar(false);}}
-            placeholder="ارسم مخطط عمودي للبيانات… أو ارسم دورة حياة البكتيريا"
-            className="flex-1 bg-white/5 border border-white/15 rounded-xl px-3 py-2 text-xs text-slate-200 placeholder-slate-500 outline-none focus:ring-1 focus:ring-indigo-500"/>
-          <button onClick={()=>{if(directCmd.trim())handleDirectDraw(directCmd);}}
-            disabled={!directCmd.trim()}
-            className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold disabled:opacity-40 transition">
-            ارسم
-          </button>
-          <button onClick={()=>{setShowCmdBar(false);setDirectCmd('');}}
-            className="px-3 py-2 rounded-xl bg-white/5 text-slate-400 hover:text-slate-200 text-xs transition">✕</button>
-        </div>
-      )}
-
-      {/* Controls */}
-      <div className="shrink-0 px-4 py-3 border-t border-white/5 space-y-2">
-        <div className="flex items-center justify-center gap-2">
-          <button onClick={askNow} disabled={status==='listening'||status==='paused'}
-            className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-extrabold transition ${
-              status==='listening'?'bg-blue-600/60 text-white cursor-default'
-              :'bg-blue-600/25 border border-blue-500/40 text-blue-200 hover:bg-blue-600/40'} disabled:opacity-60`}>
-            🎙 اسأل
-          </button>
-          <button onClick={()=>setShowCmdBar(s=>!s)}
-            className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-extrabold border transition ${
-              showCmdBar?'bg-indigo-600 border-indigo-500 text-white':'bg-indigo-600/20 border-indigo-500/40 text-indigo-300 hover:bg-indigo-600/35'}`}>
-            📊 ارسم
-          </button>
-          <button onClick={togglePause} disabled={status==='listening'||status==='answering'||status==='done'}
-            className="px-4 py-2.5 rounded-xl bg-white/5 border border-white/15 text-slate-200 hover:bg-white/10 text-xs font-extrabold disabled:opacity-40 transition">
-            {status==='paused'?'▶ استكمال':'⏸ توقف'}
-          </button>
-          <button onClick={stop}
-            className="px-4 py-2.5 rounded-xl bg-red-600/30 border border-red-500/50 text-red-300 hover:bg-red-600/50 text-xs font-extrabold transition">
-            إنهاء
-          </button>
-        </div>
-        <p className="text-[10px] text-center text-slate-500">
-          {askMode?'🎙 تحدّث الآن — هو يستمع لك':
-           status==='done'?'انتهى الشرح — يمكنك الرسم أو طرح أسئلة':
-           'يمكنك المقاطعة بصوتك أو بالأمر "ارسم …"'}
-        </p>
-      </div>
     </div>
   );
 
