@@ -486,12 +486,13 @@ function ChartPanel({chart}:{chart:ChartData}){
 // ══════════════════════════════════════════════════════════════════
 // WHITEBOARD — realistic white board, fills all available space
 // ══════════════════════════════════════════════════════════════════
-function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMsg}:{
+function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMsg,drawImg,isAnalyzingDraw}:{
   text:string; chart:ChartData|null; chunkIdx:number; totalChunks:number; isDrawingChart:boolean; chartErrorMsg?:string;
+  drawImg?:string|null; isAnalyzingDraw?:boolean;
 }){
   const {disp,done}=useTypewriter(text,5,11);
   const boardScrollRef=useRef<HTMLDivElement>(null);
-  const hasContent=disp.trim().length>0||chart?.hasChart;
+  const hasContent=disp.trim().length>0||chart?.hasChart||!!drawImg;
 
   // Auto-scroll to bottom as text is typed so board always shows latest content
   useEffect(()=>{
@@ -598,6 +599,25 @@ function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMs
             {chart?.hasChart&&(
               <div className="border-t-2 border-dashed border-slate-200 pt-5">
                 <ChartPanel chart={chart}/>
+              </div>
+            )}
+
+            {/* Hand-drawn image — shown when no AI chart is available yet */}
+            {drawImg&&!chart?.hasChart&&(
+              <div className="relative mt-2 rounded-2xl overflow-hidden border-2 border-dashed border-indigo-300/70 shadow-lg">
+                <img
+                  src={`data:image/png;base64,${drawImg}`}
+                  alt="رسم يدوي"
+                  className="w-full object-contain bg-white"
+                  style={{maxHeight:400}}/>
+                {isAnalyzingDraw&&(
+                  <div className="absolute inset-0 flex items-center justify-center bg-white/60 backdrop-blur-sm">
+                    <div className="flex items-center gap-3 bg-indigo-600 text-white px-5 py-3 rounded-2xl text-sm font-black shadow-2xl">
+                      <div className="w-5 h-5 border-[3px] border-white border-t-transparent rounded-full animate-spin"/>
+                      الذكاء الاصطناعي يحلل رسمك ويحوّله…
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -892,6 +912,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   // Draw pad (manual sketching + AI enhancement)
   const [showDrawPad,setShowDrawPad]=useState(false);
   const [isEnhancing,setIsEnhancing]=useState(false);
+  const [manualDrawImg,setManualDrawImg]=useState<string|null>(null);
 
   // Refs
   const wsRef=useRef<WebSocket|null>(null);
@@ -1133,7 +1154,12 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
 
   // Handle AI enhancement of a manual sketch
   const handleExplainDrawing=useCallback(async(imgB64:string)=>{
+    // ① Show the raw drawing on the whiteboard IMMEDIATELY — no waiting for AI
+    setManualDrawImg(imgB64);
+    setShowDrawPad(false);
     setIsEnhancing(true);
+    userDrawLockRef.current=true;
+
     try{
       const r=await fetch(resolveApiUrl('/api/ai/explain-drawing'),{
         method:'POST',
@@ -1141,9 +1167,9 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
         body:JSON.stringify({imageBase64:imgB64,mimeType:'image/png'})
       });
       const data=await r.json();
-      // Show enhanced chart on whiteboard
+
+      // ② If AI extracted structured chart data → render it and clear the raw image
       if(data.hasChart){
-        userDrawLockRef.current=true;
         const myGen=++userDrawGenRef.current;
         setIsDrawingChart(true);
         setTimeout(()=>{
@@ -1155,16 +1181,20 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
             diagramNodes:data.diagramNodes, diagramEdges:data.diagramEdges,
             coordPoints:data.coordPoints, coordLines:data.coordLines,
           } as ChartData);
+          setManualDrawImg(null); // chart replaces the raw image
           setIsDrawingChart(false);
         },500);
       }
-      // Add explanation to Q&A
-      if(data.explanation){
-        setQa(q=>[...q,{id:Date.now().toString(),role:'model',text:data.explanation}]);
-      }
-      setShowDrawPad(false);
+
+      // ③ Show AI explanation in Q&A strip
+      const msg=data.explanation||(data.error==='no_api_key'
+        ?'💡 أضف مفتاح Gemini API من الإعدادات لتفعيل تحليل الرسم. رسمك يظهر على السبورة كما هو.'
+        :data.error?`تعذّر التحليل: ${data.error}`:null);
+      if(msg) setQa(q=>[...q,{id:Date.now().toString(),role:'model',text:msg}]);
+
     }catch(e){
       console.error('explain-drawing',e);
+      setQa(q=>[...q,{id:Date.now().toString(),role:'model',text:'⚠️ تعذّر الاتصال بخادم التحليل — رسمك محفوظ على السبورة.'}]);
     }finally{
       setIsEnhancing(false);
     }
@@ -1473,7 +1503,9 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
         chunkIdx={chunkIndex}
         totalChunks={totalChunks}
         isDrawingChart={isDrawingChart}
-        chartErrorMsg={chartErrorMsg}/>
+        chartErrorMsg={chartErrorMsg}
+        drawImg={manualDrawImg}
+        isAnalyzingDraw={isEnhancing}/>
 
       {/* DrawPad overlay — covers the whiteboard when active */}
       {showDrawPad&&(
