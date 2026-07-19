@@ -1300,9 +1300,12 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     }catch(_){}
 
     setStatus('connecting');
-    const key=(localStorage.getItem('aiProvider')||'gemini')==='gemini'?(localStorage.getItem('customAiKey')||''):'';
-    const params=new URLSearchParams({key,lang:'ar',mode:'lecture',voice});
+    const key=(localStorage.getItem("customAiKey")||"") .trim();
+    const provider=(localStorage.getItem("aiProvider")||"gemini").trim();
+    const endpointUrl=(localStorage.getItem("customEndpointUrl")||"").trim();
+    const params=new URLSearchParams({key,provider,lang:"ar",mode:"lecture",voice,...(provider==="custom"&&endpointUrl?{endpointUrl}:{})});
     audioCtxRef.current=new AudioContext({sampleRate:16000});
+
     playTimeRef.current=audioCtxRef.current.currentTime;
 
     const proto=window.location.protocol==='https:'?'wss:':'ws:';
