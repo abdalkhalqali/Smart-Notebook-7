@@ -3215,6 +3215,18 @@ export default function App() {
         body: JSON.stringify({ imageData: base64 })
       });
       const data = await res.json();
+
+      // Map server error codes to Arabic messages
+      if (data.error || !data.text) {
+        const errMsg = data.error === "quota"
+          ? "⚠️ نفدت حصة Gemini API اليومية — جرّب مفتاحاً آخر من الإعدادات أو انتظر حتى الغد."
+          : data.error === "rate_limit"
+          ? "⏱️ تجاوزت الحد المسموح في الدقيقة — جرّب مرة ثانية بعد لحظة."
+          : "❌ تعذّر استخراج النص من الصورة — تأكد أن الصورة واضحة وتحتوي على نص مقروء.";
+        setScannedTextOCR(errMsg);
+        return;
+      }
+
       setScannedTextOCR(data.text);
       const lecture = getSelectedLecture();
       if (lecture && lecture.pages.length > 0) {
@@ -3246,7 +3258,7 @@ export default function App() {
         updateLectureData(lecture.id, { documents: [...(lecture.documents || []), newDoc] });
       }
     } catch (err) {
-      setScannedTextOCR("تعذر قراءة الصورة، يرجى المحاولة مرة أخرى.");
+      setScannedTextOCR("❌ تعذر قراءة الصورة، يرجى المحاولة مرة أخرى.");
     } finally {
       setScanningImageOCR(false);
       // Reset input so same file can be selected again

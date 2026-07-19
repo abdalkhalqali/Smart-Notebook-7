@@ -363,10 +363,12 @@ async function executeVisionCall(req: express.Request, promptText: string, base6
       }
     };
 
+    // Use gemini-2.0-flash — better free-tier quota for multimodal/vision,
+    // and avoids thinkingConfig (unsupported by 2.0-flash) causing cascade failures.
     const response = await generateContentWithRetryAndFallback(ai, {
-      model: "gemini-2.5-flash",
+      model: "gemini-2.0-flash",
       contents: [imagePart, { text: promptText }],
-      config: { thinkingConfig: { thinkingBudget: 0 } }
+      config: {}
     });
 
     return response.text || "";
@@ -457,40 +459,58 @@ async function callWithRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 150
   throw new Error("Unable to contact Gemini AI after multiple attempts.");
 }
 
-// 🌐 Seamless Fallback mechanism to 'gemini-2.0-flash' in case 'gemini-2.5-flash' is overloaded with 503/UNAVAILABLE errors
+// 🌐 Seamless multi-level fallback: gemini-2.5-flash → gemini-2.0-flash → gemini-1.5-flash
+// Handles 503/UNAVAILABLE (overloaded) and RESOURCE_EXHAUSTED/quota errors at each level.
 async function generateContentWithRetryAndFallback(ai: any, p: { model: string; contents: any; config?: any }): Promise<any> {
+  // Strip thinkingConfig — not supported by 2.0-flash or 1.5-flash
+  const stripThinkingConfig = (cfg: any) => {
+    if (!cfg) return {};
+    const { thinkingConfig: _dropped, ...rest } = cfg as any;
+    return rest;
+  };
+
+  const isFallbackableError = (err: any) =>
+    err?.status === "UNAVAILABLE" ||
+    err?.status === "RESOURCE_EXHAUSTED" ||
+    err?.code === 503 ||
+    err?.code === 429 ||
+    isQuotaError(err) ||
+    isRateLimitError(err) ||
+    !!(err?.message && (
+      err.message.includes("503") ||
+      err.message.includes("429") ||
+      err.message.includes("high demand") ||
+      err.message.includes("temporary") ||
+      err.message.includes("UNAVAILABLE") ||
+      err.message.includes("Unavailable") ||
+      err.message.includes("busy")
+    ));
+
   try {
     return await callWithRetry(() => ai.models.generateContent(p));
-  } catch (error: any) {
-    const isDemandOrQuotaError = 
-      error?.status === "UNAVAILABLE" || 
-      error?.status === "RESOURCE_EXHAUSTED" ||
-      error?.code === 503 ||
-      error?.code === 429 ||
-      isQuotaError(error) ||
-      isRateLimitError(error) ||
-      (error?.message && (
-        error.message.includes("503") || 
-        error.message.includes("429") ||
-        error.message.includes("high demand") || 
-        error.message.includes("temporary") ||
-        error.message.includes("UNAVAILABLE") ||
-        error.message.includes("Unavailable") ||
-        error.message.includes("busy")
-      ));
+  } catch (err1: any) {
+    if (!isFallbackableError(err1)) throw err1;
 
-    if (isDemandOrQuotaError && p.model === "gemini-2.5-flash") {
-      console.warn("[Gemini API Fallback] 'gemini-2.5-flash' unavailable/quota — falling back to 'gemini-2.0-flash'...");
-      // gemini-2.0-flash does NOT support thinkingConfig — strip it to avoid a second error
-      const { thinkingConfig: _dropped, ...safeConfig } = (p.config || {}) as any;
-      const fallbackParams = {
-        ...p,
-        model: "gemini-2.0-flash",
-        config: { ...safeConfig }
-      };
-      return await callWithRetry(() => ai.models.generateContent(fallbackParams));
+    if (p.model === "gemini-2.5-flash") {
+      console.warn("[Gemini Fallback] gemini-2.5-flash → gemini-2.0-flash");
+      const p2 = { ...p, model: "gemini-2.0-flash", config: stripThinkingConfig(p.config) };
+      try {
+        return await callWithRetry(() => ai.models.generateContent(p2));
+      } catch (err2: any) {
+        if (!isFallbackableError(err2)) throw err2;
+        console.warn("[Gemini Fallback] gemini-2.0-flash → gemini-1.5-flash");
+        const p3 = { ...p2, model: "gemini-1.5-flash" };
+        return await callWithRetry(() => ai.models.generateContent(p3));
+      }
     }
-    throw error;
+
+    if (p.model === "gemini-2.0-flash") {
+      console.warn("[Gemini Fallback] gemini-2.0-flash → gemini-1.5-flash");
+      const p2 = { ...p, model: "gemini-1.5-flash", config: stripThinkingConfig(p.config) };
+      return await callWithRetry(() => ai.models.generateContent(p2));
+    }
+
+    throw err1;
   }
 }
 
@@ -869,11 +889,14 @@ app.post("/api/ai/ocr", async (req, res) => {
     if (isAuthError(error)) {
       return res.status(401).json({ error: "فشل الاتصال: مفتاح API غير صالح." });
     }
-    console.error("OCR error (falling back to stub):", error);
-    res.json({
-      text: "تم مسح الصورة بنجاح وتوليد المربعات النصية الذكية الداعمة للصفحة تلقائياً في الدفتر.",
-      isFallback: true
-    });
+    console.error("OCR error:", error);
+    if (isQuotaError(error)) {
+      return res.status(429).json({ error: "quota", text: null });
+    }
+    if (isRateLimitError(error)) {
+      return res.status(429).json({ error: "rate_limit", text: null });
+    }
+    res.status(500).json({ error: "ocr_failed", text: null });
   }
 });
 
@@ -1686,12 +1709,12 @@ app.post("/api/ai/lecture-extract-file", async (req, res) => {
       const ai = new GoogleGenAI({ apiKey });
       try {
         const result: any = await generateContentWithRetryAndFallback(ai, {
-          model: "gemini-2.5-flash",
+          model: "gemini-2.0-flash",
           contents: [{ role: "user", parts: [
             { inlineData: { mimeType: mime || "image/png", data: fileData } },
             { text: "استخرج كل النصوص الموجودة في هذه الصورة بدقة كاملة، محافظاً على التنسيق الأصلي قدر الإمكان. أعِد النص فقط دون أي تعليق." }
           ]}],
-          config: { thinkingConfig: { thinkingBudget: 0 } }
+          config: {}
         });
         extractedText = (result?.text || "").trim();
       } catch (imgErr: any) {
@@ -1940,12 +1963,12 @@ app.post("/api/qr-session/:sessionId/upload", async (req, res) => {
     const ai = new GoogleGenAI({ apiKey: session.apiKey });
     const mime = (fileType || "image/jpeg") as string;
     const result: any = await generateContentWithRetryAndFallback(ai, {
-      model: "gemini-2.5-flash",
+      model: "gemini-2.0-flash",
       contents: [{ role: "user", parts: [
         { inlineData: { mimeType: mime, data: fileData } },
         { text: `أنت خبير في قراءة النصوص والخطوط اليدوية.\nاستخرج كل ما هو مكتوب في هذه الصورة بدقة تامة، بما في ذلك:\n- الخط اليدوي بأي لغة\n- المعادلات الرياضية\n- الجداول والقوائم\n- العناوين والرموز\nحافظ على التنسيق الأصلي قدر الإمكان. أعِد النص فقط دون أي تعليق أو مقدمة.` }
       ]}],
-      config: { thinkingConfig: { thinkingBudget: 512 } }
+      config: {}
     });
     const text = (result?.text || "").trim();
     if (!text) {
