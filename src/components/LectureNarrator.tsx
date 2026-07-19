@@ -628,12 +628,13 @@ function chartScore(text:string):number{
   return s;
 }
 
-// ── Local chart parser — works instantly with ZERO API calls ─────────
-// Parses direct draw commands like "ارسم مخطط: أ=5 ب=8" or "رسم دائرة 40% 60%"
+// ── Local chart parser — instant, zero API ───────────────────────────
+// 1) Parses explicit data:  "ارسم مخطط: أ=5 ب=8 ج=3"
+// 2) Falls back to demo:    "ارسم مخطط عمودي"  → sample bar chart
 function parseChartLocally(text:string):ChartData{
   const t=text.trim();
 
-  // Coordinate system — detect axes/grid request (possibly with coordinate pairs)
+  // ── Coordinate system ─────────────────────────────────────────────
   if(COORD_CMD.test(t)){
     const pts:CoordPoint[]=[];
     const pairRe=/\(?\s*(-?\d+(?:\.\d+)?)\s*[,،]\s*(-?\d+(?:\.\d+)?)\s*\)?/g;
@@ -641,23 +642,23 @@ function parseChartLocally(text:string):ChartData{
     return{hasChart:true,chartType:'coordinate',title:'نظام الإحداثيات',coordPoints:pts,coordLines:[]};
   }
 
-  // Percentages → pie chart
-  const pctRe=/([^٠-٩\d,،:\n=\(\)]+?)\s*[:=]?\s*(\d+(?:\.\d+)?)\s*[%٪]/g;
+  // ── Percentages with labels → pie ─────────────────────────────────
+  const pctRe=/([^٠-٩\d,،:\n=\(\)]{1,20}?)\s*[:=]?\s*(\d+(?:\.\d+)?)\s*[%٪]/g;
   const pcts:{name:string;val:number}[]=[];
   let pm; while((pm=pctRe.exec(t))!==null){
-    const name=pm[1].replace(/^[\s:=-]+|[\s:=-]+$/g,'').trim();
-    if(name.length>0) pcts.push({name,val:+pm[2]});
+    const name=pm[1].replace(/^[\s:=،,-]+|[\s:=،,-]+$/g,'').trim();
+    if(name.length>0&&name.length<20) pcts.push({name,val:+pm[2]});
   }
   if(pcts.length>=2) return{hasChart:true,chartType:'pie',
     labels:pcts.map(p=>p.name),
     datasets:[{name:'النسبة',values:pcts.map(p=>p.val)}]};
 
-  // key=value or key:value pairs → bar or line
-  const kvRe=/([^٠-٩\d,،:\n=\(\)%٪]{1,20}?)\s*[=:]\s*(-?\d+(?:\.\d+)?)/g;
+  // ── key=value or key:value pairs → bar or line ────────────────────
+  const kvRe=/([^\u0660-\u0669\d,،:\n=\(\)%٪]{1,18}?)\s*[=:]\s*(-?\d+(?:\.\d+)?)/g;
   const kvs:{name:string;val:number}[]=[];
   let kv; while((kv=kvRe.exec(t))!==null){
-    const name=kv[1].replace(/^[\s:=-]+|[\s:=-]+$/g,'').trim();
-    if(name.length>0&&name.length<20) kvs.push({name,val:+kv[2]});
+    const name=kv[1].replace(/^[\s:=،,-]+|[\s:=،,-]+$/g,'').trim();
+    if(name.length>0&&name.length<18) kvs.push({name,val:+kv[2]});
   }
   if(kvs.length>=2){
     const isLine=/خط|زمن|سنة|شهر|يوم|line|year|month|trend/i.test(t);
@@ -665,6 +666,49 @@ function parseChartLocally(text:string):ChartData{
       labels:kvs.map(k=>k.name),
       datasets:[{name:'البيانات',values:kvs.map(k=>k.val)}]};
   }
+
+  // ── Bare numbers (no labels) → bar with auto labels ───────────────
+  const nums=(t.match(/-?\d+(?:\.\d+)?/g)||[]).map(Number).filter(n=>!isNaN(n));
+  if(nums.length>=2&&nums.length<=12){
+    const isLine=/خط|زمن|سنة|شهر|يوم|line|year|month|trend/i.test(t);
+    const isPie=/دائر|pie|نسب/i.test(t);
+    const labels=nums.map((_,i)=>String.fromCharCode(0x0623+i)); // أ،ب،ج…
+    return{hasChart:true,chartType:isPie?'pie':isLine?'line':'bar',
+      labels,datasets:[{name:'البيانات',values:nums}]};
+  }
+
+  // ── FALLBACK: command with no data → demo chart ───────────────────
+  // Draws an illustrative sample so the board always shows SOMETHING
+  if(/دائر|pie|نسب\s*مئو/i.test(t))
+    return{hasChart:true,chartType:'pie',title:'مخطط دائري — مثال',
+      labels:['الفئة أ','الفئة ب','الفئة ج','الفئة د'],
+      datasets:[{name:'النسبة',values:[35,28,22,15]}]};
+
+  if(/خطي|line|منحنى|تطور|زمن/i.test(t))
+    return{hasChart:true,chartType:'line',title:'مخطط خطي — مثال',
+      labels:['يناير','فبراير','مارس','أبريل','مايو','يونيو'],
+      datasets:[{name:'القيم',values:[30,48,42,65,58,74]}]};
+
+  if(/جدول|table/i.test(t))
+    return{hasChart:true,chartType:'table',title:'جدول — مثال',
+      tableHeaders:['العنصر','القيمة','الملاحظة'],
+      tableRows:[['البند ١','100','ممتاز'],['البند ٢','80','جيد جداً'],['البند ٣','65','مقبول']]};
+
+  if(/هيكل|مراحل|دورة|خوارزم|تدفق|diagram|flowchart/i.test(t))
+    return{hasChart:true,chartType:'diagram',title:'مخطط تدفق — مثال',
+      diagramNodes:[
+        {id:'s',label:'البداية',shape:'circle'},
+        {id:'p',label:'المعالجة',shape:'box'},
+        {id:'d',label:'قرار؟',shape:'diamond'},
+        {id:'e',label:'النهاية',shape:'circle'}
+      ],
+      diagramEdges:[{from:'s',to:'p',label:''},{from:'p',to:'d',label:''},{from:'d',to:'e',label:'نعم'}]};
+
+  // مخطط عمودي أو أي طلب رسم عام
+  if(/مخطط|عمودي|bar|أعمد|بيان|مقارن|رسم|ارسم/i.test(t))
+    return{hasChart:true,chartType:'bar',title:'مخطط عمودي — مثال',
+      labels:['أ','ب','ج','د','هـ'],
+      datasets:[{name:'البيانات',values:[65,42,78,55,88]}]};
 
   return{hasChart:false,chartType:'none'};
 }
