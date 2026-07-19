@@ -817,6 +817,30 @@ app.post("/api/ai/handwriting", async (req, res) => {
   }
 });
 
+// 2b. Explain a student's manual drawing on the board
+app.post("/api/ai/explain-drawing", async (req, res) => {
+  const { imageData } = req.body;
+  try {
+    if (!imageData) return res.status(400).json({ error: "لا توجد صورة للتحليل" });
+    const base64Data = imageData.replace(/^data:image\/\w+;base64,/, "");
+    const responseText = await executeVisionCall(
+      req,
+      `أنت مدرس ذكي يساعد الطالب. رسم الطالب هذا الرسم على السبورة أثناء المحاضرة.
+صف ما ترى في الرسم بدقة، ثم اشرح المفهوم أو الفكرة التي يعبر عنها بأسلوب تعليمي واضح ومبسط باللغة العربية.
+إذا كانت معادلة رياضية فحلها خطوة بخطوة، وإذا كان مخططاً فاشرح ما يعنيه، وإذا كان رسماً توضيحياً فصف العناصر وعلاقاتها.
+اكتب ردك بالعربية فقط.`,
+      base64Data,
+      "image/png"
+    );
+    res.json({ explanation: responseText.trim() || "لم أتمكن من تحليل الرسم — حاول مجدداً." });
+  } catch (error: any) {
+    console.error("explain-drawing error:", error);
+    if (isQuotaError(error)) return res.json({ explanation: QUOTA_ERROR_AR, quotaExceeded: true });
+    if (isAuthError(error)) return res.json({ explanation: "فشل الاتصال — أضف مفتاح API من الإعدادات (⚙️).", error: true });
+    res.json({ explanation: "تعذّر تحليل الرسم. تأكد من وجود مفتاح API في الإعدادات.", error: true });
+  }
+});
+
 // 3. OCR whiteboard image
 app.post("/api/ai/ocr", async (req, res) => {
   const { imageData } = req.body;

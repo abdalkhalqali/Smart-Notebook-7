@@ -486,12 +486,12 @@ function ChartPanel({chart}:{chart:ChartData}){
 // ══════════════════════════════════════════════════════════════════
 // WHITEBOARD — realistic white board, fills all available space
 // ══════════════════════════════════════════════════════════════════
-function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMsg}:{
-  text:string; chart:ChartData|null; chunkIdx:number; totalChunks:number; isDrawingChart:boolean; chartErrorMsg?:string;
+function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMsg,manualDrawImg,onClearDrawing}:{
+  text:string; chart:ChartData|null; chunkIdx:number; totalChunks:number; isDrawingChart:boolean; chartErrorMsg?:string; manualDrawImg?:string|null; onClearDrawing?:()=>void;
 }){
   const {disp,done}=useTypewriter(text,5,11);
   const boardScrollRef=useRef<HTMLDivElement>(null);
-  const hasContent=disp.trim().length>0||chart?.hasChart;
+  const hasContent=disp.trim().length>0||chart?.hasChart||!!manualDrawImg;
 
   // Auto-scroll to bottom as text is typed so board always shows latest content
   useEffect(()=>{
@@ -600,6 +600,20 @@ function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMs
             {chart?.hasChart&&(
               <div className="border-t-2 border-dashed border-slate-200 pt-5">
                 <ChartPanel chart={chart}/>
+              </div>
+            )}
+            {/* Manual drawing image */}
+            {manualDrawImg&&(
+              <div className="relative border-2 border-dashed border-indigo-300 rounded-xl overflow-hidden bg-white shadow-sm">
+                <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5 bg-indigo-600/90 text-white text-[9px] font-bold px-2 py-1 rounded-full">
+                  ✏️ رسمك
+                </div>
+                {onClearDrawing&&(
+                  <button onClick={onClearDrawing}
+                    className="absolute top-2 left-2 z-10 w-6 h-6 flex items-center justify-center bg-red-500/80 hover:bg-red-500 text-white text-[10px] rounded-full transition"
+                    title="مسح الرسم">✕</button>
+                )}
+                <img src={manualDrawImg} alt="رسمك اليدوي" className="w-full object-contain max-h-64"/>
               </div>
             )}
           </div>
@@ -735,6 +749,116 @@ async function callChartAnalyze(text:string):Promise<ChartData&{quotaExceeded?:b
 }
 
 // ══════════════════════════════════════════════════════════════════
+// DRAW PAD — لوحة رسم يدوي، الذكاء الاصطناعي يرى ويشرح
+// ══════════════════════════════════════════════════════════════════
+function DrawPad({onSubmit,onCancel,analyzing}:{onSubmit:(url:string)=>void;onCancel:()=>void;analyzing:boolean}){
+  const canvasRef=useRef<HTMLCanvasElement>(null);
+  const drawing=useRef(false);
+  const lastPos=useRef<{x:number,y:number}|null>(null);
+  const [penColor,setPenColor]=useStateLocal('#1a1832');
+  const [penSize,setPenSize]=useStateLocal(4);
+  const [isEraser,setIsEraser]=useStateLocal(false);
+
+  const getPos=(e:React.MouseEvent<HTMLCanvasElement>|React.TouchEvent<HTMLCanvasElement>,canvas:HTMLCanvasElement)=>{
+    const rect=canvas.getBoundingClientRect();
+    const scaleX=canvas.width/rect.width, scaleY=canvas.height/rect.height;
+    if('touches' in e){const t=e.touches[0];return{x:(t.clientX-rect.left)*scaleX,y:(t.clientY-rect.top)*scaleY};}
+    return{x:((e as React.MouseEvent).clientX-rect.left)*scaleX,y:((e as React.MouseEvent).clientY-rect.top)*scaleY};
+  };
+  const startDraw=(e:React.MouseEvent<HTMLCanvasElement>|React.TouchEvent<HTMLCanvasElement>)=>{
+    e.preventDefault(); const canvas=canvasRef.current; if(!canvas) return;
+    drawing.current=true; lastPos.current=getPos(e,canvas);
+  };
+  const doDraw=(e:React.MouseEvent<HTMLCanvasElement>|React.TouchEvent<HTMLCanvasElement>)=>{
+    if(!drawing.current) return; e.preventDefault();
+    const canvas=canvasRef.current; if(!canvas) return;
+    const ctx=canvas.getContext('2d'); if(!ctx) return;
+    const pos=getPos(e,canvas);
+    ctx.beginPath(); ctx.moveTo(lastPos.current!.x,lastPos.current!.y); ctx.lineTo(pos.x,pos.y);
+    ctx.strokeStyle=isEraser?'#f8f8f0':penColor; ctx.lineWidth=isEraser?penSize*5:penSize;
+    ctx.lineCap='round'; ctx.lineJoin='round'; ctx.stroke();
+    lastPos.current=pos;
+  };
+  const endDraw=()=>{drawing.current=false; lastPos.current=null;};
+  const clearPad=()=>{
+    const canvas=canvasRef.current; if(!canvas) return;
+    const ctx=canvas.getContext('2d'); if(!ctx) return;
+    ctx.fillStyle='#f8f8f0'; ctx.fillRect(0,0,canvas.width,canvas.height);
+  };
+  useEffect(()=>{clearPad();},[]);
+  const submit=()=>{const canvas=canvasRef.current;if(canvas) onSubmit(canvas.toDataURL('image/png'));};
+  const COLORS=['#1a1832','#dc2626','#2563eb','#16a34a','#7c3aed','#d97706','#0f766e'];
+  const SIZES=[{v:2,label:'S'},{v:4,label:'M'},{v:8,label:'L'},{v:14,label:'XL'}];
+  return(
+    <div className="absolute inset-0 z-50 flex flex-col" style={{background:'rgba(4,8,15,0.93)',backdropFilter:'blur(4px)'}}>
+      {/* Header */}
+      <div className="shrink-0 flex items-center justify-between px-4 py-2.5 bg-[#0f1124] border-b border-white/10">
+        <div className="flex items-center gap-2.5">
+          <span className="text-xl">✏️</span>
+          <div>
+            <p className="text-xs font-black text-white">ارسم على السبورة</p>
+            <p className="text-[10px] text-slate-400">ارسم أي شيء وسيشرحه الذكاء الاصطناعي لك</p>
+          </div>
+        </div>
+        <button onClick={onCancel} className="text-slate-400 hover:text-slate-200 text-xs px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 transition">✕ إلغاء</button>
+      </div>
+      {/* Tools */}
+      <div className="shrink-0 flex items-center gap-3 px-3 py-2 bg-[#0d1020] border-b border-white/5 flex-wrap">
+        <div className="flex gap-1.5 items-center">
+          {COLORS.map(c=>(
+            <button key={c} onClick={()=>{setPenColor(c);setIsEraser(false);}}
+              className="rounded-full border-2 transition-all"
+              style={{width:22,height:22,background:c,borderColor:(!isEraser&&penColor===c)?'white':'transparent'}}/>
+          ))}
+        </div>
+        <div className="w-px h-5 bg-white/10"/>
+        <div className="flex gap-1.5">
+          {SIZES.map(({v,l}:any)=>(
+            <button key={v} onClick={()=>{setPenSize(v);setIsEraser(false);}}
+              className={`px-2.5 py-1 rounded-lg text-[10px] font-black border transition ${penSize===v&&!isEraser?'border-white/50 bg-white/15 text-white':'border-white/10 bg-white/5 text-slate-400 hover:bg-white/10'}`}>
+              {v===2?'S':v===4?'M':v===8?'L':'XL'}
+            </button>
+          ))}
+        </div>
+        <div className="w-px h-5 bg-white/10"/>
+        <button onClick={()=>setIsEraser(e=>!e)}
+          className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition ${isEraser?'bg-amber-600/80 border-amber-500 text-white':'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'}`}>
+          🧹 ممحاة
+        </button>
+        <button onClick={clearPad} className="px-3 py-1.5 rounded-lg text-[10px] font-bold bg-white/5 border border-white/10 text-slate-300 hover:bg-red-500/20 hover:border-red-500/30 hover:text-red-300 transition">
+          🗑 مسح الكل
+        </button>
+      </div>
+      {/* Canvas */}
+      <div className="flex-1 min-h-0 p-3 flex items-stretch justify-center bg-[#070a12]">
+        <canvas ref={canvasRef} width={900} height={520}
+          className="rounded-xl shadow-2xl w-full"
+          style={{background:'#f8f8f0',cursor:isEraser?'cell':'crosshair',touchAction:'none',objectFit:'contain'}}
+          onMouseDown={startDraw} onMouseMove={doDraw} onMouseUp={endDraw} onMouseLeave={endDraw}
+          onTouchStart={startDraw} onTouchMove={doDraw} onTouchEnd={endDraw}/>
+      </div>
+      {/* Footer */}
+      <div className="shrink-0 px-4 py-3 bg-[#0f1124] border-t border-white/10 flex items-center justify-between gap-3">
+        {analyzing?(
+          <div className="flex items-center gap-2 text-violet-300 text-xs font-bold">
+            <div className="w-4 h-4 border-2 border-violet-400 border-t-transparent rounded-full animate-spin"/>
+            جاري تحليل رسمك بالذكاء الاصطناعي…
+          </div>
+        ):(
+          <p className="text-[10px] text-slate-500">ارسم بالماوس أو بإصبعك ثم اضغط شاهد رسمي</p>
+        )}
+        <button onClick={submit} disabled={analyzing}
+          className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 disabled:opacity-60 text-white text-xs font-black transition shadow-lg">
+          {analyzing?<><div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"/>جاري التحليل…</>:<>🔍 شاهد رسمي</>}
+        </button>
+      </div>
+    </div>
+  );
+}
+// helper: local useState alias for DrawPad (avoids collision with outer scope)
+function useStateLocal<T>(init:T){return useState<T>(init);}
+
+// ══════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ══════════════════════════════════════════════════════════════════
 interface Props{onClose:()=>void;initialText?:string;}
@@ -772,6 +896,11 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   // Direct draw command (user types "ارسم ...")
   const [directCmd,setDirectCmd]=useState('');
   const [showCmdBar,setShowCmdBar]=useState(false);
+
+  // Manual drawing pad
+  const [showDrawPad,setShowDrawPad]=useState(false);
+  const [drawPadAnalyzing,setDrawPadAnalyzing]=useState(false);
+  const [manualDrawImg,setManualDrawImg]=useState<string|null>(null);
 
   // Refs
   const wsRef=useRef<WebSocket|null>(null);
@@ -1010,6 +1139,25 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
       setTimeout(()=>setChartErrorMsg(''),6000);
     }
   },[clearDrawFallback]);
+
+  // Handle manual drawing: send canvas image to AI, show explanation in QA
+  const handleExplainDrawing=useCallback(async(dataUrl:string)=>{
+    setDrawPadAnalyzing(true);
+    try{
+      const r=await fetch(resolveApiUrl('/api/ai/explain-drawing'),{
+        method:'POST',headers:{'Content-Type':'application/json',...getAiHeaders()},
+        body:JSON.stringify({imageData:dataUrl})
+      });
+      const d=await r.json();
+      setManualDrawImg(dataUrl);
+      const explanation=d.explanation||'لم أتمكن من تحليل الرسم.';
+      setQa(prev=>[...prev,{id:Date.now()+Math.random()+'',role:'model',text:'🖼 '+explanation}]);
+      setShowDrawPad(false);
+    }catch(_){
+      setQa(prev=>[...prev,{id:Date.now()+'',role:'model',text:'تعذّر تحليل الرسم. تأكد من إضافة مفتاح API في الإعدادات (⚙️).'}]);
+      setShowDrawPad(false);
+    }finally{setDrawPadAnalyzing(false);}
+  },[]);
 
   // Start session
   const start=useCallback(async()=>{
@@ -1320,13 +1468,24 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
       </div>
 
       {/* ⭐ WHITEBOARD — takes all flex space ⭐ */}
-      <Whiteboard
-        text={chunkText}
-        chart={currentChart}
-        chunkIdx={chunkIndex}
-        totalChunks={totalChunks}
-        isDrawingChart={isDrawingChart}
-        chartErrorMsg={chartErrorMsg}/>
+      <div className="relative flex-1 min-h-0">
+        <Whiteboard
+          text={chunkText}
+          chart={currentChart}
+          chunkIdx={chunkIndex}
+          totalChunks={totalChunks}
+          isDrawingChart={isDrawingChart}
+          chartErrorMsg={chartErrorMsg}
+          manualDrawImg={manualDrawImg}
+          onClearDrawing={()=>setManualDrawImg(null)}/>
+        {/* Draw Pad overlay — appears inside the whiteboard area */}
+        {showDrawPad&&(
+          <DrawPad
+            onSubmit={handleExplainDrawing}
+            onCancel={()=>setShowDrawPad(false)}
+            analyzing={drawPadAnalyzing}/>
+        )}
+      </div>
 
       {/* Q&A strip (collapsible) */}
       {qa.length>0&&(
@@ -1374,6 +1533,11 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
             className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-extrabold border transition ${
               showCmdBar?'bg-indigo-600 border-indigo-500 text-white':'bg-indigo-600/20 border-indigo-500/40 text-indigo-300 hover:bg-indigo-600/35'}`}>
             📊 ارسم
+          </button>
+          <button onClick={()=>{setShowDrawPad(s=>!s);setShowCmdBar(false);}}
+            className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-extrabold border transition ${
+              showDrawPad?'bg-violet-600 border-violet-500 text-white':'bg-violet-600/20 border-violet-500/40 text-violet-300 hover:bg-violet-600/35'}`}>
+            ✏️ يدوي
           </button>
           <button onClick={togglePause} disabled={status==='listening'||status==='answering'||status==='done'}
             className="px-4 py-2.5 rounded-xl bg-white/5 border border-white/15 text-slate-200 hover:bg-white/10 text-xs font-extrabold disabled:opacity-40 transition">
