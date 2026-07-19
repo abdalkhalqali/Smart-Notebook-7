@@ -462,11 +462,13 @@ async function generateContentWithRetryAndFallback(ai: any, p: { model: string; 
   try {
     return await callWithRetry(() => ai.models.generateContent(p));
   } catch (error: any) {
-    const isDemandError = 
+    const isDemandOrQuotaError = 
       error?.status === "UNAVAILABLE" || 
       error?.status === "RESOURCE_EXHAUSTED" ||
       error?.code === 503 ||
       error?.code === 429 ||
+      isQuotaError(error) ||
+      isRateLimitError(error) ||
       (error?.message && (
         error.message.includes("503") || 
         error.message.includes("429") ||
@@ -477,11 +479,14 @@ async function generateContentWithRetryAndFallback(ai: any, p: { model: string; 
         error.message.includes("busy")
       ));
 
-    if (isDemandError && p.model === "gemini-2.5-flash") {
-      console.warn("[Gemini API Fallback Warning] 'gemini-2.5-flash' returned 503 high demand or was busy. Swapping model to 'gemini-2.0-flash' and retrying call...");
+    if (isDemandOrQuotaError && p.model === "gemini-2.5-flash") {
+      console.warn("[Gemini API Fallback] 'gemini-2.5-flash' unavailable/quota — falling back to 'gemini-2.0-flash'...");
+      // gemini-2.0-flash does NOT support thinkingConfig — strip it to avoid a second error
+      const { thinkingConfig: _dropped, ...safeConfig } = (p.config || {}) as any;
       const fallbackParams = {
         ...p,
-        model: "gemini-2.0-flash"
+        model: "gemini-2.0-flash",
+        config: { ...safeConfig }
       };
       return await callWithRetry(() => ai.models.generateContent(fallbackParams));
     }
@@ -2127,8 +2132,10 @@ app.post("/api/ai/explain-drawing", async (req, res) => {
       "- coordinate: coordPoints[{x,y,label}] و/أو coordLines[{x1,y1,x2,y2,label}]\n" +
       "  للميل (slope): الخط الذي يرتفع من اليسار إلى اليمين له ميل موجب (x2>x1 و y2>y1)";
 
+    // Use gemini-2.0-flash for vision tasks — better free-tier limits for multimodal,
+    // and avoids thinkingConfig (not supported by 2.0-flash) causing a cascade failure.
     const result: any = await generateContentWithRetryAndFallback(ai, {
-      model: "gemini-2.5-flash",
+      model: "gemini-2.0-flash",
       contents: [{
         role: "user",
         parts: [
@@ -2137,7 +2144,6 @@ app.post("/api/ai/explain-drawing", async (req, res) => {
         ]
       }],
       config: {
-        thinkingConfig: { thinkingBudget: 0 },
         responseMimeType: "application/json",
         responseSchema: schema
       }
