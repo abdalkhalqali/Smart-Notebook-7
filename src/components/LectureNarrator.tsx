@@ -488,9 +488,9 @@ function ChartPanel({chart}:{chart:ChartData}){
 // ══════════════════════════════════════════════════════════════════
 // WHITEBOARD — realistic white board, fills all available space
 // ══════════════════════════════════════════════════════════════════
-function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMsg,drawImg,isAnalyzingDraw}:{
+function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMsg,drawImg,isAnalyzingDraw,onClearDraw}:{
   text:string; chart:ChartData|null; chunkIdx:number; totalChunks:number; isDrawingChart:boolean; chartErrorMsg?:string;
-  drawImg?:string|null; isAnalyzingDraw?:boolean;
+  drawImg?:string|null; isAnalyzingDraw?:boolean; onClearDraw?:()=>void;
 }){
   const {disp,done}=useTypewriter(text,5,11);
   const boardScrollRef=useRef<HTMLDivElement>(null);
@@ -604,11 +604,17 @@ function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMs
               </div>
             )}
 
-            {/* Hand-drawn image — shown when no AI chart is available yet */}
-            {drawImg&&!chart?.hasChart&&(
+            {/* Hand-drawn image — pinned on whiteboard, persists alongside any chart */}
+            {drawImg&&(
               <div className="relative mt-2 rounded-2xl overflow-hidden border-2 border-dashed border-indigo-300/70 shadow-lg">
+                {/* Dismiss button */}
+                {onClearDraw&&!isAnalyzingDraw&&(
+                  <button onClick={onClearDraw}
+                    className="absolute top-2 left-2 z-10 w-7 h-7 flex items-center justify-center rounded-full bg-black/60 hover:bg-black/85 text-white text-xs font-black transition shadow-lg"
+                    title="إزالة الرسم من السبورة">✕</button>
+                )}
                 <img
-                  src={`data:image/png;base64,${drawImg}`}
+                  src={`data:image/jpeg;base64,${drawImg}`}
                   alt="رسم يدوي"
                   className="w-full object-contain bg-white"
                   style={{maxHeight:400}}/>
@@ -633,7 +639,7 @@ function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMs
 // DRAW PAD — full-whiteboard canvas overlay for manual sketching
 // ══════════════════════════════════════════════════════════════════
 function DrawPad({onClose,onEnhance,isEnhancing}:{
-  onClose:()=>void; onEnhance:(b64:string)=>void; isEnhancing:boolean;
+  onClose:()=>void; onEnhance:(b64:string,mime:string)=>void; isEnhancing:boolean;
 }){
   const canvasRef=useRef<HTMLCanvasElement>(null);
   const [isDrawing,setIsDrawing]=useState(false);
@@ -683,7 +689,15 @@ function DrawPad({onClose,onEnhance,isEnhancing}:{
   };
   const submit=()=>{
     const c=canvasRef.current; if(!c) return;
-    onEnhance(c.toDataURL('image/png').split(',')[1]);
+    // Compress: scale down to max 900×580 and encode as JPEG (was ~3MB PNG → ~150KB)
+    const maxW=900,maxH=580;
+    const scale=Math.min(1,maxW/c.width,maxH/c.height);
+    const tmp=document.createElement('canvas');
+    tmp.width=Math.round(c.width*scale); tmp.height=Math.round(c.height*scale);
+    const ctx2=tmp.getContext('2d')!;
+    ctx2.fillStyle='#ffffff'; ctx2.fillRect(0,0,tmp.width,tmp.height);
+    ctx2.drawImage(c,0,0,tmp.width,tmp.height);
+    onEnhance(tmp.toDataURL('image/jpeg',0.82).split(',')[1],'image/jpeg');
   };
 
   return(
@@ -918,6 +932,8 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   // Refs to current drawing/chart so async callbacks can read latest values
   const manualDrawImgRef=useRef<string|null>(null);
   const currentChartRef=useRef<ChartData|null>(null);
+  // Stores the last AI-generated explanation for the manual drawing (survives chart replacement)
+  const lastDrawDescriptionRef=useRef<string>('');
 
   // Refs
   const wsRef=useRef<WebSocket|null>(null);
@@ -1164,12 +1180,15 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   const handleLookAtWhiteboard=useCallback(async()=>{
     const img=manualDrawImgRef.current;
     const chart=currentChartRef.current;
-    if(!img&&!chart){
-      setQa(q=>[...q,{id:Date.now().toString(),role:'model',
-        text:'📋 لا يوجد رسم على السبورة حالياً. يمكنك رسم شيء باستخدام ✏️ أو قل "ارسم مخطط..."'}]);
+    const savedDesc=lastDrawDescriptionRef.current;
+
+    // ① If we already have a saved description from when the drawing was submitted → reuse it instantly
+    if(savedDesc){
+      setQa(q=>[...q,{id:Date.now().toString(),role:'model',text:`🖼️ ${savedDesc}`}]);
       return;
     }
-    // If a structured chart exists but no raw image, describe it textually
+
+    // ② If only a structured chart is on the board (no raw drawing) → describe it textually
     if(!img&&chart?.hasChart){
       const typeMap:Record<string,string>={bar:'مخطط أعمدة',line:'مخطط خطي',pie:'مخطط دائري',
         table:'جدول',diagram:'مخطط انسيابي',coordinate:'نظام إحداثيات',none:''};
@@ -1178,42 +1197,54 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
         text:`📊 السبورة تعرض ${typeMap[chart.chartType]||'مخطط'}${chart.title?` بعنوان "${chart.title}"`:''}.${labels?' البيانات: '+labels:''}`}]);
       return;
     }
-    // Raw drawing exists — call vision API to describe it
+
+    // ③ No drawing at all
+    if(!img){
+      setQa(q=>[...q,{id:Date.now().toString(),role:'model',
+        text:'📋 لا يوجد رسم على السبورة حالياً. استخدم ✏️ لرسم شيء أو قل "ارسم مخطط..."'}]);
+      return;
+    }
+
+    // ④ Raw drawing exists but no saved description → call vision API
     const thinkId=Date.now().toString();
     setQa(q=>[...q,{id:thinkId,role:'model',text:'🔍 أتفحص الرسم على السبورة…'}]);
     try{
       const r=await fetch(resolveApiUrl('/api/ai/explain-drawing'),{
         method:'POST',
         headers:{'Content-Type':'application/json',...getAiHeaders()},
-        body:JSON.stringify({imageBase64:img,mimeType:'image/png'})
+        body:JSON.stringify({imageBase64:img,mimeType:'image/jpeg'})
       });
       const data=await r.json();
-      const msg=data.explanation||(data.error==='no_api_key'
-        ?'💡 أضف مفتاح Gemini API لتفعيل تحليل الرسم بصرياً.'
-        :'تعذّر تحليل الرسم.');
+      const msg=data.explanation
+        ||(data.error==='no_api_key'?'💡 أضف مفتاح Gemini API من إعدادات التطبيق لتفعيل تحليل الرسم.'
+          :data.error==='quota'?'⚠️ تجاوزت حصة API — جرب لاحقاً أو أضف مفتاحاً خاصاً.'
+          :'⚠️ تعذّر تحليل الرسم — تأكد من ضبط مفتاح Gemini API في الإعدادات.');
+      if(data.explanation) lastDrawDescriptionRef.current=data.explanation; // cache for next time
       setQa(q=>q.map(item=>item.id===thinkId?{...item,text:`🖼️ ${msg}`}:item));
     }catch{
-      setQa(q=>q.map(item=>item.id===thinkId?{...item,text:'⚠️ تعذّر الاتصال بخادم التحليل.'}:item));
+      setQa(q=>q.map(item=>item.id===thinkId?{...item,text:'⚠️ تعذّر الاتصال بالخادم.'}:item));
     }
   },[]);
 
   // Handle AI enhancement of a manual sketch
-  const handleExplainDrawing=useCallback(async(imgB64:string)=>{
+  const handleExplainDrawing=useCallback(async(imgB64:string, mimeType:string='image/jpeg')=>{
     // ① Show the raw drawing on the whiteboard IMMEDIATELY — no waiting for AI
     setManualDrawImg(imgB64);
+    lastDrawDescriptionRef.current=''; // reset stored description for new drawing
     setShowDrawPad(false);
     setIsEnhancing(true);
-    userDrawLockRef.current=true;
+    userDrawLockRef.current=true; // lock: prevent lecture chunks from clearing this drawing
 
     try{
       const r=await fetch(resolveApiUrl('/api/ai/explain-drawing'),{
         method:'POST',
         headers:{'Content-Type':'application/json',...getAiHeaders()},
-        body:JSON.stringify({imageBase64:imgB64,mimeType:'image/png'})
+        body:JSON.stringify({imageBase64:imgB64,mimeType})
       });
       const data=await r.json();
 
-      // ② If AI extracted structured chart data → render it and clear the raw image
+      // ② If AI extracted structured chart data → render it BELOW the raw drawing
+      //    (drawing stays visible; chart adds structured info alongside it)
       if(data.hasChart){
         const myGen=++userDrawGenRef.current;
         setIsDrawingChart(true);
@@ -1226,15 +1257,21 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
             diagramNodes:data.diagramNodes, diagramEdges:data.diagramEdges,
             coordPoints:data.coordPoints, coordLines:data.coordLines,
           } as ChartData);
-          setManualDrawImg(null); // chart replaces the raw image
+          // NOTE: drawing (manualDrawImg) stays — user can dismiss it manually via ✕
           setIsDrawingChart(false);
         },500);
       }
 
-      // ③ Show AI explanation in Q&A strip
+      // ③ Save explanation so narrator can reuse it without re-calling API
+      if(data.explanation){
+        lastDrawDescriptionRef.current=data.explanation;
+      }
+
+      // ④ Show AI explanation in Q&A strip
       const msg=data.explanation||(data.error==='no_api_key'
         ?'💡 أضف مفتاح Gemini API من الإعدادات لتفعيل تحليل الرسم. رسمك يظهر على السبورة كما هو.'
-        :data.error?`تعذّر التحليل: ${data.error}`:null);
+        :data.error==='quota'?'⚠️ تجاوزت حصة API — رسمك محفوظ على السبورة.'
+        :data.error?`⚠️ ${data.error}. رسمك محفوظ على السبورة.`:null);
       if(msg) setQa(q=>[...q,{id:Date.now().toString(),role:'model',text:msg}]);
 
     }catch(e){
@@ -1281,8 +1318,9 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
         }else if(msg.type==='lecture_progress'){
           setChunkIndex(msg.index); setChunkText(msg.text);
           setAskMode(false); setStatus('narrating');
-          // New chunk — release user draw lock so auto-analysis can run
-          userDrawLockRef.current=false;
+          // Only release lock if no active manual drawing — prevents chart auto-analysis
+          // from overwriting/hiding a drawing the user pinned on the whiteboard
+          if(!manualDrawImgRef.current) userDrawLockRef.current=false;
           analyzeChart(msg.text);
         }else if(msg.type==='audio'){
           if(statusRef.current!=='paused') playChunk(msg.data);
@@ -1554,7 +1592,8 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
         isDrawingChart={isDrawingChart}
         chartErrorMsg={chartErrorMsg}
         drawImg={manualDrawImg}
-        isAnalyzingDraw={isEnhancing}/>
+        isAnalyzingDraw={isEnhancing}
+        onClearDraw={()=>{setManualDrawImg(null);lastDrawDescriptionRef.current='';userDrawLockRef.current=false;}}/>
 
       {/* DrawPad overlay — covers the whiteboard when active */}
       {showDrawPad&&(
@@ -1624,6 +1663,12 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
               className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-extrabold border border-amber-500/40 bg-amber-600/20 text-amber-300 hover:bg-amber-600/35 transition">
               ✏️ ارسم يدوياً
             </button>
+            {manualDrawImg&&(
+              <button onClick={handleLookAtWhiteboard}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-extrabold border border-emerald-500/40 bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/35 transition">
+                🔍 اشرح الرسم
+              </button>
+            )}
             <button onClick={togglePause} disabled={status==='listening'||status==='answering'||status==='done'}
               className="px-3 py-1.5 rounded-xl bg-white/5 border border-white/15 text-slate-200 hover:bg-white/15 text-xs font-extrabold disabled:opacity-40 transition">
               {status==='paused'?'▶ استكمال':'⏸ توقف'}
