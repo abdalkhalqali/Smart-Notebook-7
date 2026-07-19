@@ -1217,7 +1217,8 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
       const data=await r.json();
       const msg=data.explanation
         ||(data.error==='no_api_key'?'💡 أضف مفتاح Gemini API من إعدادات التطبيق لتفعيل تحليل الرسم.'
-          :data.error==='quota'?'⚠️ تجاوزت حصة API — جرب لاحقاً أو أضف مفتاحاً خاصاً.'
+          :data.error==='quota'?'⚠️ نفدت حصة Gemini API اليومية — جرّب مفتاحاً آخر أو انتظر حتى الغد.'
+          :data.error==='rate_limit'?'⏱️ تجاوزت الحد المسموح في الدقيقة — جرّب مرة ثانية بعد لحظة.'
           :'⚠️ تعذّر تحليل الرسم — تأكد من ضبط مفتاح Gemini API في الإعدادات.');
       if(data.explanation) lastDrawDescriptionRef.current=data.explanation; // cache for next time
       setQa(q=>q.map(item=>item.id===thinkId?{...item,text:`🖼️ ${msg}`}:item));
@@ -1270,7 +1271,8 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
       // ④ Show AI explanation in Q&A strip
       const msg=data.explanation||(data.error==='no_api_key'
         ?'💡 أضف مفتاح Gemini API من الإعدادات لتفعيل تحليل الرسم. رسمك يظهر على السبورة كما هو.'
-        :data.error==='quota'?'⚠️ تجاوزت حصة API — رسمك محفوظ على السبورة.'
+        :data.error==='quota'?'⚠️ نفدت حصة Gemini API اليومية — رسمك محفوظ على السبورة. جرّب مفتاحاً آخر أو انتظر حتى الغد.'
+        :data.error==='rate_limit'?'⏱️ تجاوزت الحد المسموح في الدقيقة — رسمك محفوظ على السبورة. جرّب مرة ثانية بعد لحظة.'
         :data.error?`⚠️ ${data.error}. رسمك محفوظ على السبورة.`:null);
       if(msg) setQa(q=>[...q,{id:Date.now().toString(),role:'model',text:msg}]);
 
@@ -1292,7 +1294,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     let prep=lectureText;
     try{
       const r=await fetch(resolveApiUrl('/api/ai/lecture-prep'),{method:'POST',
-        headers:{'Content-Type':'application/json'},body:JSON.stringify({text:lectureText})});
+        headers:{'Content-Type':'application/json',...getAiHeaders()},body:JSON.stringify({text:lectureText})});
       const d=await r.json();
       if(d?.success&&d?.processedText) prep=d.processedText;
     }catch(_){}

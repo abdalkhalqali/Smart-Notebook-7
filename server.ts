@@ -380,18 +380,26 @@ function isAuthError(error: any): boolean {
   return status === 401 || status === 403 || msg.includes("api key") || msg.includes("unauthorized") || msg.includes("invalid key");
 }
 
-// Detects Gemini 429 / quota exhaustion errors (free tier or paid limit reached)
+// Detects Gemini rate-limit (per-minute, temporary) — HTTP 429 without quota language
+function isRateLimitError(error: any): boolean {
+  const status = error?.status || error?.code;
+  const msg = (error?.message || "").toLowerCase();
+  if (status === 429 && !msg.includes("quota") && !msg.includes("exceeded your current quota") && !msg.includes("resource_exhausted")) return true;
+  if (msg.includes("rate limit") || msg.includes("rate_limit")) return true;
+  return false;
+}
+
+// Detects Gemini true quota exhaustion (daily/monthly limit reached)
 function isQuotaError(error: any): boolean {
   const status = error?.status || error?.code;
   const msg = (error?.message || "").toLowerCase();
   return (
-    status === 429 ||
     status === "RESOURCE_EXHAUSTED" ||
     msg.includes("quota") ||
     msg.includes("resource_exhausted") ||
     msg.includes("exceeded your current quota") ||
-    msg.includes("rate limit") ||
-    msg.includes("free tier")
+    msg.includes("free tier") ||
+    (status === 429 && (msg.includes("quota") || msg.includes("resource_exhausted")))
   );
 }
 
@@ -408,9 +416,19 @@ async function callWithRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 150
     } catch (error: any) {
       attempt++;
 
-      // Fail fast — never retry auth errors or quota errors
+      // Fail fast — never retry auth errors or true quota exhaustion
       if (isAuthError(error)) throw error;
       if (isQuotaError(error)) throw error;
+      // Rate limits (per-minute 429) → retry with longer backoff, not fail-fast
+      if (isRateLimitError(error)) {
+        if (attempt < retries) {
+          const wait = 4000 + Math.random() * 2000;
+          console.warn(`[Rate-limit] 429 per-minute limit hit (attempt ${attempt}/${retries}). Waiting ${Math.round(wait)}ms...`);
+          await new Promise(r => setTimeout(r, wait));
+          continue;
+        }
+        throw error;
+      }
 
       const isTemporary = 
         error?.status === "UNAVAILABLE" ||
@@ -2026,8 +2044,8 @@ app.post("/api/ai/lecture-chart-analyze", async (req, res) => {
     try { chartData = JSON.parse(result?.text || "{}"); } catch (_) {}
     return res.json(chartData);
   } catch (err: any) {
-    console.error("lecture-chart-analyze error:", err);
-    if (isQuotaError(err)) {
+    console.error(`[lecture-chart-analyze] error: status=${err?.status||err?.code} msg=${err?.message}`);
+    if (isQuotaError(err) || isRateLimitError(err)) {
       return res.json({ hasChart: false, chartType: "none", quotaExceeded: true });
     }
     return res.json({ hasChart: false, chartType: "none" });
@@ -2039,11 +2057,16 @@ app.post("/api/ai/lecture-chart-analyze", async (req, res) => {
 // ==========================================
 app.post("/api/ai/explain-drawing", async (req, res) => {
   try {
-    const { imageBase64, mimeType = "image/png" } = req.body || {};
+    const { imageBase64, mimeType = "image/jpeg" } = req.body || {};
     if (!imageBase64) return res.status(400).json({ success: false, error: "missing image" });
 
     const customKey = (req.headers["x-custom-api-key"] as string || "").trim();
     const apiKey = customKey || getServerGeminiKey();
+
+    // Log which key source is being used (masked) — helps diagnose quota issues
+    const keySource = customKey ? `custom(${customKey.slice(0,8)}...)` : (getServerGeminiKey() ? "server" : "none");
+    console.log(`[explain-drawing] key=${keySource} mime=${mimeType} size=${Math.round((imageBase64.length*3/4)/1024)}KB`);
+
     if (!apiKey) return res.json({ success: false, error: "no_api_key", hasChart: false, chartType: "none" });
 
     const ai = new GoogleGenAI({ apiKey });
@@ -2124,8 +2147,10 @@ app.post("/api/ai/explain-drawing", async (req, res) => {
     try { data = JSON.parse(result?.text || "{}"); } catch (_) {}
     return res.json({ success: true, ...data });
   } catch (err: any) {
-    console.error("explain-drawing error:", err);
+    const errMsg = (err?.message || "").toLowerCase();
+    console.error(`[explain-drawing] error: status=${err?.status||err?.code} msg=${err?.message}`);
     if (isQuotaError(err)) return res.json({ success: false, error: "quota", hasChart: false, chartType: "none" });
+    if (isRateLimitError(err)) return res.json({ success: false, error: "rate_limit", hasChart: false, chartType: "none" });
     return res.json({ success: false, error: "فشل التحليل", hasChart: false, chartType: "none" });
   }
 });
