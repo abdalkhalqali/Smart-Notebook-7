@@ -1004,7 +1004,13 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
       proc.onaudioprocess=(e)=>{
         if(!wsRef.current||wsRef.current.readyState!==WebSocket.OPEN) return;
         if(statusRef.current==='paused') return;
-        wsRef.current.send(JSON.stringify({type:'audio',data:ab2b64(f32ToI16(e.inputBuffer.getChannelData(0)).buffer)}));
+        // Downsample from AudioContext native rate to 16kHz for Gemini input
+        const raw=e.inputBuffer.getChannelData(0);
+        const ratio=ctx.sampleRate/16000;
+        const outLen=Math.floor(raw.length/ratio);
+        const ds=new Float32Array(outLen);
+        for(let i=0;i<outLen;i++) ds[i]=raw[Math.round(i*ratio)];
+        wsRef.current.send(JSON.stringify({type:'audio',data:ab2b64(f32ToI16(ds).buffer)}));
       };
     }catch{setErrorMsg('لا يمكن الوصول للميكروفون — يمكنك المتابعة بدون أسئلة صوتية.');}
   };
@@ -1302,7 +1308,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     setStatus('connecting');
     const key=(localStorage.getItem('aiProvider')||'gemini')==='gemini'?(localStorage.getItem('customAiKey')||''):'';
     const params=new URLSearchParams({key,lang:'ar',mode:'lecture',voice});
-    audioCtxRef.current=new AudioContext({sampleRate:16000});
+    audioCtxRef.current=new AudioContext();
     playTimeRef.current=audioCtxRef.current.currentTime;
 
     const proto=window.location.protocol==='https:'?'wss:':'ws:';

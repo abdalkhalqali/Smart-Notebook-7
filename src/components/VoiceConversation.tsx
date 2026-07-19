@@ -282,8 +282,10 @@ export default function VoiceConversation({ onClose }: VoiceConversationProps) {
       subject,
     });
 
-    // Create AudioContext
-    audioCtxRef.current = new AudioContext({ sampleRate: 16000 });
+    // Create AudioContext at browser-native rate (44100/48000).
+    // Playback buffers are 24kHz (Gemini output) — the browser resamples them correctly.
+    // Mic capture is downsampled to 16kHz inside ScriptProcessor before sending.
+    audioCtxRef.current = new AudioContext();
     playTimeRef.current = audioCtxRef.current.currentTime;
 
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -373,7 +375,14 @@ export default function VoiceConversation({ onClose }: VoiceConversationProps) {
         if (isMutedRef.current) return;
         if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
         const float32 = e.inputBuffer.getChannelData(0);
-        const int16 = float32ToInt16(float32);
+        // Downsample from AudioContext native rate to 16kHz for Gemini input
+        const nativeRate = ctx.sampleRate;
+        const targetRate = 16000;
+        const ratio = nativeRate / targetRate;
+        const outLen = Math.floor(float32.length / ratio);
+        const downsampled = new Float32Array(outLen);
+        for (let i = 0; i < outLen; i++) downsampled[i] = float32[Math.round(i * ratio)];
+        const int16 = float32ToInt16(downsampled);
         const b64 = arrayBufferToBase64(int16.buffer);
         wsRef.current.send(JSON.stringify({ type: 'audio', data: b64 }));
       };
