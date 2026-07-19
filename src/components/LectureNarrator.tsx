@@ -487,8 +487,8 @@ function ChartPanel({chart}:{chart:ChartData}){
 // ══════════════════════════════════════════════════════════════════
 // WHITEBOARD — realistic white board, fills all available space
 // ══════════════════════════════════════════════════════════════════
-function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart}:{
-  text:string; chart:ChartData|null; chunkIdx:number; totalChunks:number; isDrawingChart:boolean;
+function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMsg}:{
+  text:string; chart:ChartData|null; chunkIdx:number; totalChunks:number; isDrawingChart:boolean; chartErrorMsg?:string;
 }){
   const {disp,done}=useTypewriter(text,5,11);
   const boardScrollRef=useRef<HTMLDivElement>(null);
@@ -548,6 +548,13 @@ function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart}:{
         <div className="absolute top-3 right-4 z-10 flex items-center gap-1.5 bg-indigo-100 border border-indigo-300 rounded-full px-2.5 py-1">
           <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"/>
           <span className="text-[10px] font-bold text-indigo-700">جاري الرسم…</span>
+        </div>
+      )}
+      {/* Chart error — quota or parse failure */}
+      {chartErrorMsg&&!isDrawingChart&&(
+        <div className="absolute top-3 left-4 right-4 z-10 flex items-start gap-2 bg-amber-50 border border-amber-300 rounded-xl px-3 py-2 shadow-sm">
+          <span className="text-amber-600 text-sm mt-0.5">⚠️</span>
+          <span className="text-[11px] font-semibold text-amber-800 leading-snug">{chartErrorMsg.replace(/^⚠️\s*/,'')}</span>
         </div>
       )}
 
@@ -622,14 +629,66 @@ function chartScore(text:string):number{
   return s;
 }
 
-async function callChartAnalyze(text:string):Promise<ChartData>{
+// ── Local chart parser — works instantly with ZERO API calls ─────────
+// Parses direct draw commands like "ارسم مخطط: أ=5 ب=8" or "رسم دائرة 40% 60%"
+function parseChartLocally(text:string):ChartData{
+  const t=text.trim();
+
+  // Coordinate system — detect axes/grid request (possibly with coordinate pairs)
+  if(COORD_CMD.test(t)){
+    const pts:CoordPoint[]=[];
+    const pairRe=/\(?\s*(-?\d+(?:\.\d+)?)\s*[,،]\s*(-?\d+(?:\.\d+)?)\s*\)?/g;
+    let m; while((m=pairRe.exec(t))!==null) pts.push({x:+m[1],y:+m[2]});
+    return{hasChart:true,chartType:'coordinate',title:'نظام الإحداثيات',coordPoints:pts,coordLines:[]};
+  }
+
+  // Percentages → pie chart
+  const pctRe=/([^٠-٩\d,،:\n=\(\)]+?)\s*[:=]?\s*(\d+(?:\.\d+)?)\s*[%٪]/g;
+  const pcts:{name:string;val:number}[]=[];
+  let pm; while((pm=pctRe.exec(t))!==null){
+    const name=pm[1].replace(/^[\s:=-]+|[\s:=-]+$/g,'').trim();
+    if(name.length>0) pcts.push({name,val:+pm[2]});
+  }
+  if(pcts.length>=2) return{hasChart:true,chartType:'pie',
+    labels:pcts.map(p=>p.name),
+    datasets:[{name:'النسبة',values:pcts.map(p=>p.val)}]};
+
+  // key=value or key:value pairs → bar or line
+  const kvRe=/([^٠-٩\d,،:\n=\(\)%٪]{1,20}?)\s*[=:]\s*(-?\d+(?:\.\d+)?)/g;
+  const kvs:{name:string;val:number}[]=[];
+  let kv; while((kv=kvRe.exec(t))!==null){
+    const name=kv[1].replace(/^[\s:=-]+|[\s:=-]+$/g,'').trim();
+    if(name.length>0&&name.length<20) kvs.push({name,val:+kv[2]});
+  }
+  if(kvs.length>=2){
+    const isLine=/خط|زمن|سنة|شهر|يوم|line|year|month|trend/i.test(t);
+    return{hasChart:true,chartType:isLine?'line':'bar',
+      labels:kvs.map(k=>k.name),
+      datasets:[{name:'البيانات',values:kvs.map(k=>k.val)}]};
+  }
+
+  return{hasChart:false,chartType:'none'};
+}
+
+// ── callChartAnalyze — tries API first, falls back to local parser ───
+// On quota error: returns local parse result + quotaExceeded flag
+async function callChartAnalyze(text:string):Promise<ChartData&{quotaExceeded?:boolean}>{
   try{
     const r=await fetch(resolveApiUrl('/api/ai/lecture-chart-analyze'),{
       method:'POST',headers:{'Content-Type':'application/json',...getAiHeaders()},
       body:JSON.stringify({text})
     });
-    return await r.json();
-  }catch{return{hasChart:false,chartType:'none'};}
+    const d=await r.json();
+    if(d.quotaExceeded){
+      // API quota hit — fall back to local parser silently
+      const local=parseChartLocally(text);
+      return{...local,quotaExceeded:true};
+    }
+    return d;
+  }catch{
+    // Network or parse error — fall back to local parser
+    return parseChartLocally(text);
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -649,6 +708,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   const [chunkText,setChunkText]=useState('');
   const [currentChart,setCurrentChart]=useState<ChartData|null>(null);
   const [isDrawingChart,setIsDrawingChart]=useState(false);
+  const [chartErrorMsg,setChartErrorMsg]=useState('');
   const [askMode,setAskMode]=useState(false);
 
   // Upload state
@@ -852,33 +912,42 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     drawPendingRef.current=false;
     modelTransBuf.current='';
     userDrawLockRef.current=true;
+    setChartErrorMsg('');
     const myGen=++userDrawGenRef.current;
     const text=cmd.replace(DRAW_CMD,'').trim()||cmd;
     setIsDrawingChart(true); setChunkText(cmd); setDirectCmd('');
 
-    // ── Shortcut: coordinate system with no specific data ──────────
-    // If user just asks for "coordinate system" / "نظام الاحداثيات",
-    // skip the API and return a pre-built empty coordinate chart instantly.
-    if(COORD_CMD.test(text)&&!/\d/.test(text)){
-      const coordChart:ChartData={
-        hasChart:true, chartType:'coordinate',
-        title:'نظام الإحداثيات',
-        coordPoints:[], coordLines:[]
-      };
-      if(userDrawGenRef.current===myGen){
-        setCurrentChart({...coordChart});
+    // ── Step 1: Try local parser immediately (zero API cost) ───────
+    const local=parseChartLocally(text);
+    if(local.hasChart&&userDrawGenRef.current===myGen){
+      setCurrentChart({...local});
+      setIsDrawingChart(false);
+      // Still hit the API in background to get a better/richer result
+      callChartAnalyze(text).then(c=>{
+        if(userDrawGenRef.current!==myGen) return;
+        if(c.hasChart&&!c.quotaExceeded) setCurrentChart({...c});
         setIsDrawingChart(false);
-        // keep lock so model doesn't overwrite it
-      }
+      });
       return;
     }
 
+    // ── Step 2: No local result → call API ─────────────────────────
     const c=await callChartAnalyze(text);
-    // Only apply if this is still the latest user-requested draw
-    if(userDrawGenRef.current===myGen){
-      setCurrentChart(c.hasChart?{...c}:null);
+    if(userDrawGenRef.current!==myGen) return;
+
+    if(c.hasChart){
+      setCurrentChart({...c});
       setIsDrawingChart(false);
-      if(!c.hasChart) userDrawLockRef.current=false;
+    } else {
+      setIsDrawingChart(false);
+      userDrawLockRef.current=false;
+      if(c.quotaExceeded){
+        setChartErrorMsg('⚠️ تجاوزت الحصة المجانية لـ API — أضف مفتاح API خاصاً من الإعدادات (⚙️). مثال للرسم المباشر: "ارسم مخطط: أ=5 ب=8 ج=3"');
+      } else {
+        setChartErrorMsg('لم أتمكن من تحديد نوع الرسم. جرب: "ارسم مخطط عمودي: أ=40 ب=60 ج=30"');
+      }
+      // Clear error after 6 seconds
+      setTimeout(()=>setChartErrorMsg(''),6000);
     }
   },[clearDrawFallback]);
 
@@ -1196,7 +1265,8 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
         chart={currentChart}
         chunkIdx={chunkIndex}
         totalChunks={totalChunks}
-        isDrawingChart={isDrawingChart}/>
+        isDrawingChart={isDrawingChart}
+        chartErrorMsg={chartErrorMsg}/>
 
       {/* Q&A strip (collapsible) */}
       {qa.length>0&&(

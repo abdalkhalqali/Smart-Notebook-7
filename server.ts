@@ -408,19 +408,15 @@ async function callWithRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 150
     } catch (error: any) {
       attempt++;
 
-      // If it is an auth error, do NOT retry — fail fast
-      if (isAuthError(error)) {
-        throw error;
-      }
-      
+      // Fail fast — never retry auth errors or quota errors
+      if (isAuthError(error)) throw error;
+      if (isQuotaError(error)) throw error;
+
       const isTemporary = 
-        error?.status === "UNAVAILABLE" || 
-        error?.status === "RESOURCE_EXHAUSTED" ||
+        error?.status === "UNAVAILABLE" ||
         error?.code === 503 ||
-        error?.code === 429 ||
         (error?.message && (
           error.message.includes("503") || 
-          error.message.includes("429") ||
           error.message.includes("high demand") || 
           error.message.includes("temporary") ||
           error.message.includes("UNAVAILABLE") ||
@@ -2031,6 +2027,9 @@ app.post("/api/ai/lecture-chart-analyze", async (req, res) => {
     return res.json(chartData);
   } catch (err: any) {
     console.error("lecture-chart-analyze error:", err);
+    if (isQuotaError(err)) {
+      return res.json({ hasChart: false, chartType: "none", quotaExceeded: true });
+    }
     return res.json({ hasChart: false, chartType: "none" });
   }
 });
