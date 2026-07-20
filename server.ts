@@ -1098,7 +1098,8 @@ app.post("/api/ai/podcast", async (req, res) => {
       model: "gemini-2.5-flash",
       contents: `أعد صياغة هذا الملخص لمحاضرة بعنوان (${title || "محاضرة اليوم"}) ليصبح سيناريو بودكاست شيق للغاية ومبسط بصوت متحدث واحد باللغة العربية الفصحى المبسطة. يجب أن يكون قصيراً جداً (لا يتجاوز 70 كلمة) لكي يناسب التنزيل الصوتي المباشر.
       الملخص:
-      ${summary}`
+      ${summary}`,
+      config: { thinkingConfig: { thinkingBudget: 0 } }
     });
 
     const podcastSpeechText = scriptResponse.text?.trim() || `أهلاً بكم في بودكاست المحاضرة السريع. اليوم سنتحدث باختصار عن أهم النقاط التي وردت في تلخيص درس ${title || "اليوم"}. شكراً لكم ونلتقي في المراجعة القادمة.`;
@@ -1195,16 +1196,11 @@ app.post("/api/ai/transcribe",
         const ai = getAI(req);
         const response = await generateContentWithRetryAndFallback(ai, {
           model: "gemini-2.5-flash",
-          contents: [{
-            parts: [
-              {
-                text: "أنت نظام تحويل صوت إلى نص متخصص في اللغة العربية. حوّل هذا التسجيل الصوتي إلى نص عربي كامل ودقيق. اكتب النص كما هو مسموع حرفياً دون أي تعليقات أو مقدمات. إذا كان أي جزء غير مسموع اكتب [غير واضح] بدلاً منه."
-              },
-              {
-                inlineData: { mimeType, data: base64Audio }
-              }
-            ]
-          }]
+          contents: [
+            { inlineData: { mimeType, data: base64Audio } },
+            { text: "أنت نظام تحويل صوت إلى نص متخصص في اللغة العربية. حوّل هذا التسجيل الصوتي إلى نص عربي كامل ودقيق. اكتب النص كما هو مسموع حرفياً دون أي تعليقات أو مقدمات. إذا كان أي جزء غير مسموع اكتب [غير واضح] بدلاً منه." }
+          ],
+          config: { thinkingConfig: { thinkingBudget: 0 } }
         });
         transcript = response.text?.trim() || "";
       }
@@ -1353,22 +1349,18 @@ app.post("/api/ai/parse-document", async (req, res) => {
         const response = await generateContentWithRetryAndFallback(ai, {
           model: "gemini-2.5-flash",
           contents: [
-            {
-              inlineData: {
-                data: base64Data,
-                mimeType: "application/pdf"
-              }
-            },
-            `أنت محلل المناهج الجامعية الذكي. قام الطالب برفع مستند PDF دراسي بعنوان (${fileName}).
+            { inlineData: { data: base64Data, mimeType: "application/pdf" } },
+            { text: `أنت محلل المناهج الجامعية الذكي. قام الطالب برفع مستند PDF دراسي بعنوان (${fileName}).
             حلل هذا المستند الدراسي واستخرج منه تلخيصاً وهيكلاً لمذاكرته بأسلوب علمي رصين باللغة العربية الفصحى.
             التزم بالهيكل التالي وأعطه لي في هيئة مستند JSON حصراً:
             1. topic: عنوان واسع يغطي موضوع المستند بشكل محترف ومميز.
             2. summary: تلخيص تفصيلي للمحاضرة منسق ومفهوم.
             3. boxes: مصفوفة من 3 نصوص مستقلة (كل نص بحدود 25 كلمة) تحتوي على أهم المفاهيم أو القواعد أو المعادلات الحصرية للاختبار.
             4. cues: الكلمات والمفاهيم المفتاحية.
-            5. cornellSummary: خلاصة مكثفة جداً في سطرين.`
+            5. cornellSummary: خلاصة مكثفة جداً في سطرين.` }
           ],
           config: {
+            thinkingConfig: { thinkingBudget: 0 },
             responseMimeType: "application/json",
             responseSchema: {
               type: Type.OBJECT,
@@ -1407,6 +1399,7 @@ app.post("/api/ai/parse-document", async (req, res) => {
           4. cues: الكلمات والرموز المرجعية.
           5. cornellSummary: ملخص نهائي متقن لبطاقة المذاكرة السريعة.`,
           config: {
+            thinkingConfig: { thinkingBudget: 0 },
             responseMimeType: "application/json",
             responseSchema: {
               type: Type.OBJECT,
@@ -1521,11 +1514,12 @@ app.post("/api/ai/analyze-document", async (req, res) => {
     if (inlineData) {
       contents.push({ inlineData });
     }
-    contents.push(`${instructions}\n\nاسم المستند المرفق: ${fileName}`);
+    contents.push({ text: `${instructions}\n\nاسم المستند المرفق: ${fileName}` });
 
     const response = await generateContentWithRetryAndFallback(ai, {
       model: "gemini-2.5-flash",
-      contents
+      contents,
+      config: { thinkingConfig: { thinkingBudget: 0 } }
     });
 
     const contentText = (response.text || "لم نتمكن من الحصول على استجابة تحليلية واضحة.").trim();
@@ -1682,15 +1676,15 @@ app.post("/api/ai/lecture-extract-file", async (req, res) => {
       const customKey = (req.headers["x-custom-api-key"] as string || "").trim();
       const apiKey = customKey || getServerGeminiKey();
       if (!apiKey) return res.status(400).json({ success: false, error: "مفتاح API مطلوب لمعالجة الصور. أضفه من إعدادات الذكاء الاصطناعي." });
-      const ai = new GoogleGenAI({ apiKey });
+      const ai = new GoogleGenAI({ apiKey, httpOptions: { headers: { "User-Agent": "aistudio-build" } } });
       try {
         const result: any = await generateContentWithRetryAndFallback(ai, {
           model: "gemini-2.5-flash",
-          contents: [{ role: "user", parts: [
+          contents: [
             { inlineData: { mimeType: mime || "image/png", data: fileData } },
             { text: "استخرج كل النصوص الموجودة في هذه الصورة بدقة كاملة، محافظاً على التنسيق الأصلي قدر الإمكان. أعِد النص فقط دون أي تعليق." }
-          ]}],
-          config: {}
+          ],
+          config: { thinkingConfig: { thinkingBudget: 0 } }
         });
         extractedText = (result?.text || "").trim();
       } catch (imgErr: any) {
@@ -1775,11 +1769,11 @@ Provide a deep, comprehensive academic explanation as if lecturing university st
 - Do NOT summarize — elaborate fully in academic depth.
 - Start directly with the academic content, no preambles.`;
 
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey, httpOptions: { headers: { "User-Agent": "aistudio-build" } } });
     const result: any = await generateContentWithRetryAndFallback(ai, {
       model: "gemini-2.5-flash",
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      config: {}
+      contents: prompt,
+      config: { thinkingConfig: { thinkingBudget: 0 } }
     });
     const explanation = (result?.text || "").trim();
     if (!explanation) throw new Error("لم يُعِد الذكاء الاصطناعي أي محتوى");
@@ -1936,15 +1930,15 @@ app.post("/api/qr-session/:sessionId/upload", async (req, res) => {
 
   // Process image asynchronously — extract text with Gemini Vision
   try {
-    const ai = new GoogleGenAI({ apiKey: session.apiKey });
+    const ai = new GoogleGenAI({ apiKey: session.apiKey, httpOptions: { headers: { "User-Agent": "aistudio-build" } } });
     const mime = (fileType || "image/jpeg") as string;
     const result: any = await generateContentWithRetryAndFallback(ai, {
       model: "gemini-2.5-flash",
-      contents: [{ role: "user", parts: [
+      contents: [
         { inlineData: { mimeType: mime, data: fileData } },
         { text: `أنت خبير في قراءة النصوص والخطوط اليدوية.\nاستخرج كل ما هو مكتوب في هذه الصورة بدقة تامة، بما في ذلك:\n- الخط اليدوي بأي لغة\n- المعادلات الرياضية\n- الجداول والقوائم\n- العناوين والرموز\nحافظ على التنسيق الأصلي قدر الإمكان. أعِد النص فقط دون أي تعليق أو مقدمة.` }
-      ]}],
-      config: {}
+      ],
+      config: { thinkingConfig: { thinkingBudget: 0 } }
     });
     const text = (result?.text || "").trim();
     if (!text) {
@@ -1982,7 +1976,7 @@ app.post("/api/ai/lecture-chart-analyze", async (req, res) => {
     const apiKey = customKey || getServerGeminiKey();
     if (!apiKey) return res.json({ hasChart: false, chartType: "none" });
 
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey, httpOptions: { headers: { "User-Agent": "aistudio-build" } } });
     const schema = {
       type: Type.OBJECT,
       properties: {
@@ -2037,8 +2031,9 @@ app.post("/api/ai/lecture-chart-analyze", async (req, res) => {
 
     const result: any = await generateContentWithRetryAndFallback(ai, {
       model: "gemini-2.5-flash",
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      contents: prompt,
       config: {
+        thinkingConfig: { thinkingBudget: 0 },
         responseMimeType: "application/json",
         responseSchema: schema
       }
@@ -2072,7 +2067,7 @@ app.post("/api/ai/explain-drawing", async (req, res) => {
 
     if (!apiKey) return res.json({ success: false, error: "no_api_key", hasChart: false, chartType: "none" });
 
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey, httpOptions: { headers: { "User-Agent": "aistudio-build" } } });
 
     const schema = {
       type: Type.OBJECT,
@@ -2130,18 +2125,14 @@ app.post("/api/ai/explain-drawing", async (req, res) => {
       "- coordinate: coordPoints[{x,y,label}] و/أو coordLines[{x1,y1,x2,y2,label}]\n" +
       "  للميل (slope): الخط الذي يرتفع من اليسار إلى اليمين له ميل موجب (x2>x1 و y2>y1)";
 
-    // Use gemini-2.0-flash for vision tasks — better free-tier limits for multimodal,
-    // and avoids thinkingConfig (not supported by 2.0-flash) causing a cascade failure.
     const result: any = await generateContentWithRetryAndFallback(ai, {
       model: "gemini-2.5-flash",
-      contents: [{
-        role: "user",
-        parts: [
-          { inlineData: { mimeType, data: imageBase64 } },
-          { text: prompt }
-        ]
-      }],
+      contents: [
+        { inlineData: { mimeType, data: imageBase64 } },
+        { text: prompt }
+      ],
       config: {
+        thinkingConfig: { thinkingBudget: 0 },
         responseMimeType: "application/json",
         responseSchema: schema
       }
@@ -2175,12 +2166,12 @@ app.post("/api/ai/lecture-prep", async (req, res) => {
       // No key — just return the original text, math simply won't be typeset.
       return res.json({ success: true, processedText: text });
     }
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey, httpOptions: { headers: { "User-Agent": "aistudio-build" } } });
     const prompt = `أعد كتابة النص التالي حرفياً كما هو دون أي تغيير في الكلمات أو الترتيب أو الحذف أو الإضافة، والتزم فقط بتنفيذ هذا التعديل الوحيد: كل تعبير أو رمز رياضي موجود في النص (معادلات، كسور، جذور، أُسس، رموز يونانية، متغيرات...) أعد كتابته بصيغة LaTeX صحيحة ثم ضعه بين علامتي $ (مثال: $x^2 + y^2 = z^2$). إن لم يوجد أي رمز رياضي في النص أعده كما هو دون أي علامات $. أعد فقط النص النهائي بدون أي شرح إضافي.\n\nالنص:\n"""${text}"""`;
     const result: any = await generateContentWithRetryAndFallback(ai, {
       model: "gemini-2.5-flash",
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      config: {},
+      contents: prompt,
+      config: { thinkingConfig: { thinkingBudget: 0 } },
     });
     const out = result?.text || text;
     res.json({ success: true, processedText: (out || text).trim() || text });
@@ -2368,6 +2359,7 @@ app.post("/api/ai/chat", async (req, res) => {
       model: "gemini-2.5-flash",
       contents: contents,
       config: {
+        thinkingConfig: { thinkingBudget: 0 },
         systemInstruction: systemPrompt
       }
     });
