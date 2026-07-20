@@ -365,8 +365,8 @@ async function executeVisionCall(req: express.Request, promptText: string, base6
 
     const response = await generateContentWithRetryAndFallback(ai, {
       model: "gemini-2.5-flash",
-      contents: [{ role: "user", parts: [imagePart, { text: promptText }] }],
-      config: {}
+      contents: [imagePart, { text: promptText }],
+      config: { thinkingConfig: { thinkingBudget: 0 } }
     });
 
     return response.text || "";
@@ -457,61 +457,35 @@ async function callWithRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 150
   throw new Error("Unable to contact Gemini AI after multiple attempts.");
 }
 
-// 🌐 Seamless multi-level fallback: gemini-2.5-flash → gemini-2.0-flash → gemini-2.0-flash-lite
-// Handles 503/UNAVAILABLE (overloaded) and RESOURCE_EXHAUSTED/quota errors at each level.
+// 🌐 Seamless Fallback: gemini-2.5-flash → gemini-2.0-flash on 503/429 overload or quota errors
+// thinkingBudget:0 is compatible with both models (disables thinking chain)
 async function generateContentWithRetryAndFallback(ai: any, p: { model: string; contents: any; config?: any }): Promise<any> {
-  // Strip thinkingConfig — not supported by 2.0-flash or 2.0-flash-lite
-  const stripThinkingConfig = (cfg: any) => {
-    if (!cfg) return {};
-    const { thinkingConfig: _dropped, ...rest } = cfg as any;
-    return rest;
-  };
-
-  const isFallbackableError = (err: any) =>
-    err?.status === "UNAVAILABLE" ||
-    err?.status === "RESOURCE_EXHAUSTED" ||
-    err?.code === 503 ||
-    err?.code === 429 ||
-    isQuotaError(err) ||
-    isRateLimitError(err) ||
-    !!(err?.message && (
-      err.message.includes("503") ||
-      err.message.includes("429") ||
-      err.message.includes("high demand") ||
-      err.message.includes("temporary") ||
-      err.message.includes("UNAVAILABLE") ||
-      err.message.includes("Unavailable") ||
-      err.message.includes("busy")
-    ));
-
   try {
     return await callWithRetry(() => ai.models.generateContent(p));
-  } catch (err1: any) {
-    if (!isFallbackableError(err1)) throw err1;
+  } catch (error: any) {
+    const isDemandError =
+      error?.status === "UNAVAILABLE" ||
+      error?.status === "RESOURCE_EXHAUSTED" ||
+      error?.code === 503 ||
+      error?.code === 429 ||
+      isQuotaError(error) ||
+      isRateLimitError(error) ||
+      !!(error?.message && (
+        error.message.includes("503") ||
+        error.message.includes("429") ||
+        error.message.includes("high demand") ||
+        error.message.includes("temporary") ||
+        error.message.includes("UNAVAILABLE") ||
+        error.message.includes("Unavailable") ||
+        error.message.includes("busy")
+      ));
 
-    // First fallback: gemini-2.5-flash → gemini-2.0-flash (strip thinkingConfig)
-    if (p.model === "gemini-2.5-flash") {
-      console.warn(`[Gemini Fallback] gemini-2.5-flash → gemini-2.0-flash`);
-      const p2 = { ...p, model: "gemini-2.0-flash", config: stripThinkingConfig(p.config) };
-      try {
-        return await callWithRetry(() => ai.models.generateContent(p2));
-      } catch (err2: any) {
-        if (!isFallbackableError(err2)) throw err2;
-        // Second fallback: gemini-2.0-flash → gemini-2.0-flash-lite
-        console.warn(`[Gemini Fallback] gemini-2.0-flash → gemini-2.0-flash-lite`);
-        const p3 = { ...p2, model: "gemini-2.0-flash-lite" };
-        return await callWithRetry(() => ai.models.generateContent(p3));
-      }
+    if (isDemandError && p.model === "gemini-2.5-flash") {
+      console.warn("[Gemini API Fallback] 'gemini-2.5-flash' busy/quota. Switching to 'gemini-2.0-flash'...");
+      const fallbackParams = { ...p, model: "gemini-2.0-flash" };
+      return await callWithRetry(() => ai.models.generateContent(fallbackParams));
     }
-
-    // For any other model already in fallback chain → gemini-2.0-flash-lite
-    if (p.model !== "gemini-2.0-flash-lite") {
-      console.warn(`[Gemini Fallback] ${p.model} → gemini-2.0-flash-lite`);
-      const p2 = { ...p, model: "gemini-2.0-flash-lite", config: stripThinkingConfig(p.config) };
-      return await callWithRetry(() => ai.models.generateContent(p2));
-    }
-
-    throw err1;
+    throw error;
   }
 }
 
