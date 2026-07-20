@@ -488,13 +488,14 @@ function ChartPanel({chart}:{chart:ChartData}){
 // ══════════════════════════════════════════════════════════════════
 // WHITEBOARD — realistic white board, fills all available space
 // ══════════════════════════════════════════════════════════════════
-function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMsg,drawImg,isAnalyzingDraw,onClearDraw}:{
+function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMsg,drawImg,isAnalyzingDraw,onClearDraw,svgContent,onClearSvg}:{
   text:string; chart:ChartData|null; chunkIdx:number; totalChunks:number; isDrawingChart:boolean; chartErrorMsg?:string;
   drawImg?:string|null; isAnalyzingDraw?:boolean; onClearDraw?:()=>void;
+  svgContent?:string|null; onClearSvg?:()=>void;
 }){
   const {disp,done}=useTypewriter(text,5,11);
   const boardScrollRef=useRef<HTMLDivElement>(null);
-  const hasContent=disp.trim().length>0||chart?.hasChart||!!drawImg;
+  const hasContent=disp.trim().length>0||chart?.hasChart||!!drawImg||!!svgContent;
 
   // Auto-scroll to bottom as text is typed so board always shows latest content
   useEffect(()=>{
@@ -626,6 +627,23 @@ function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMs
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* AI-generated SVG diagram */}
+            {svgContent&&(
+              <div className="relative mt-3 rounded-2xl overflow-hidden border-2 border-emerald-300/60 shadow-lg bg-white">
+                {onClearSvg&&(
+                  <button onClick={onClearSvg}
+                    className="absolute top-2 left-2 z-10 w-7 h-7 flex items-center justify-center rounded-full bg-black/50 hover:bg-black/80 text-white text-xs font-black transition shadow-lg"
+                    title="إزالة الرسم">✕</button>
+                )}
+                <div className="absolute top-2 right-2 z-10 flex items-center gap-1 bg-emerald-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow">
+                  <span>🤖</span><span>رسم AI</span>
+                </div>
+                <div className="w-full flex items-center justify-center p-2"
+                  dangerouslySetInnerHTML={{__html:svgContent}}
+                  style={{minHeight:120}}/>
               </div>
             )}
           </div>
@@ -904,6 +922,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   const [currentChart,setCurrentChart]=useState<ChartData|null>(null);
   const [isDrawingChart,setIsDrawingChart]=useState(false);
   const [chartErrorMsg,setChartErrorMsg]=useState('');
+  const [svgContent,setSvgContent]=useState<string|null>(null);
   const [askMode,setAskMode]=useState(false);
 
   // Upload state
@@ -1169,16 +1188,35 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     if(c.hasChart){
       setCurrentChart({...c});
       setIsDrawingChart(false);
-    } else {
+    } else if(c.quotaExceeded){
       setIsDrawingChart(false);
       userDrawLockRef.current=false;
-      if(c.quotaExceeded){
-        setChartErrorMsg('⚠️ تجاوزت الحصة المجانية لـ API — أضف مفتاح API خاصاً من الإعدادات (⚙️). مثال للرسم المباشر: "ارسم مخطط: أ=5 ب=8 ج=3"');
-      } else {
-        setChartErrorMsg('لم أتمكن من تحديد نوع الرسم. جرب: "ارسم مخطط عمودي: أ=40 ب=60 ج=30"');
-      }
-      // Clear error after 6 seconds
+      setChartErrorMsg('⚠️ تجاوزت الحصة المجانية لـ API — أضف مفتاح API خاصاً من الإعدادات (⚙️).');
       setTimeout(()=>setChartErrorMsg(''),6000);
+    } else {
+      // ── Step 3: Not a data chart → try SVG diagram generation ──────
+      try{
+        const svgRes=await fetch(resolveApiUrl('/api/ai/draw-svg'),{
+          method:'POST',headers:{'Content-Type':'application/json',...getAiHeaders()},
+          body:JSON.stringify({prompt:text})
+        });
+        if(userDrawGenRef.current!==myGen) return;
+        const svgData=await svgRes.json();
+        if(svgData.svg){
+          setSvgContent(svgData.svg);
+          setIsDrawingChart(false);
+        } else {
+          setIsDrawingChart(false);
+          userDrawLockRef.current=false;
+          setChartErrorMsg('لم أتمكن من رسم هذا الطلب. جرب وصفاً أوضح مثل: "ارسم دائرة كهربائية بمقاومة ومكثف وبطارية"');
+          setTimeout(()=>setChartErrorMsg(''),7000);
+        }
+      }catch{
+        setIsDrawingChart(false);
+        userDrawLockRef.current=false;
+        setChartErrorMsg('خطأ في الاتصال بخدمة الرسم. حاول مجدداً.');
+        setTimeout(()=>setChartErrorMsg(''),5000);
+      }
     }
   },[clearDrawFallback]);
 
@@ -1601,7 +1639,9 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
         chartErrorMsg={chartErrorMsg}
         drawImg={manualDrawImg}
         isAnalyzingDraw={isEnhancing}
-        onClearDraw={()=>{setManualDrawImg(null);lastDrawDescriptionRef.current='';userDrawLockRef.current=false;}}/>
+        onClearDraw={()=>{setManualDrawImg(null);lastDrawDescriptionRef.current='';userDrawLockRef.current=false;}}
+        svgContent={svgContent}
+        onClearSvg={()=>{setSvgContent(null);userDrawLockRef.current=false;}}/>
 
       {/* DrawPad overlay — covers the whiteboard when active */}
       {showDrawPad&&(

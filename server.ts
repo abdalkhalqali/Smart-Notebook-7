@@ -2624,6 +2624,43 @@ Drawing rules — very important:
     });
   });
 
+  // ══════════════════════════════════════════════════════════════════
+  // AI SVG Drawing — generates real SVG diagrams from text description
+  // ══════════════════════════════════════════════════════════════════
+  app.post("/api/ai/draw-svg", async (req, res) => {
+    try {
+      const { prompt } = req.body as { prompt?: string };
+      if (!prompt?.trim()) return res.json({ error: "no_prompt" });
+
+      const ai = getAI(req);
+      const response = await generateContentWithRetryAndFallback(ai, {
+        model: "gemini-2.5-flash",
+        contents: `أنت رسام SVG متخصص في الرسوم العلمية والهندسية والتقنية.
+المستخدم يريد رسم: "${prompt.trim()}"
+
+أنشئ SVG دقيق ومفصل يمثل هذا الطلب تماماً. اتبع هذه القواعد بدقة:
+- الناتج يجب أن يكون SVG نظيف 100% يبدأ بـ <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 350">
+- استخدم ألوان احترافية: خلفية بيضاء أو فاتحة، خطوط وأشكال بألوان واضحة
+- للدوائر الكهربائية: ارسم المكونات بالرموز القياسية (بطارية ╫, مقاومة zig-zag, مكثف ||, مصباح ⊗, مفتاح /, diode ▷|)
+- للمخططات العلمية والرياضية: دقة هندسية مع تسميات وأرقام
+- للتشريح والأحياء: رسوم تفصيلية مع مؤشرات (lines pointing to parts)
+- للهندسة المعمارية والميكانيكية: قياسات وتفاصيل دقيقة
+- أضف نصوص توضيحية مناسبة بالعربية أو الإنجليزية حسب السياق
+- لا تُضف أي نص أو شرح خارج SVG — فقط SVG نقي من أول حرف لآخر حرف`,
+        config: { thinkingConfig: { thinkingBudget: 0 } }
+      });
+
+      const raw = response.text || "";
+      const match = raw.match(/<svg[\s\S]*?<\/svg>/i);
+      if (!match) return res.json({ error: "no_svg", raw: raw.slice(0, 300) });
+
+      res.json({ svg: match[0] });
+    } catch (err: any) {
+      console.error("[draw-svg] error:", err?.message);
+      res.status(500).json({ error: "server_error", message: err?.message });
+    }
+  });
+
   httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`🚀 Smart Lecture Notebook Server running on http://localhost:${PORT}`);
   });
