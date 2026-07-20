@@ -2919,26 +2919,32 @@ export default function App() {
         headers: { "Content-Type": "application/json", ...getAiHeaders() },
         body: JSON.stringify({ imageData: doc.base64 })
       });
-      if (!res.ok) throw new Error("فشل الخادم في قراءة الصورة واكتشاف النصوص.");
       const data = await res.json();
       
-      if (data.text) {
-        // Update document with transcription list
-        const updatedDocs = (lecture.documents || []).map(d =>
-          d.id === docId ? { ...d, transcription: data.text } : d
-        );
-        updateLectureData(lecture.id, { 
-          documents: updatedDocs,
-          lectureText: data.text
-        });
-        setLectureTextEdit(data.text);
-        alert(`🎉 تم نجاح استخراج النص من الصورة! تم نسخه أيضاً إلى مفكرة تفريغ المحاضرة.`);
-      } else {
-        alert("لم يتم العثور على أي نصوص واضحة في الصورة المحددة.");
+      if (data.error || !data.text) {
+        const msg = data.error === "quota"
+          ? "⚠️ نفدت حصة Gemini API اليومية — جرّب مفتاحاً آخر من الإعدادات أو انتظر حتى الغد."
+          : data.error === "rate_limit"
+          ? "⏱️ تجاوزت الحد المسموح في الدقيقة — جرّب مرة ثانية بعد لحظة."
+          : data.error === "auth"
+          ? "🔑 مفتاح API غير صالح — تحقق من إعداداتك."
+          : "❌ تعذّر استخراج النص — تأكد أن الصورة واضحة وتحتوي على نص مقروء.";
+        return alert(msg);
       }
+
+      // Update document with transcription
+      const updatedDocs = (lecture.documents || []).map(d =>
+        d.id === docId ? { ...d, transcription: data.text } : d
+      );
+      updateLectureData(lecture.id, { 
+        documents: updatedDocs,
+        lectureText: data.text
+      });
+      setLectureTextEdit(data.text);
+      alert(`🎉 تم نجاح استخراج النص من الصورة! تم نسخه أيضاً إلى مفكرة تفريغ المحاضرة.`);
     } catch (err: any) {
       console.error(err);
-      alert(`خطأ أثناء مسح الصورة: ${err.message}`);
+      alert(`❌ خطأ غير متوقع: ${err.message}`);
     } finally {
       setIsParsingDocument(false);
     }

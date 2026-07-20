@@ -247,7 +247,7 @@ async function executeGeminiOrOpenRouterCall(req: express.Request, systemPrompt:
     }
 
     const response = await generateContentWithRetryAndFallback(ai, {
-      model: "gemini-2.5-flash",
+      model: "gemini-2.0-flash",
       contents: fullContents,
       config
     });
@@ -363,11 +363,9 @@ async function executeVisionCall(req: express.Request, promptText: string, base6
       }
     };
 
-    // Use gemini-2.0-flash — better free-tier quota for multimodal/vision,
-    // and avoids thinkingConfig (unsupported by 2.0-flash) causing cascade failures.
     const response = await generateContentWithRetryAndFallback(ai, {
       model: "gemini-2.0-flash",
-      contents: [imagePart, { text: promptText }],
+      contents: [{ role: "user", parts: [imagePart, { text: promptText }] }],
       config: {}
     });
 
@@ -491,22 +489,11 @@ async function generateContentWithRetryAndFallback(ai: any, p: { model: string; 
   } catch (err1: any) {
     if (!isFallbackableError(err1)) throw err1;
 
-    if (p.model === "gemini-2.5-flash") {
-      console.warn("[Gemini Fallback] gemini-2.5-flash → gemini-2.0-flash");
-      const p2 = { ...p, model: "gemini-2.0-flash", config: stripThinkingConfig(p.config) };
-      try {
-        return await callWithRetry(() => ai.models.generateContent(p2));
-      } catch (err2: any) {
-        if (!isFallbackableError(err2)) throw err2;
-        console.warn("[Gemini Fallback] gemini-2.0-flash → gemini-1.5-flash");
-        const p3 = { ...p2, model: "gemini-1.5-flash" };
-        return await callWithRetry(() => ai.models.generateContent(p3));
-      }
-    }
-
-    if (p.model === "gemini-2.0-flash") {
-      console.warn("[Gemini Fallback] gemini-2.0-flash → gemini-1.5-flash");
-      const p2 = { ...p, model: "gemini-1.5-flash", config: stripThinkingConfig(p.config) };
+    // Primary fallback: any overloaded/quota model → gemini-2.0-flash-lite
+    if (p.model !== "gemini-2.0-flash-lite") {
+      const label = p.model;
+      console.warn(`[Gemini Fallback] ${label} → gemini-2.0-flash-lite`);
+      const p2 = { ...p, model: "gemini-2.0-flash-lite", config: stripThinkingConfig(p.config) };
       return await callWithRetry(() => ai.models.generateContent(p2));
     }
 
@@ -886,17 +873,18 @@ app.post("/api/ai/ocr", async (req, res) => {
 
     res.json({ text: responseText.trim() || "" });
   } catch (error) {
-    if (isAuthError(error)) {
-      return res.status(401).json({ error: "فشل الاتصال: مفتاح API غير صالح." });
-    }
     console.error("OCR error:", error);
+    // Always return 200 so frontend can read the error field from the body
+    if (isAuthError(error)) {
+      return res.json({ error: "auth", text: null });
+    }
     if (isQuotaError(error)) {
-      return res.status(429).json({ error: "quota", text: null });
+      return res.json({ error: "quota", text: null });
     }
     if (isRateLimitError(error)) {
-      return res.status(429).json({ error: "rate_limit", text: null });
+      return res.json({ error: "rate_limit", text: null });
     }
-    res.status(500).json({ error: "ocr_failed", text: null });
+    res.json({ error: "ocr_failed", text: null });
   }
 });
 
@@ -1119,7 +1107,7 @@ app.post("/api/ai/podcast", async (req, res) => {
 
     // Generate a beautiful TTS script from summary then feed to TTS model
     const scriptResponse = await generateContentWithRetryAndFallback(ai, {
-      model: "gemini-2.5-flash",
+      model: "gemini-2.0-flash",
       contents: `أعد صياغة هذا الملخص لمحاضرة بعنوان (${title || "محاضرة اليوم"}) ليصبح سيناريو بودكاست شيق للغاية ومبسط بصوت متحدث واحد باللغة العربية الفصحى المبسطة. يجب أن يكون قصيراً جداً (لا يتجاوز 70 كلمة) لكي يناسب التنزيل الصوتي المباشر.
       الملخص:
       ${summary}`
@@ -1218,7 +1206,7 @@ app.post("/api/ai/transcribe",
         // Default: use Gemini SDK (direct key or server key)
         const ai = getAI(req);
         const response = await generateContentWithRetryAndFallback(ai, {
-          model: "gemini-2.5-flash",
+          model: "gemini-2.0-flash",
           contents: [{
             parts: [
               {
@@ -1375,7 +1363,7 @@ app.post("/api/ai/parse-document", async (req, res) => {
       try {
         const base64Data = fileData.includes(",") ? fileData.split(",")[1] : fileData;
         const response = await generateContentWithRetryAndFallback(ai, {
-          model: "gemini-2.5-flash",
+          model: "gemini-2.0-flash",
           contents: [
             {
               inlineData: {
@@ -1421,7 +1409,7 @@ app.post("/api/ai/parse-document", async (req, res) => {
       // PPTX, Excel, text, etc.
       try {
         const response = await generateContentWithRetryAndFallback(ai, {
-          model: "gemini-2.5-flash",
+          model: "gemini-2.0-flash",
           contents: `أنت محلل المستندات والمناهج الجامعية الذكي المعتمد في الدفتر. قام الطالب برفع مستند باسم (${fileName}) بحجم (${fileSize} كيلوبايت) ونوع (${fileType}).
           بما أن هذا الملف هو عرض تقديمي (PowerPoint) أو جدول بيانات مالي (Excel) أو ملف نصي، قم بصياغة دليل دراسي مثالي متوقع مبني على اسم هذا الملف ونوع محتواه وموضوعه.
           استخرج المخرجات في هيئة ملف JSON باللغة العربية الفصحى الفائقة التفاصيل:
@@ -1548,7 +1536,7 @@ app.post("/api/ai/analyze-document", async (req, res) => {
     contents.push(`${instructions}\n\nاسم المستند المرفق: ${fileName}`);
 
     const response = await generateContentWithRetryAndFallback(ai, {
-      model: "gemini-2.5-flash",
+      model: "gemini-2.0-flash",
       contents
     });
 
@@ -1801,9 +1789,9 @@ Provide a deep, comprehensive academic explanation as if lecturing university st
 
     const ai = new GoogleGenAI({ apiKey });
     const result: any = await generateContentWithRetryAndFallback(ai, {
-      model: "gemini-2.5-flash",
+      model: "gemini-2.0-flash",
       contents: [{ role: "user", parts: [{ text: prompt }] }],
-      config: { thinkingConfig: { thinkingBudget: 8192 } }
+      config: {}
     });
     const explanation = (result?.text || "").trim();
     if (!explanation) throw new Error("لم يُعِد الذكاء الاصطناعي أي محتوى");
@@ -2060,10 +2048,9 @@ app.post("/api/ai/lecture-chart-analyze", async (req, res) => {
       "المقطع:\n\"\"\"" + snippet + "\"\"\"";
 
     const result: any = await generateContentWithRetryAndFallback(ai, {
-      model: "gemini-2.5-flash",
+      model: "gemini-2.0-flash",
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       config: {
-        thinkingConfig: { thinkingBudget: 0 },
         responseMimeType: "application/json",
         responseSchema: schema
       }
@@ -2203,9 +2190,9 @@ app.post("/api/ai/lecture-prep", async (req, res) => {
     const ai = new GoogleGenAI({ apiKey });
     const prompt = `أعد كتابة النص التالي حرفياً كما هو دون أي تغيير في الكلمات أو الترتيب أو الحذف أو الإضافة، والتزم فقط بتنفيذ هذا التعديل الوحيد: كل تعبير أو رمز رياضي موجود في النص (معادلات، كسور، جذور، أُسس، رموز يونانية، متغيرات...) أعد كتابته بصيغة LaTeX صحيحة ثم ضعه بين علامتي $ (مثال: $x^2 + y^2 = z^2$). إن لم يوجد أي رمز رياضي في النص أعده كما هو دون أي علامات $. أعد فقط النص النهائي بدون أي شرح إضافي.\n\nالنص:\n"""${text}"""`;
     const result: any = await generateContentWithRetryAndFallback(ai, {
-      model: "gemini-2.5-flash",
+      model: "gemini-2.0-flash",
       contents: [{ role: "user", parts: [{ text: prompt }] }],
-      config: { thinkingConfig: { thinkingBudget: 0 } },
+      config: {},
     });
     const out = result?.text || text;
     res.json({ success: true, processedText: (out || text).trim() || text });
@@ -2390,11 +2377,10 @@ app.post("/api/ai/chat", async (req, res) => {
 
     const ai = getAI(req);
     const response = await generateContentWithRetryAndFallback(ai, {
-      model: "gemini-2.5-flash",
+      model: "gemini-2.0-flash",
       contents: contents,
       config: {
-        systemInstruction: systemPrompt,
-        thinkingConfig: { thinkingBudget: 0 }
+        systemInstruction: systemPrompt
       }
     });
 
