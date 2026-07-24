@@ -6,10 +6,13 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Modality, Type } from "@google/genai";
 import "dotenv/config";
 
-// Helper to get server Gemini key — checks both env var names for backward compatibility
+// Helper to get server keys — used as fallback when user does not provide a personal key
 const getServerGeminiKey = () => (process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_AL || "").trim();
-// Helper to get server OpenAI key, used as fallback when provider=openai and no personal key was entered
 const getServerOpenAIKey = () => (process.env.OPENAI_API_KEY || "").trim();
+const getServerOpenRouterKey = () => (process.env.OPENROUTER_API_KEY || "").trim();
+const getServerHFKey = () => (process.env.HF_TOKEN || "").trim();
+const getServerGroqKey = () => (process.env.GROQ_API_KEY || "").trim();
+const getServerDeepSeekKey = () => (process.env.DEEPSEEK_API_KEY || "").trim();
 
 // Wrap raw 16-bit PCM audio (as returned by Gemini TTS) in a valid WAV container
 function pcm16ToWavBase64(pcmBase64: string, sampleRate = 24000, channels = 1): string {
@@ -80,7 +83,7 @@ app.use((req, res, next) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
   }
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type,x-custom-api-key,x-custom-provider");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type,x-custom-api-key,x-custom-provider,x-custom-endpoint-url,x-custom-model");
   if (req.method === "OPTIONS") {
     return res.sendStatus(204);
   }
@@ -202,14 +205,25 @@ async function executeGeminiOrOpenRouterCall(req: express.Request, systemPrompt:
     if (hfText.startsWith("```json")) hfText = hfText.replace(/^```json\s*/, "").replace(/\s*```$/, "");
     else if (hfText.startsWith("```")) hfText = hfText.replace(/^```\s*/, "").replace(/\s*```$/, "");
     return hfText.trim();
-  } else if (provider === "openai" || provider === "custom") {
-    const openaiKey = trimmedKey || getServerOpenAIKey();
+  } else if (provider === "openai" || provider === "groq" || provider === "deepseek" || provider === "custom") {
+    const serverFallback = provider === "openai" ? getServerOpenAIKey()
+      : provider === "groq" ? getServerGroqKey()
+      : provider === "deepseek" ? getServerDeepSeekKey()
+      : "";
+    const openaiKey = trimmedKey || serverFallback;
     if (!openaiKey) throw new Error("API_KEY_MISSING");
     const endpointUrl = provider === "custom"
       ? ((req.headers["x-custom-endpoint-url"] as string) || "").trim()
-      : "https://api.openai.com/v1/chat/completions";
+      : provider === "openai" ? "https://api.openai.com/v1/chat/completions"
+      : provider === "groq" ? "https://api.groq.com/openai/v1/chat/completions"
+      : provider === "deepseek" ? "https://api.deepseek.com/v1/chat/completions"
+      : "";
     if (!endpointUrl) throw new Error("CUSTOM_ENDPOINT_MISSING");
-    const customModel = ((req.headers["x-custom-model"] as string) || "").trim() || (provider === "openai" ? "gpt-4o-mini" : "gpt-4o-mini");
+    const defaultModel = provider === "openai" ? "gpt-4o-mini"
+      : provider === "groq" ? "llama3-70b-8192"
+      : provider === "deepseek" ? "deepseek-chat"
+      : "gpt-4o-mini";
+    const customModel = ((req.headers["x-custom-model"] as string) || "").trim() || defaultModel;
     const oaMessages: any[] = [];
     if (systemPrompt) oaMessages.push({ role: "system", content: systemPrompt });
     const oaUserContent = systemSchema
@@ -222,7 +236,7 @@ async function executeGeminiOrOpenRouterCall(req: express.Request, systemPrompt:
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${openaiKey}` },
         body: JSON.stringify({ model: customModel, messages: oaMessages, max_tokens: 2000 })
       });
-      if (!resp.ok) { const t = await resp.text(); throw new Error(`${provider === "openai" ? "OpenAI" : "Custom endpoint"} failed: ${resp.status} - ${t}`); }
+      if (!resp.ok) { const t = await resp.text(); throw new Error(`${provider === "openai" ? "OpenAI" : provider === "groq" ? "GROQ" : provider === "deepseek" ? "DeepSeek" : "Custom endpoint"} failed: ${resp.status} - ${t}`); }
       return resp;
     });
     const oaData: any = await oaRes.json();
@@ -689,6 +703,61 @@ app.post("/api/ai/validate-key", async (req, res) => {
         expiryDate: "نشط ومستمر",
         status: "مفتاح OpenAI فَعَّال ونشط ✅"
       });
+
+    } else if (prov === "groq") {
+      const groqResp = await fetch("https://api.groq.com/openai/v1/models", {
+        headers: { "Authorization": `Bearer ${trimmedKey}` }
+      });
+      if (!groqResp.ok) {
+        const errTxt = await groqResp.text();
+        let displayError = errTxt;
+        try { const parsed = JSON.parse(errTxt); if (parsed.error?.message) displayError = parsed.error.message; } catch (_) {}
+        throw new Error(`فشل التحقق من مفتاح GROQ: ${groqResp.status} - ${displayError}`);
+      }
+      return res.json({
+        valid: true,
+        provider: "groq",
+        owner: "حساب GROQ مفعّل ✅",
+        permissions: [
+          "الوصول الكامل لجميع ميزات الدفتر الذكي 🚀",
+          "سرعة استجابة عالية جداً باستخدام نماذج Llama وMixtral ⚡",
+          "حل الواجبات والتلخيص والأسئلة الأكاديمية 🧠",
+          "تحليل الصور والنصوص بالذكاء الاصطناعي 📚"
+        ],
+        quotaAllowed: "حسب خطة GROQ",
+        quotaUsed: `${extraUsed} طلب مستهلك`,
+        quotaRemaining: "حسب رصيد الحساب",
+        expiryDate: "نشط ومستمر",
+        status: "مفتاح GROQ فَعَّال ونشط ✅"
+      });
+
+    } else if (prov === "deepseek") {
+      const dsResp = await fetch("https://api.deepseek.com/models", {
+        headers: { "Authorization": `Bearer ${trimmedKey}` }
+      });
+      if (!dsResp.ok) {
+        const errTxt = await dsResp.text();
+        let displayError = errTxt;
+        try { const parsed = JSON.parse(errTxt); if (parsed.error?.message) displayError = parsed.error.message; } catch (_) {}
+        throw new Error(`فشل التحقق من مفتاح DeepSeek: ${dsResp.status} - ${displayError}`);
+      }
+      return res.json({
+        valid: true,
+        provider: "deepseek",
+        owner: "حساب DeepSeek مفعّل ✅",
+        permissions: [
+          "الوصول الكامل لجميع ميزات الدفتر الذكي 🚀",
+          "نماذج DeepSeek قوية في التفكير والبرمجة والرياضيات 🧠",
+          "حل الواجبات والتلخيص والأسئلة الأكاديمية 📝",
+          "تحليل الصور والنصوص بالذكاء الاصطناعي 📚"
+        ],
+        quotaAllowed: "حسب خطة DeepSeek",
+        quotaUsed: `${extraUsed} طلب مستهلك`,
+        quotaRemaining: "حسب رصيد الحساب",
+        expiryDate: "نشط ومستمر",
+        status: "مفتاح DeepSeek فَعَّال ونشط ✅"
+      });
+
     } else {
       // "custom" endpoint provider — requires the user to also provide the endpoint URL,
       // since we can't guess it. We genuinely call it rather than pretending success.
