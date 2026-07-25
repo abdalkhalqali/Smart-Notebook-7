@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import MathText from './MathText';
 import { resolveApiUrl } from '../utils/apiBase';
+import { loadKeys, getActiveKey } from '../utils/aiKeys';
 
 // ══════════════════════════════════════════════════════════════════
 // شارح المحاضرات التفاعلي — سبورة بيضاء تملأ الشاشة
@@ -780,7 +781,21 @@ function DrawPad({onClose,onEnhance,isEnhancing}:{
 }
 
 // ── AI headers ────────────────────────────────────────────────────
+// Uses the new multi-key system (aiKeys_v2) with fallback to the old single-key storage
 function getAiHeaders():Record<string,string>{
+  // Try new multi-key system first
+  try{
+    const keys=loadKeys();
+    const prov=(localStorage.getItem('aiProvider')||'gemini') as any;
+    const active=getActiveKey(keys,prov)||keys[0];
+    if(active?.key.trim()){
+      const h:Record<string,string>={'x-custom-api-key':active.key.trim(),'x-custom-provider':active.provider};
+      if(active.provider==='custom'&&active.endpointUrl?.trim()) h['x-custom-endpoint-url']=active.endpointUrl.trim();
+      if(active.model?.trim()) h['x-custom-model']=active.model.trim();
+      return h;
+    }
+  }catch(_){}
+  // Fallback: old single-key storage
   const key=(localStorage.getItem('customAiKey')||'').trim();
   const prov=localStorage.getItem('aiProvider')||'gemini';
   if(!key) return {};
@@ -1350,7 +1365,10 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     }catch(_){}
 
     setStatus('connecting');
-    const key=(localStorage.getItem('aiProvider')||'gemini')==='gemini'?(localStorage.getItem('customAiKey')||''):'';
+    // Get Gemini key from new multi-key system; empty = server uses its own key pool
+    const _keys=loadKeys();
+    const _geminiKey=getActiveKey(_keys,'gemini')?.key.trim()||(localStorage.getItem('customAiKey')||'').trim();
+    const key=_geminiKey;
     const params=new URLSearchParams({key,lang:'ar',mode:'lecture',voice});
     audioCtxRef.current=new AudioContext();
     playTimeRef.current=audioCtxRef.current.currentTime;

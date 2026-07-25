@@ -274,8 +274,13 @@ export default function VoiceConversation({ onClose }: VoiceConversationProps) {
     // Get API key from localStorage (same key the sidebar "مفتاح الذكاء الاصطناعي" field saves to).
     // Voice chat runs on Gemini Live specifically, so only use the stored key when the
     // selected provider is Gemini — a key from another provider (OpenRouter/HF/custom) won't work here.
-    const storedProvider = localStorage.getItem('aiProvider') || 'gemini';
-    const customKey = storedProvider === 'gemini' ? (localStorage.getItem('customAiKey') || '') : '';
+    // Get Gemini key from new multi-key store; fallback to old storage; empty = server pool
+    let customKey = '';
+    try {
+      const { loadKeys, getActiveKey } = await import('../utils/aiKeys');
+      customKey = getActiveKey(loadKeys(), 'gemini')?.key.trim() || '';
+    } catch (_) {}
+    if (!customKey) customKey = (localStorage.getItem('customAiKey') || '').trim();
     const params = new URLSearchParams({
       key: customKey,
       lang: language,
