@@ -6,13 +6,78 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Modality, Type } from "@google/genai";
 import "dotenv/config";
 
-// Helper to get server keys — used as fallback when user does not provide a personal key
-const getServerGeminiKey = () => (process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_AL || "").trim();
-const getServerOpenAIKey = () => (process.env.OPENAI_API_KEY || "").trim();
-const getServerOpenRouterKey = () => (process.env.OPENROUTER_API_KEY || "").trim();
-const getServerHFKey = () => (process.env.HF_TOKEN || "").trim();
-const getServerGroqKey = () => (process.env.GROQ_API_KEY || "").trim();
-const getServerDeepSeekKey = () => (process.env.DEEPSEEK_API_KEY || "").trim();
+// ── Multi-Key Pool: rotates automatically when a key hits quota ───────────────
+// Reads GEMINI_API_KEY, GEMINI_API_KEY_2, GEMINI_API_KEY_3 … from env.
+// The same pattern applies to all providers (OPENAI_API_KEY_2, GROQ_API_KEY_2 …).
+function readKeyList(baseVar: string, ...aliases: string[]): string[] {
+  const keys: string[] = [];
+  // Try the base name and any aliases as slot #1
+  const base = aliases.reduce(
+    (acc, alias) => acc || (process.env[alias] || "").trim(),
+    (process.env[baseVar] || "").trim()
+  );
+  if (base) keys.push(base);
+  // Numbered slots: GEMINI_API_KEY_2, GEMINI_API_KEY_3 … up to _20
+  for (let i = 2; i <= 20; i++) {
+    const k = (process.env[`${baseVar}_${i}`] || "").trim();
+    if (k) keys.push(k);
+  }
+  return keys;
+}
+
+class KeyPool {
+  private keys: string[];
+  private idx = 0;
+  private exhaustedAt: Map<number, number> = new Map(); // idx → epoch ms when exhausted
+  private readonly COOLDOWN_MS = 60 * 60 * 1000; // 1 h before retrying an exhausted key
+
+  constructor(keys: string[]) { this.keys = keys; }
+
+  get size() { return this.keys.length; }
+
+  /** Current best key (first non-exhausted from current position). */
+  current(): string {
+    if (!this.keys.length) return "";
+    const now = Date.now();
+    for (let i = 0; i < this.keys.length; i++) {
+      const candidate = (this.idx + i) % this.keys.length;
+      const ex = this.exhaustedAt.get(candidate) ?? 0;
+      if (now - ex > this.COOLDOWN_MS) {
+        this.idx = candidate;
+        return this.keys[candidate];
+      }
+    }
+    // All keys on cooldown — reset and use first one anyway
+    this.exhaustedAt.clear();
+    this.idx = 0;
+    return this.keys[0];
+  }
+
+  /** Mark the active key as quota-exhausted and advance to the next. */
+  rotate(): string {
+    if (this.keys.length <= 1) return this.current();
+    this.exhaustedAt.set(this.idx, Date.now());
+    this.idx = (this.idx + 1) % this.keys.length;
+    console.warn(`[KeyPool] Key #${this.idx} quota exhausted. Rotating to key #${(this.idx + 1) % this.keys.length + 1} of ${this.keys.length}…`);
+    return this.current();
+  }
+}
+
+// One pool per provider — populated lazily from environment variables
+const geminiPool  = new KeyPool(readKeyList("GEMINI_API_KEY", "GOOGLE_GEMINI_AL"));
+const openaiPool  = new KeyPool(readKeyList("OPENAI_API_KEY"));
+const openrouterPool = new KeyPool(readKeyList("OPENROUTER_API_KEY"));
+const hfPool      = new KeyPool(readKeyList("HF_TOKEN"));
+const groqPool    = new KeyPool(readKeyList("GROQ_API_KEY"));
+const deepseekPool = new KeyPool(readKeyList("DEEPSEEK_API_KEY"));
+
+// Backwards-compatible helpers (return current pool key)
+const getServerGeminiKey    = () => geminiPool.current();
+const getServerOpenAIKey    = () => openaiPool.current();
+const getServerOpenRouterKey = () => openrouterPool.current();
+const getServerHFKey        = () => hfPool.current();
+const getServerGroqKey      = () => groqPool.current();
+const getServerDeepSeekKey  = () => deepseekPool.current();
 
 // Wrap raw 16-bit PCM audio (as returned by Gemini TTS) in a valid WAV container
 function pcm16ToWavBase64(pcmBase64: string, sampleRate = 24000, channels = 1): string {
@@ -471,36 +536,77 @@ async function callWithRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 150
   throw new Error("Unable to contact Gemini AI after multiple attempts.");
 }
 
-// 🌐 Seamless Fallback: gemini-2.5-flash → gemini-2.0-flash on 503/429 overload or quota errors
-// thinkingBudget:0 is compatible with both models (disables thinking chain)
-async function generateContentWithRetryAndFallback(ai: any, p: { model: string; contents: any; config?: any }): Promise<any> {
+/** Build a fresh GoogleGenAI client from a key (used for pool rotation). */
+function makeGeminiClient(apiKey: string) {
+  return new GoogleGenAI({ apiKey, httpOptions: { headers: { "User-Agent": "aistudio-build" } } });
+}
+
+// 🌐 Seamless Fallback + Key Rotation:
+//   1. Retry on temporary 503/429 (backoff).
+//   2. If the primary model is still failing → switch gemini-2.5-flash → gemini-2.0-flash.
+//   3. If it's a true quota exhaustion AND we have more server keys → rotate to the next key.
+//   4. After rotating, retry both model variants with the new key.
+// Rotation is attempted for any quota error when the pool has >1 key available.
+// If the active `ai` was using a personal key that's exhausted, falling back to
+// a server pool key is the right thing to do (better than a hard failure).
+async function generateContentWithRetryAndFallback(
+  ai: any,
+  p: { model: string; contents: any; config?: any }
+): Promise<any> {
+  const isDemandOrQuota = (error: any) =>
+    error?.status === "UNAVAILABLE" ||
+    error?.status === "RESOURCE_EXHAUSTED" ||
+    error?.code === 503 ||
+    error?.code === 429 ||
+    isQuotaError(error) ||
+    isRateLimitError(error) ||
+    !!(error?.message && (
+      error.message.includes("503") ||
+      error.message.includes("429") ||
+      error.message.includes("high demand") ||
+      error.message.includes("temporary") ||
+      error.message.includes("UNAVAILABLE") ||
+      error.message.includes("Unavailable") ||
+      error.message.includes("busy")
+    ));
+
+  // ── Attempt with the primary model ────────────────────────────
+  let primaryError: any = null;
   try {
     return await callWithRetry(() => ai.models.generateContent(p));
   } catch (error: any) {
-    const isDemandError =
-      error?.status === "UNAVAILABLE" ||
-      error?.status === "RESOURCE_EXHAUSTED" ||
-      error?.code === 503 ||
-      error?.code === 429 ||
-      isQuotaError(error) ||
-      isRateLimitError(error) ||
-      !!(error?.message && (
-        error.message.includes("503") ||
-        error.message.includes("429") ||
-        error.message.includes("high demand") ||
-        error.message.includes("temporary") ||
-        error.message.includes("UNAVAILABLE") ||
-        error.message.includes("Unavailable") ||
-        error.message.includes("busy")
-      ));
-
-    if (isDemandError && p.model === "gemini-2.5-flash") {
-      console.warn("[Gemini API Fallback] 'gemini-2.5-flash' busy/quota. Switching to 'gemini-2.0-flash'...");
-      const fallbackParams = { ...p, model: "gemini-2.0-flash" };
-      return await callWithRetry(() => ai.models.generateContent(fallbackParams));
-    }
-    throw error;
+    primaryError = error;
+    if (!isDemandOrQuota(error)) throw error; // auth / unknown → rethrow immediately
   }
+
+  // ── Fallback 1: switch gemini-2.5-flash → gemini-2.0-flash ────
+  if (p.model === "gemini-2.5-flash") {
+    console.warn("[Gemini Fallback] gemini-2.5-flash busy/quota. Trying gemini-2.0-flash…");
+    try {
+      return await callWithRetry(() => ai.models.generateContent({ ...p, model: "gemini-2.0-flash" }));
+    } catch (_) { /* continue to key rotation */ }
+  }
+
+  // ── Fallback 2: quota exhausted → rotate server key ────────────
+  if (isQuotaError(primaryError) && geminiPool.size > 1) {
+    const nextKey = geminiPool.rotate();
+    if (nextKey) {
+      console.warn("[Key Rotation] Retrying with next Gemini server key…");
+      const newAi = makeGeminiClient(nextKey);
+      try {
+        return await callWithRetry(() => newAi.models.generateContent(p));
+      } catch (err2: any) {
+        // Also try the model fallback on the new key
+        if (p.model === "gemini-2.5-flash") {
+          try {
+            return await callWithRetry(() => newAi.models.generateContent({ ...p, model: "gemini-2.0-flash" }));
+          } catch (_) {}
+        }
+      }
+    }
+  }
+
+  throw primaryError;
 }
 
 // Memory caches for PDF.js scripts

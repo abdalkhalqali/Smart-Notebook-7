@@ -1023,6 +1023,12 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
       proc.onaudioprocess=(e)=>{
         if(!wsRef.current||wsRef.current.readyState!==WebSocket.OPEN) return;
         if(statusRef.current==='paused') return;
+        // ── إصلاح حلقة الصوت عند تسجيل الشاشة ──
+        // عندما يكون الذكاء الاصطناعي يتحدث (narrating/answering)، لا نُرسل صوت
+        // الميكروفون إلى الخادم — هذا يمنع التقاط صوت الذكاء الاصطناعي من خلال
+        // تسجيل الشاشة وإرساله إليه مرةً أخرى (حلقة صوتية).
+        // المستخدم يستطيع التدخّل يدوياً بزر "اسأل الآن" الذي يُحوّل الحالة إلى listening.
+        if(statusRef.current==='narrating'||statusRef.current==='answering') return;
         // Downsample from AudioContext native rate to 16kHz for Gemini input
         const raw=e.inputBuffer.getChannelData(0);
         const ratio=ctx.sampleRate/16000;
