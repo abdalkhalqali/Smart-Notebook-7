@@ -2358,6 +2358,84 @@ app.post("/api/ai/lecture-prep", async (req, res) => {
 });
 
 // ==========================================
+// Clever Painter — AI Command Generator
+// نحوّل نص المحاضر إلى أمر رسوميات فيزيائية/هندسية JSON
+// ==========================================
+app.post("/api/ai/clever-painter-command", async (req, res) => {
+  try {
+    const { text } = req.body || {};
+    if (!text?.trim()) return res.json({ command: null });
+
+    const customKey = (req.headers["x-custom-api-key"] as string || "").trim();
+    const apiKey = customKey || getServerGeminiKey();
+    if (!apiKey) return res.json({ command: null, error: "no_api_key" });
+
+    const ai = new GoogleGenAI({ apiKey, httpOptions: { headers: { "User-Agent": "aistudio-build" } } });
+
+    const prompt = `أنت محلل نصوص علمية ومولّد أوامر رسوميات. لديك مكتبة رسومات (clever-painter) تدعم الأنواع التالية:
+
+1. circuit — دوائر كهربائية
+   {"action":"draw","type":"circuit","title":"دائرة كهربائية","components":[{"type":"battery","voltage":12},{"type":"resistor","value":"100Ω","label":"R1"},{"type":"bulb","label":"مصباح"},{"type":"switch","label":"مفتاح"},{"type":"capacitor","value":"10μF"},{"type":"inductor","value":"5mH"}]}
+
+2. wave — موجات (استخدم "waveType" وليس "type" لنوع الموجة)
+   أنواع: sine|cosine|square|triangle|sawtooth|pulse
+   {"action":"draw","type":"wave","waveType":"sine","amplitude":70,"wavelength":130,"waveCount":3,"title":"موجة جيبية","color":"#2563eb","showAxes":true}
+
+3. force — مخطط القوى (Free Body Diagram)
+   أنواع القوى: weight|normal|applied|friction|tension|spring|drag
+   {"action":"draw","type":"force","title":"مخطط القوى","forces":[{"type":"weight"},{"type":"normal"},{"type":"friction"},{"type":"applied","magnitude":50,"label":"F"}],"mass":"5 kg"}
+
+4. field — مجالات كهربائية/مغناطيسية
+   كهربائي: {"action":"draw","type":"field","fieldType":"electric","title":"المجال الكهربائي","charges":[{"sign":1,"x":200,"label":"+q"},{"sign":-1,"x":500,"label":"-q"}]}
+   مغناطيسي: {"action":"draw","type":"field","fieldType":"magnetic","title":"المجال المغناطيسي","magnetPoles":{"north":"left","south":"right"}}
+
+5. graph — رسم دالة رياضية (JavaScript expression — x متغير)
+   {"action":"draw","type":"graph","expression":"Math.sin(x/30)*80","title":"y = sin(x)","xRange":[-300,300],"color":"#2563eb"}
+   أمثلة: "0.5*x+10", "x*x/100", "Math.cos(x/25)*70", "Math.exp(-x*x/8000)*80"
+
+6. mechanical — عناصر ميكانيكية
+   أنواع: gear|lever|pulley|spring
+   {"action":"draw","type":"mechanical","title":"تروس","parts":[{"type":"gear","radius":50,"teeth":16},{"type":"gear","radius":30,"teeth":10}]}
+   {"action":"draw","type":"mechanical","title":"نابض","parts":[{"type":"spring","x":200,"y":230},{"type":"pulley","radius":40,"x":500,"y":230}]}
+
+7. beam — كمرات هندسية
+   أنواع المساند: pinned|roller|fixed  ، أنواع الأحمال: point|distributed|moment
+   {"action":"draw","type":"beam","beamLength":400,"title":"كمرة بمساند","supports":[{"position":0,"type":"pinned"},{"position":1,"type":"roller"}],"loads":[{"position":0.5,"type":"point","magnitude":15,"label":"F=15kN"},{"position":0,"type":"distributed","magnitude":8,"label":"8kN/m"}]}
+
+النص المراد تحليله:
+"${text.replace(/"/g, "'").slice(0, 800)}"
+
+القواعد:
+- إذا كان النص يتحدث عن أو يطلب رسم أي مما سبق → أرجع JSON الأمر المناسب مع قيم واقعية ومنطقية
+- اخترع قيماً معقولة إن لم تُذكر بالنص (مثل: battery voltage=12, resistor=100Ω, amplitude=70...)
+- استخرج أي قيم رقمية أو مكونات مذكورة من النص وضمّنها في الأمر
+- إذا لم يكن النص ذا صلة برسم فيزيائي/هندسي محدد → أرجع {"command":null}
+- أرجع JSON صحيح فقط`;
+
+    const result: any = await generateContentWithRetryAndFallback(ai, {
+      model: "gemini-2.5-flash",
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config: {
+        thinkingConfig: { thinkingBudget: 0 },
+        responseMimeType: "application/json",
+      },
+    });
+
+    let parsed: any = null;
+    try { parsed = JSON.parse(result?.text || "{}"); } catch (_) {}
+
+    // Support both {"action":"draw",...} and {"command":{...}} wrapper
+    const cmd = parsed?.action ? parsed : (parsed?.command || null);
+
+    console.log(`[clever-painter] type=${cmd?.type ?? "none"} text="${text.slice(0, 60)}…"`);
+    return res.json({ command: cmd });
+  } catch (err: any) {
+    console.error("[clever-painter-command] error:", err?.message);
+    return res.json({ command: null, error: "فشل توليد الأمر" });
+  }
+});
+
+// ==========================================
 // Voice Cloning & TTS Endpoint
 // ==========================================
 app.post("/api/ai/text-to-speech", async (req, res) => {

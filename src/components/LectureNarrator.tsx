@@ -71,6 +71,8 @@ interface DiagNode { id:string; label:string; shape:'box'|'circle'|'diamond'; }
 interface DiagEdge { from:string; to:string; label:string; }
 interface CoordPoint { x:number; y:number; label?:string; }
 interface CoordLine  { x1:number; y1:number; x2:number; y2:number; label?:string; }
+// Clever Painter command (physics/engineering diagrams)
+interface CpCmd { action:string; type:string; [key:string]:any; }
 interface ChartData {
   hasChart:boolean; chartType:'bar'|'line'|'pie'|'table'|'diagram'|'coordinate'|'none';
   title?:string; labels?:string[]; datasets?:Dataset[];
@@ -97,6 +99,8 @@ const COORD_CMD=/نظام\s*(ال)?[إا]حداث|[إا]حداث.*نظام|ار�
 const DRAW_CMD=/^(ارسم|أرسم|draw|رسم لي|ارسم لي|أرسم لي)\s+/i;
 // Detects user asking AI to look at / explain the whiteboard drawing
 const LOOK_DRAWING_CMD=/انظر.*(رسم|سبور)|اشرح.*(رسم|سبور)|ما.*(رسم|السبور)|(رسم|سبور).*(شرح|انظر)|look.*(draw|board)|explain.*(draw|board)|describe.*(draw|board)|what.*(draw|board)/i;
+// Physics/engineering drawing → clever-painter library
+const CLEVER_PAINTER_CMD=/دائرة\s*كهرب|دارة\s*كهرب|دائرة\s*RC|دائرة\s*RL|دائرة\s*LC|ارسم.*مقاوم.*بطار|ارسم.*بطار.*مقاوم|توصيل.*بطارية|بطارية.*مقاوم|مكثف.*كهرب|محث.*كهرب|موجة\s*(جيبية|مربعة|مثلثة|نبضية|سينية|منشارية|كهرومغناطيسية|صوتية|ضوئية)|تمثيل\s*موجة|رسم\s*موجة|مخطط\s*القوى|free\s*body|diagram.*القوى|قوى.*على.*جسم|رسم.*القوى|مجال\s*(كهربائي|مغناطيسي)|خطوط\s*المجال|شحنتا?\s*(موجبة|سالبة|نقطية|كهربائية)|قطبا?\s*(مغناطيس|شمالي|جنوبي)|مغناطيس.*قطب|تروس\s*ميكانيكية|ارسم.*تروس|نابض\s*ميكانيكي|بكرة\s*ميكانيكية|كمرة\s*(هندسية|خرسانية)|عارضة\s*(هندسية|مثبتة)|circuit|sine\s*wave|square\s*wave|electric\s*field|magnetic\s*field|free\s*body\s*diagram/i;
 
 // ── Audio helpers ─────────────────────────────────────────────────
 const f32ToI16=(inp:Float32Array)=>{const o=new Int16Array(inp.length);for(let i=0;i<inp.length;i++){const s=Math.max(-1,Math.min(1,inp[i]));o[i]=s<0?s*0x8000:s*0x7fff;}return o;};
@@ -489,14 +493,15 @@ function ChartPanel({chart}:{chart:ChartData}){
 // ══════════════════════════════════════════════════════════════════
 // WHITEBOARD — realistic white board, fills all available space
 // ══════════════════════════════════════════════════════════════════
-function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMsg,drawImg,isAnalyzingDraw,onClearDraw,svgContent,onClearSvg}:{
+function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMsg,drawImg,isAnalyzingDraw,onClearDraw,svgContent,onClearSvg,cleverPaintImg,onClearCleverPaint}:{
   text:string; chart:ChartData|null; chunkIdx:number; totalChunks:number; isDrawingChart:boolean; chartErrorMsg?:string;
   drawImg?:string|null; isAnalyzingDraw?:boolean; onClearDraw?:()=>void;
   svgContent?:string|null; onClearSvg?:()=>void;
+  cleverPaintImg?:string|null; onClearCleverPaint?:()=>void;
 }){
   const {disp,done}=useTypewriter(text,5,11);
   const boardScrollRef=useRef<HTMLDivElement>(null);
-  const hasContent=disp.trim().length>0||chart?.hasChart||!!drawImg||!!svgContent;
+  const hasContent=disp.trim().length>0||chart?.hasChart||!!drawImg||!!svgContent||!!cleverPaintImg;
 
   // Auto-scroll to bottom as text is typed so board always shows latest content
   useEffect(()=>{
@@ -647,6 +652,23 @@ function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMs
                   style={{minHeight:120}}/>
               </div>
             )}
+
+            {/* Clever Painter physics/engineering diagram */}
+            {cleverPaintImg&&(
+              <div className="relative mt-3 rounded-2xl overflow-hidden border-2 border-violet-400/60 shadow-lg bg-white">
+                {onClearCleverPaint&&(
+                  <button onClick={onClearCleverPaint}
+                    className="absolute top-2 left-2 z-10 w-7 h-7 flex items-center justify-center rounded-full bg-black/50 hover:bg-black/80 text-white text-xs font-black transition shadow-lg"
+                    title="إزالة الرسم">✕</button>
+                )}
+                <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5 bg-violet-600 text-white text-[10px] font-black px-2.5 py-0.5 rounded-full shadow">
+                  <span>🔬</span><span>رسم فيزيائي</span>
+                </div>
+                <img src={cleverPaintImg} alt="رسم فيزيائي"
+                  className="w-full object-contain bg-white"
+                  style={{maxHeight:460}}/>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -777,6 +799,59 @@ function DrawPad({onClose,onEnhance,isEnhancing}:{
         </button>
       </div>
     </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════
+// CLEVER PAINTER RENDERER — renders physics/engineering diagrams
+// Uses the clever-painter canvas library (loaded dynamically to avoid SSR issues)
+// Renders on a hidden off-screen canvas, exports PNG, calls onResult.
+// ══════════════════════════════════════════════════════════════════
+function CleverPainterRenderer({cmd,onResult,onError}:{
+  cmd:CpCmd|null;
+  onResult:(pngDataUrl:string)=>void;
+  onError?:(msg:string)=>void;
+}){
+  const canvasRef=useRef<HTMLCanvasElement>(null);
+  const onResultRef=useRef(onResult);
+  const onErrorRef=useRef(onError);
+  useEffect(()=>{onResultRef.current=onResult;},[onResult]);
+  useEffect(()=>{onErrorRef.current=onError;},[onError]);
+
+  useEffect(()=>{
+    if(!cmd||!canvasRef.current) return;
+    let cancelled=false;
+    const canvas=canvasRef.current;
+    (async()=>{
+      try{
+        // Dynamic import keeps the library out of the initial bundle
+        const cpMod=await import('../../clever-painter/index.js' as any);
+        if(cancelled) return;
+        const Engine=cpMod.GraphicsEngine??cpMod.default?.GraphicsEngine;
+        const register=cpMod.registerBuiltinCommands??cpMod.default?.registerBuiltinCommands;
+        if(!Engine||!register) throw new Error('clever-painter: missing exports');
+        const engine=new Engine(canvas,{width:720,height:460,bgColor:'#ffffff'});
+        register(engine);
+        // wave command uses "waveType" internally but the JSON may say "type"
+        const execCmd={...cmd};
+        if(execCmd.type==='wave'&&execCmd.waveType===undefined&&execCmd.waveKind)
+          execCmd.waveType=execCmd.waveKind;
+        engine.execute(execCmd);
+        if(!cancelled){
+          const png=engine.export('image/png',0.95);
+          onResultRef.current(png);
+        }
+      }catch(e:any){
+        if(!cancelled) onErrorRef.current?.(e?.message||'خطأ في رسم clever-painter');
+      }
+    })();
+    return()=>{cancelled=true;};
+  },[cmd]);
+
+  // Off-screen canvas — never visible, only used for rendering + export
+  return(
+    <canvas ref={canvasRef}
+      style={{position:'fixed',top:-9999,left:-9999,opacity:0,pointerEvents:'none',width:720,height:460}}/>
   );
 }
 
@@ -963,6 +1038,10 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   const [showDrawPad,setShowDrawPad]=useState(false);
   const [isEnhancing,setIsEnhancing]=useState(false);
   const [manualDrawImg,setManualDrawImg]=useState<string|null>(null);
+  // Clever Painter — physics/engineering diagrams via clever-painter library
+  const [cleverPaintCmd,setCleverPaintCmd]=useState<CpCmd|null>(null);
+  const [cleverPaintImg,setCleverPaintImg]=useState<string|null>(null);
+  const cleverPaintImgRef=useRef<string|null>(null);
   // Refs to current drawing/chart so async callbacks can read latest values
   const manualDrawImgRef=useRef<string|null>(null);
   const currentChartRef=useRef<ChartData|null>(null);
