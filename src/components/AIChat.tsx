@@ -68,7 +68,11 @@ export default function AIChat({ lectureText = '', lectureTitle = '' }: AIChatPr
       
       const response = await fetch(resolveApiUrl('/api/ai/tts-edge'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-custom-api-key': localStorage.getItem('customAiKey') || '',
+          'x-custom-provider': localStorage.getItem('aiProvider') || 'gemini'
+        },
         body: JSON.stringify({
           text,
           voiceName: voiceId || selectedVoice

@@ -94,6 +94,8 @@ const CHART_KW=/بيان|مخطط|رسم|جدول|نسب|مئو|إحصاء|مق�
 // Coordinate system request — matches with OR without hamza (احداث / إحداث)
 const COORD_CMD=/نظام\s*(ال)?[إا]حداث|[إا]حداث.*نظام|ارسم\s*(ال)?محاور|مستوى\s*(ال)?[إا]حداث|coordinate\s*system|x.*y.*محور|محور.*x|ارسم.*[إا]حداث/i;
 const DRAW_CMD=/^(ارسم|أرسم|draw|رسم لي|ارسم لي|أرسم لي)\s+/i;
+// Detects user asking AI to look at / explain the whiteboard drawing
+const LOOK_DRAWING_CMD=/انظر.*(رسم|سبور)|اشرح.*(رسم|سبور)|ما.*(رسم|السبور)|(رسم|سبور).*(شرح|انظر)|look.*(draw|board)|explain.*(draw|board)|describe.*(draw|board)|what.*(draw|board)/i;
 
 // ── Audio helpers ─────────────────────────────────────────────────
 const f32ToI16=(inp:Float32Array)=>{const o=new Int16Array(inp.length);for(let i=0;i<inp.length;i++){const s=Math.max(-1,Math.min(1,inp[i]));o[i]=s<0?s*0x8000:s*0x7fff;}return o;};
@@ -486,12 +488,14 @@ function ChartPanel({chart}:{chart:ChartData}){
 // ══════════════════════════════════════════════════════════════════
 // WHITEBOARD — realistic white board, fills all available space
 // ══════════════════════════════════════════════════════════════════
-function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMsg,manualDrawImg,onClearDrawing}:{
-  text:string; chart:ChartData|null; chunkIdx:number; totalChunks:number; isDrawingChart:boolean; chartErrorMsg?:string; manualDrawImg?:string|null; onClearDrawing?:()=>void;
+function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMsg,drawImg,isAnalyzingDraw,onClearDraw,svgContent,onClearSvg}:{
+  text:string; chart:ChartData|null; chunkIdx:number; totalChunks:number; isDrawingChart:boolean; chartErrorMsg?:string;
+  drawImg?:string|null; isAnalyzingDraw?:boolean; onClearDraw?:()=>void;
+  svgContent?:string|null; onClearSvg?:()=>void;
 }){
   const {disp,done}=useTypewriter(text,5,11);
   const boardScrollRef=useRef<HTMLDivElement>(null);
-  const hasContent=disp.trim().length>0||chart?.hasChart||!!manualDrawImg;
+  const hasContent=disp.trim().length>0||chart?.hasChart||!!drawImg||!!svgContent;
 
   // Auto-scroll to bottom as text is typed so board always shows latest content
   useEffect(()=>{
@@ -506,8 +510,6 @@ function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMs
         border:'12px solid #6b4220',
         boxShadow:'0 0 0 2px #a0784a, 0 12px 48px rgba(0,0,0,0.6), inset 0 0 0 1px rgba(255,255,255,0.2)',
         background:'#fefdf8',
-        backgroundImage:'repeating-linear-gradient(transparent,transparent 31px,#c9ddf0 31px,#c9ddf0 32px)',
-        backgroundPositionY:'10px',
       }}>
       {/* Frame inner glow */}
       <div className="absolute inset-0 pointer-events-none rounded-sm"
@@ -602,22 +604,176 @@ function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMs
                 <ChartPanel chart={chart}/>
               </div>
             )}
-            {/* Manual drawing image */}
-            {manualDrawImg&&(
-              <div className="relative border-2 border-dashed border-indigo-300 rounded-xl overflow-hidden bg-white shadow-sm">
-                <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5 bg-indigo-600/90 text-white text-[9px] font-bold px-2 py-1 rounded-full">
-                  ✏️ رسمك
-                </div>
-                {onClearDrawing&&(
-                  <button onClick={onClearDrawing}
-                    className="absolute top-2 left-2 z-10 w-6 h-6 flex items-center justify-center bg-red-500/80 hover:bg-red-500 text-white text-[10px] rounded-full transition"
-                    title="مسح الرسم">✕</button>
+
+            {/* Hand-drawn image — pinned on whiteboard, persists alongside any chart */}
+            {drawImg&&(
+              <div className="relative mt-2 rounded-2xl overflow-hidden border-2 border-dashed border-indigo-300/70 shadow-lg">
+                {/* Dismiss button */}
+                {onClearDraw&&!isAnalyzingDraw&&(
+                  <button onClick={onClearDraw}
+                    className="absolute top-2 left-2 z-10 w-7 h-7 flex items-center justify-center rounded-full bg-black/60 hover:bg-black/85 text-white text-xs font-black transition shadow-lg"
+                    title="إزالة الرسم من السبورة">✕</button>
                 )}
-                <img src={manualDrawImg} alt="رسمك اليدوي" className="w-full object-contain max-h-64"/>
+                <img
+                  src={`data:image/jpeg;base64,${drawImg}`}
+                  alt="رسم يدوي"
+                  className="w-full object-contain bg-white"
+                  style={{maxHeight:400}}/>
+                {isAnalyzingDraw&&(
+                  <div className="absolute inset-0 flex items-center justify-center bg-white/60 backdrop-blur-sm">
+                    <div className="flex items-center gap-3 bg-indigo-600 text-white px-5 py-3 rounded-2xl text-sm font-black shadow-2xl">
+                      <div className="w-5 h-5 border-[3px] border-white border-t-transparent rounded-full animate-spin"/>
+                      الذكاء الاصطناعي يحلل رسمك ويحوّله…
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* AI-generated SVG diagram */}
+            {svgContent&&(
+              <div className="relative mt-3 rounded-2xl overflow-hidden border-2 border-emerald-300/60 shadow-lg bg-white">
+                {onClearSvg&&(
+                  <button onClick={onClearSvg}
+                    className="absolute top-2 left-2 z-10 w-7 h-7 flex items-center justify-center rounded-full bg-black/50 hover:bg-black/80 text-white text-xs font-black transition shadow-lg"
+                    title="إزالة الرسم">✕</button>
+                )}
+                <div className="absolute top-2 right-2 z-10 flex items-center gap-1 bg-emerald-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow">
+                  <span>🤖</span><span>رسم AI</span>
+                </div>
+                <div className="w-full flex items-center justify-center p-2"
+                  dangerouslySetInnerHTML={{__html:svgContent}}
+                  style={{minHeight:120}}/>
               </div>
             )}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════
+// DRAW PAD — full-whiteboard canvas overlay for manual sketching
+// ══════════════════════════════════════════════════════════════════
+function DrawPad({onClose,onEnhance,isEnhancing}:{
+  onClose:()=>void; onEnhance:(b64:string,mime:string)=>void; isEnhancing:boolean;
+}){
+  const canvasRef=useRef<HTMLCanvasElement>(null);
+  const [isDrawing,setIsDrawing]=useState(false);
+  const [penColor,setPenColor]=useState('#1a1832');
+  const [penSize,setPenSize]=useState(3);
+  const [tool,setTool]=useState<'pen'|'eraser'>('pen');
+  const lastPos=useRef<{x:number;y:number}|null>(null);
+
+  useEffect(()=>{
+    const c=canvasRef.current; if(!c) return;
+    const ctx=c.getContext('2d')!;
+    ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,c.width,c.height);
+  },[]);
+
+  const getPos=(e:React.MouseEvent|React.TouchEvent,c:HTMLCanvasElement)=>{
+    const rect=c.getBoundingClientRect();
+    const sx=c.width/rect.width, sy=c.height/rect.height;
+    if('touches' in e){const t=e.touches[0];return{x:(t.clientX-rect.left)*sx,y:(t.clientY-rect.top)*sy};}
+    return{x:((e as React.MouseEvent).clientX-rect.left)*sx,y:((e as React.MouseEvent).clientY-rect.top)*sy};
+  };
+
+  const startDraw=(e:React.MouseEvent|React.TouchEvent)=>{
+    e.preventDefault(); setIsDrawing(true);
+    const c=canvasRef.current; if(!c) return;
+    lastPos.current=getPos(e,c);
+  };
+  const draw=(e:React.MouseEvent|React.TouchEvent)=>{
+    if(!isDrawing) return;
+    const c=canvasRef.current; if(!c) return;
+    const ctx=c.getContext('2d')!;
+    const pos=getPos(e,c);
+    if(!lastPos.current){lastPos.current=pos;return;}
+    ctx.beginPath();
+    ctx.lineWidth=tool==='eraser'?penSize*6:penSize;
+    ctx.lineCap='round'; ctx.lineJoin='round';
+    ctx.strokeStyle=tool==='eraser'?'#ffffff':penColor;
+    ctx.moveTo(lastPos.current.x,lastPos.current.y);
+    ctx.lineTo(pos.x,pos.y); ctx.stroke();
+    lastPos.current=pos;
+  };
+  const endDraw=()=>{setIsDrawing(false);lastPos.current=null;};
+
+  const clear=()=>{
+    const c=canvasRef.current; if(!c) return;
+    const ctx=c.getContext('2d')!;
+    ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,c.width,c.height);
+  };
+  const submit=()=>{
+    const c=canvasRef.current; if(!c) return;
+    // Compress: scale down to max 900×580 and encode as JPEG (was ~3MB PNG → ~150KB)
+    const maxW=900,maxH=580;
+    const scale=Math.min(1,maxW/c.width,maxH/c.height);
+    const tmp=document.createElement('canvas');
+    tmp.width=Math.round(c.width*scale); tmp.height=Math.round(c.height*scale);
+    const ctx2=tmp.getContext('2d')!;
+    ctx2.fillStyle='#ffffff'; ctx2.fillRect(0,0,tmp.width,tmp.height);
+    ctx2.drawImage(c,0,0,tmp.width,tmp.height);
+    onEnhance(tmp.toDataURL('image/jpeg',0.82).split(',')[1],'image/jpeg');
+  };
+
+  return(
+    <div className="absolute inset-0 z-30 flex flex-col" style={{borderRadius:'inherit',overflow:'hidden'}}>
+      {/* Toolbar */}
+      <div className="shrink-0 flex items-center gap-2 px-3 py-2 bg-slate-900/95 backdrop-blur-sm border-b border-white/10">
+        <span className="text-white text-xs font-black">✏️ ارسم هنا</span>
+        <div className="w-px h-4 bg-white/20 mx-1"/>
+        {/* Colors */}
+        {(['#1a1832','#dc2626','#2563eb','#16a34a','#d97706','#7c3aed'] as const).map(c=>(
+          <button key={c} onClick={()=>{setTool('pen');setPenColor(c);}}
+            className="w-5 h-5 rounded-full transition-transform hover:scale-110"
+            style={{background:c,outline:penColor===c&&tool==='pen'?'2.5px solid #fff':'2.5px solid transparent',outlineOffset:1}}/>
+        ))}
+        <div className="w-px h-4 bg-white/20 mx-1"/>
+        {/* Sizes */}
+        {([2,4,7] as const).map(s=>(
+          <button key={s} onClick={()=>setPenSize(s)}
+            className="flex items-center justify-center w-7 h-7 rounded-lg transition"
+            style={{background:penSize===s&&tool==='pen'?'#4f46e5':'#374151'}}>
+            <div className="rounded-full bg-white" style={{width:s+2,height:s+2}}/>
+          </button>
+        ))}
+        <div className="w-px h-4 bg-white/20 mx-1"/>
+        <button onClick={()=>setTool('eraser')}
+          className="px-2 py-1 rounded-lg text-[11px] font-bold transition"
+          style={{background:tool==='eraser'?'#4f46e5':'#374151',color:'white'}}>
+          ممحاة
+        </button>
+        <button onClick={clear}
+          className="px-2 py-1 rounded-lg text-[11px] font-bold bg-red-800/80 hover:bg-red-700 text-white transition">
+          مسح الكل
+        </button>
+        <div className="flex-1"/>
+        <button onClick={onClose} className="text-slate-400 hover:text-white transition text-sm w-7 h-7 flex items-center justify-center rounded-lg bg-white/5 hover:bg-white/15">✕</button>
+      </div>
+      {/* Canvas */}
+      <canvas
+        ref={canvasRef} width={1400} height={900}
+        className="flex-1 w-full touch-none"
+        style={{cursor:tool==='eraser'?'cell':'crosshair',background:'#fff',display:'block'}}
+        onMouseDown={startDraw} onMouseMove={draw} onMouseUp={endDraw} onMouseLeave={endDraw}
+        onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={endDraw}
+      />
+      {/* Bottom bar */}
+      <div className="shrink-0 flex items-center gap-3 px-4 py-3 bg-slate-900/95 backdrop-blur-sm border-t border-white/10">
+        <button onClick={onClose}
+          className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-bold transition">
+          إلغاء
+        </button>
+        <div className="flex-1"/>
+        <p className="text-[11px] text-slate-400">ارسم رسمك ثم اضغط — سيقوم الذكاء الاصطناعي بتحسينه وعرضه على السبورة</p>
+        <button onClick={submit} disabled={isEnhancing}
+          className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-black transition shadow-lg">
+          {isEnhancing
+            ?<><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"/>جاري التحسين…</>
+            :<>✨ شاهد رسمي</>}
+        </button>
       </div>
     </div>
   );
@@ -718,9 +874,9 @@ function parseChartLocally(text:string):ChartData{
       ],
       diagramEdges:[{from:'s',to:'p',label:''},{from:'p',to:'d',label:''},{from:'d',to:'e',label:'نعم'}]};
 
-  // مخطط عمودي أو أي طلب رسم عام
-  if(/مخطط|عمودي|bar|أعمد|بيان|مقارن|رسم|ارسم/i.test(t))
-    return{hasChart:true,chartType:'bar',title:'مخطط عمودي — مثال',
+  // مخطط عمودي أو أي طلب رسم عام (مربعات عمودية = bar chart)
+  if(/مخطط|عمودي|bar|أعمد|بيان|مقارن|رسم|ارسم|مربع|أعمدة|عمود/i.test(t))
+    return{hasChart:true,chartType:'bar',title:'مخطط أعمدة — مثال',
       labels:['أ','ب','ج','د','هـ'],
       datasets:[{name:'البيانات',values:[65,42,78,55,88]}]};
 
@@ -749,116 +905,6 @@ async function callChartAnalyze(text:string):Promise<ChartData&{quotaExceeded?:b
 }
 
 // ══════════════════════════════════════════════════════════════════
-// DRAW PAD — لوحة رسم يدوي، الذكاء الاصطناعي يرى ويشرح
-// ══════════════════════════════════════════════════════════════════
-function DrawPad({onSubmit,onCancel,analyzing}:{onSubmit:(url:string)=>void;onCancel:()=>void;analyzing:boolean}){
-  const canvasRef=useRef<HTMLCanvasElement>(null);
-  const drawing=useRef(false);
-  const lastPos=useRef<{x:number,y:number}|null>(null);
-  const [penColor,setPenColor]=useStateLocal('#1a1832');
-  const [penSize,setPenSize]=useStateLocal(4);
-  const [isEraser,setIsEraser]=useStateLocal(false);
-
-  const getPos=(e:React.MouseEvent<HTMLCanvasElement>|React.TouchEvent<HTMLCanvasElement>,canvas:HTMLCanvasElement)=>{
-    const rect=canvas.getBoundingClientRect();
-    const scaleX=canvas.width/rect.width, scaleY=canvas.height/rect.height;
-    if('touches' in e){const t=e.touches[0];return{x:(t.clientX-rect.left)*scaleX,y:(t.clientY-rect.top)*scaleY};}
-    return{x:((e as React.MouseEvent).clientX-rect.left)*scaleX,y:((e as React.MouseEvent).clientY-rect.top)*scaleY};
-  };
-  const startDraw=(e:React.MouseEvent<HTMLCanvasElement>|React.TouchEvent<HTMLCanvasElement>)=>{
-    e.preventDefault(); const canvas=canvasRef.current; if(!canvas) return;
-    drawing.current=true; lastPos.current=getPos(e,canvas);
-  };
-  const doDraw=(e:React.MouseEvent<HTMLCanvasElement>|React.TouchEvent<HTMLCanvasElement>)=>{
-    if(!drawing.current) return; e.preventDefault();
-    const canvas=canvasRef.current; if(!canvas) return;
-    const ctx=canvas.getContext('2d'); if(!ctx) return;
-    const pos=getPos(e,canvas);
-    ctx.beginPath(); ctx.moveTo(lastPos.current!.x,lastPos.current!.y); ctx.lineTo(pos.x,pos.y);
-    ctx.strokeStyle=isEraser?'#f8f8f0':penColor; ctx.lineWidth=isEraser?penSize*5:penSize;
-    ctx.lineCap='round'; ctx.lineJoin='round'; ctx.stroke();
-    lastPos.current=pos;
-  };
-  const endDraw=()=>{drawing.current=false; lastPos.current=null;};
-  const clearPad=()=>{
-    const canvas=canvasRef.current; if(!canvas) return;
-    const ctx=canvas.getContext('2d'); if(!ctx) return;
-    ctx.fillStyle='#f8f8f0'; ctx.fillRect(0,0,canvas.width,canvas.height);
-  };
-  useEffect(()=>{clearPad();},[]);
-  const submit=()=>{const canvas=canvasRef.current;if(canvas) onSubmit(canvas.toDataURL('image/png'));};
-  const COLORS=['#1a1832','#dc2626','#2563eb','#16a34a','#7c3aed','#d97706','#0f766e'];
-  const SIZES=[{v:2,label:'S'},{v:4,label:'M'},{v:8,label:'L'},{v:14,label:'XL'}];
-  return(
-    <div className="absolute inset-0 z-50 flex flex-col" style={{background:'rgba(4,8,15,0.93)',backdropFilter:'blur(4px)'}}>
-      {/* Header */}
-      <div className="shrink-0 flex items-center justify-between px-4 py-2.5 bg-[#0f1124] border-b border-white/10">
-        <div className="flex items-center gap-2.5">
-          <span className="text-xl">✏️</span>
-          <div>
-            <p className="text-xs font-black text-white">ارسم على السبورة</p>
-            <p className="text-[10px] text-slate-400">ارسم أي شيء وسيشرحه الذكاء الاصطناعي لك</p>
-          </div>
-        </div>
-        <button onClick={onCancel} className="text-slate-400 hover:text-slate-200 text-xs px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 transition">✕ إلغاء</button>
-      </div>
-      {/* Tools */}
-      <div className="shrink-0 flex items-center gap-3 px-3 py-2 bg-[#0d1020] border-b border-white/5 flex-wrap">
-        <div className="flex gap-1.5 items-center">
-          {COLORS.map(c=>(
-            <button key={c} onClick={()=>{setPenColor(c);setIsEraser(false);}}
-              className="rounded-full border-2 transition-all"
-              style={{width:22,height:22,background:c,borderColor:(!isEraser&&penColor===c)?'white':'transparent'}}/>
-          ))}
-        </div>
-        <div className="w-px h-5 bg-white/10"/>
-        <div className="flex gap-1.5">
-          {SIZES.map(({v,l}:any)=>(
-            <button key={v} onClick={()=>{setPenSize(v);setIsEraser(false);}}
-              className={`px-2.5 py-1 rounded-lg text-[10px] font-black border transition ${penSize===v&&!isEraser?'border-white/50 bg-white/15 text-white':'border-white/10 bg-white/5 text-slate-400 hover:bg-white/10'}`}>
-              {v===2?'S':v===4?'M':v===8?'L':'XL'}
-            </button>
-          ))}
-        </div>
-        <div className="w-px h-5 bg-white/10"/>
-        <button onClick={()=>setIsEraser(e=>!e)}
-          className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition ${isEraser?'bg-amber-600/80 border-amber-500 text-white':'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'}`}>
-          🧹 ممحاة
-        </button>
-        <button onClick={clearPad} className="px-3 py-1.5 rounded-lg text-[10px] font-bold bg-white/5 border border-white/10 text-slate-300 hover:bg-red-500/20 hover:border-red-500/30 hover:text-red-300 transition">
-          🗑 مسح الكل
-        </button>
-      </div>
-      {/* Canvas */}
-      <div className="flex-1 min-h-0 p-3 flex items-stretch justify-center bg-[#070a12]">
-        <canvas ref={canvasRef} width={900} height={520}
-          className="rounded-xl shadow-2xl w-full"
-          style={{background:'#f8f8f0',cursor:isEraser?'cell':'crosshair',touchAction:'none',objectFit:'contain'}}
-          onMouseDown={startDraw} onMouseMove={doDraw} onMouseUp={endDraw} onMouseLeave={endDraw}
-          onTouchStart={startDraw} onTouchMove={doDraw} onTouchEnd={endDraw}/>
-      </div>
-      {/* Footer */}
-      <div className="shrink-0 px-4 py-3 bg-[#0f1124] border-t border-white/10 flex items-center justify-between gap-3">
-        {analyzing?(
-          <div className="flex items-center gap-2 text-violet-300 text-xs font-bold">
-            <div className="w-4 h-4 border-2 border-violet-400 border-t-transparent rounded-full animate-spin"/>
-            جاري تحليل رسمك بالذكاء الاصطناعي…
-          </div>
-        ):(
-          <p className="text-[10px] text-slate-500">ارسم بالماوس أو بإصبعك ثم اضغط شاهد رسمي</p>
-        )}
-        <button onClick={submit} disabled={analyzing}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 disabled:opacity-60 text-white text-xs font-black transition shadow-lg">
-          {analyzing?<><div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"/>جاري التحليل…</>:<>🔍 شاهد رسمي</>}
-        </button>
-      </div>
-    </div>
-  );
-}
-// helper: local useState alias for DrawPad (avoids collision with outer scope)
-function useStateLocal<T>(init:T){return useState<T>(init);}
-
-// ══════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ══════════════════════════════════════════════════════════════════
 interface Props{onClose:()=>void;initialText?:string;}
@@ -876,6 +922,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   const [currentChart,setCurrentChart]=useState<ChartData|null>(null);
   const [isDrawingChart,setIsDrawingChart]=useState(false);
   const [chartErrorMsg,setChartErrorMsg]=useState('');
+  const [svgContent,setSvgContent]=useState<string|null>(null);
   const [askMode,setAskMode]=useState(false);
 
   // Upload state
@@ -897,10 +944,15 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   const [directCmd,setDirectCmd]=useState('');
   const [showCmdBar,setShowCmdBar]=useState(false);
 
-  // Manual drawing pad
+  // Draw pad (manual sketching + AI enhancement)
   const [showDrawPad,setShowDrawPad]=useState(false);
-  const [drawPadAnalyzing,setDrawPadAnalyzing]=useState(false);
+  const [isEnhancing,setIsEnhancing]=useState(false);
   const [manualDrawImg,setManualDrawImg]=useState<string|null>(null);
+  // Refs to current drawing/chart so async callbacks can read latest values
+  const manualDrawImgRef=useRef<string|null>(null);
+  const currentChartRef=useRef<ChartData|null>(null);
+  // Stores the last AI-generated explanation for the manual drawing (survives chart replacement)
+  const lastDrawDescriptionRef=useRef<string>('');
 
   // Refs
   const wsRef=useRef<WebSocket|null>(null);
@@ -926,6 +978,9 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   statusRef.current=status;
 
   useEffect(()=>{qaEndRef.current?.scrollIntoView({behavior:'smooth'});},[qa]);
+  // Keep refs in sync with state for use inside stale callbacks
+  useEffect(()=>{manualDrawImgRef.current=manualDrawImg;},[manualDrawImg]);
+  useEffect(()=>{currentChartRef.current=currentChart;},[currentChart]);
 
   // Inject styles once
   useEffect(()=>{
@@ -968,7 +1023,19 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
       proc.onaudioprocess=(e)=>{
         if(!wsRef.current||wsRef.current.readyState!==WebSocket.OPEN) return;
         if(statusRef.current==='paused') return;
-        wsRef.current.send(JSON.stringify({type:'audio',data:ab2b64(f32ToI16(e.inputBuffer.getChannelData(0)).buffer)}));
+        // ── إصلاح حلقة الصوت عند تسجيل الشاشة ──
+        // عندما يكون الذكاء الاصطناعي يتحدث (narrating/answering)، لا نُرسل صوت
+        // الميكروفون إلى الخادم — هذا يمنع التقاط صوت الذكاء الاصطناعي من خلال
+        // تسجيل الشاشة وإرساله إليه مرةً أخرى (حلقة صوتية).
+        // المستخدم يستطيع التدخّل يدوياً بزر "اسأل الآن" الذي يُحوّل الحالة إلى listening.
+        if(statusRef.current==='narrating'||statusRef.current==='answering') return;
+        // Downsample from AudioContext native rate to 16kHz for Gemini input
+        const raw=e.inputBuffer.getChannelData(0);
+        const ratio=ctx.sampleRate/16000;
+        const outLen=Math.floor(raw.length/ratio);
+        const ds=new Float32Array(outLen);
+        for(let i=0;i<outLen;i++) ds[i]=raw[Math.round(i*ratio)];
+        wsRef.current.send(JSON.stringify({type:'audio',data:ab2b64(f32ToI16(ds).buffer)}));
       };
     }catch{setErrorMsg('لا يمكن الوصول للميكروفون — يمكنك المتابعة بدون أسئلة صوتية.');}
   };
@@ -1127,36 +1194,144 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     if(c.hasChart){
       setCurrentChart({...c});
       setIsDrawingChart(false);
-    } else {
+    } else if(c.quotaExceeded){
       setIsDrawingChart(false);
       userDrawLockRef.current=false;
-      if(c.quotaExceeded){
-        setChartErrorMsg('⚠️ تجاوزت الحصة المجانية لـ API — أضف مفتاح API خاصاً من الإعدادات (⚙️). مثال للرسم المباشر: "ارسم مخطط: أ=5 ب=8 ج=3"');
-      } else {
-        setChartErrorMsg('لم أتمكن من تحديد نوع الرسم. جرب: "ارسم مخطط عمودي: أ=40 ب=60 ج=30"');
-      }
-      // Clear error after 6 seconds
+      setChartErrorMsg('⚠️ تجاوزت الحصة المجانية لـ API — أضف مفتاح API خاصاً من الإعدادات (⚙️).');
       setTimeout(()=>setChartErrorMsg(''),6000);
+    } else {
+      // ── Step 3: Not a data chart → try SVG diagram generation ──────
+      try{
+        const svgRes=await fetch(resolveApiUrl('/api/ai/draw-svg'),{
+          method:'POST',headers:{'Content-Type':'application/json',...getAiHeaders()},
+          body:JSON.stringify({prompt:text})
+        });
+        if(userDrawGenRef.current!==myGen) return;
+        const svgData=await svgRes.json();
+        if(svgData.svg){
+          setSvgContent(svgData.svg);
+          setIsDrawingChart(false);
+        } else {
+          setIsDrawingChart(false);
+          userDrawLockRef.current=false;
+          setChartErrorMsg('لم أتمكن من رسم هذا الطلب. جرب وصفاً أوضح مثل: "ارسم دائرة كهربائية بمقاومة ومكثف وبطارية"');
+          setTimeout(()=>setChartErrorMsg(''),7000);
+        }
+      }catch{
+        setIsDrawingChart(false);
+        userDrawLockRef.current=false;
+        setChartErrorMsg('خطأ في الاتصال بخدمة الرسم. حاول مجدداً.');
+        setTimeout(()=>setChartErrorMsg(''),5000);
+      }
     }
   },[clearDrawFallback]);
 
-  // Handle manual drawing: send canvas image to AI, show explanation in QA
-  const handleExplainDrawing=useCallback(async(dataUrl:string)=>{
-    setDrawPadAnalyzing(true);
+  // Handle user asking AI narrator to "look at the drawing on the whiteboard"
+  const handleLookAtWhiteboard=useCallback(async()=>{
+    const img=manualDrawImgRef.current;
+    const chart=currentChartRef.current;
+    const savedDesc=lastDrawDescriptionRef.current;
+
+    // ① If we already have a saved description from when the drawing was submitted → reuse it instantly
+    if(savedDesc){
+      setQa(q=>[...q,{id:Date.now().toString(),role:'model',text:`🖼️ ${savedDesc}`}]);
+      return;
+    }
+
+    // ② If only a structured chart is on the board (no raw drawing) → describe it textually
+    if(!img&&chart?.hasChart){
+      const typeMap:Record<string,string>={bar:'مخطط أعمدة',line:'مخطط خطي',pie:'مخطط دائري',
+        table:'جدول',diagram:'مخطط انسيابي',coordinate:'نظام إحداثيات',none:''};
+      const labels=chart.labels?.join('، ')||'';
+      setQa(q=>[...q,{id:Date.now().toString(),role:'model',
+        text:`📊 السبورة تعرض ${typeMap[chart.chartType]||'مخطط'}${chart.title?` بعنوان "${chart.title}"`:''}.${labels?' البيانات: '+labels:''}`}]);
+      return;
+    }
+
+    // ③ No drawing at all
+    if(!img){
+      setQa(q=>[...q,{id:Date.now().toString(),role:'model',
+        text:'📋 لا يوجد رسم على السبورة حالياً. استخدم ✏️ لرسم شيء أو قل "ارسم مخطط..."'}]);
+      return;
+    }
+
+    // ④ Raw drawing exists but no saved description → call vision API
+    const thinkId=Date.now().toString();
+    setQa(q=>[...q,{id:thinkId,role:'model',text:'🔍 أتفحص الرسم على السبورة…'}]);
     try{
       const r=await fetch(resolveApiUrl('/api/ai/explain-drawing'),{
-        method:'POST',headers:{'Content-Type':'application/json',...getAiHeaders()},
-        body:JSON.stringify({imageData:dataUrl})
+        method:'POST',
+        headers:{'Content-Type':'application/json',...getAiHeaders()},
+        body:JSON.stringify({imageBase64:img,mimeType:'image/jpeg'})
       });
-      const d=await r.json();
-      setManualDrawImg(dataUrl);
-      const explanation=d.explanation||'لم أتمكن من تحليل الرسم.';
-      setQa(prev=>[...prev,{id:Date.now()+Math.random()+'',role:'model',text:'🖼 '+explanation}]);
-      setShowDrawPad(false);
-    }catch(_){
-      setQa(prev=>[...prev,{id:Date.now()+'',role:'model',text:'تعذّر تحليل الرسم. تأكد من إضافة مفتاح API في الإعدادات (⚙️).'}]);
-      setShowDrawPad(false);
-    }finally{setDrawPadAnalyzing(false);}
+      const data=await r.json();
+      const msg=data.explanation
+        ||(data.error==='no_api_key'?'💡 أضف مفتاح Gemini API من إعدادات التطبيق لتفعيل تحليل الرسم.'
+          :data.error==='quota'?'⚠️ نفدت حصة Gemini API اليومية — جرّب مفتاحاً آخر أو انتظر حتى الغد.'
+          :data.error==='rate_limit'?'⏱️ تجاوزت الحد المسموح في الدقيقة — جرّب مرة ثانية بعد لحظة.'
+          :'⚠️ تعذّر تحليل الرسم — تأكد من ضبط مفتاح Gemini API في الإعدادات.');
+      if(data.explanation) lastDrawDescriptionRef.current=data.explanation; // cache for next time
+      setQa(q=>q.map(item=>item.id===thinkId?{...item,text:`🖼️ ${msg}`}:item));
+    }catch{
+      setQa(q=>q.map(item=>item.id===thinkId?{...item,text:'⚠️ تعذّر الاتصال بالخادم.'}:item));
+    }
+  },[]);
+
+  // Handle AI enhancement of a manual sketch
+  const handleExplainDrawing=useCallback(async(imgB64:string, mimeType:string='image/jpeg')=>{
+    // ① Show the raw drawing on the whiteboard IMMEDIATELY — no waiting for AI
+    setManualDrawImg(imgB64);
+    lastDrawDescriptionRef.current=''; // reset stored description for new drawing
+    setShowDrawPad(false);
+    setIsEnhancing(true);
+    userDrawLockRef.current=true; // lock: prevent lecture chunks from clearing this drawing
+
+    try{
+      const r=await fetch(resolveApiUrl('/api/ai/explain-drawing'),{
+        method:'POST',
+        headers:{'Content-Type':'application/json',...getAiHeaders()},
+        body:JSON.stringify({imageBase64:imgB64,mimeType})
+      });
+      const data=await r.json();
+
+      // ② If AI extracted structured chart data → render it BELOW the raw drawing
+      //    (drawing stays visible; chart adds structured info alongside it)
+      if(data.hasChart){
+        const myGen=++userDrawGenRef.current;
+        setIsDrawingChart(true);
+        setTimeout(()=>{
+          if(userDrawGenRef.current!==myGen) return;
+          setCurrentChart({
+            hasChart:data.hasChart, chartType:data.chartType,
+            title:data.title, labels:data.labels, datasets:data.datasets,
+            tableHeaders:data.tableHeaders, tableRows:data.tableRows,
+            diagramNodes:data.diagramNodes, diagramEdges:data.diagramEdges,
+            coordPoints:data.coordPoints, coordLines:data.coordLines,
+          } as ChartData);
+          // NOTE: drawing (manualDrawImg) stays — user can dismiss it manually via ✕
+          setIsDrawingChart(false);
+        },500);
+      }
+
+      // ③ Save explanation so narrator can reuse it without re-calling API
+      if(data.explanation){
+        lastDrawDescriptionRef.current=data.explanation;
+      }
+
+      // ④ Show AI explanation in Q&A strip
+      const msg=data.explanation||(data.error==='no_api_key'
+        ?'💡 أضف مفتاح Gemini API من الإعدادات لتفعيل تحليل الرسم. رسمك يظهر على السبورة كما هو.'
+        :data.error==='quota'?'⚠️ نفدت حصة Gemini API اليومية — رسمك محفوظ على السبورة. جرّب مفتاحاً آخر أو انتظر حتى الغد.'
+        :data.error==='rate_limit'?'⏱️ تجاوزت الحد المسموح في الدقيقة — رسمك محفوظ على السبورة. جرّب مرة ثانية بعد لحظة.'
+        :data.error?`⚠️ ${data.error}. رسمك محفوظ على السبورة.`:null);
+      if(msg) setQa(q=>[...q,{id:Date.now().toString(),role:'model',text:msg}]);
+
+    }catch(e){
+      console.error('explain-drawing',e);
+      setQa(q=>[...q,{id:Date.now().toString(),role:'model',text:'⚠️ تعذّر الاتصال بخادم التحليل — رسمك محفوظ على السبورة.'}]);
+    }finally{
+      setIsEnhancing(false);
+    }
   },[]);
 
   // Start session
@@ -1169,7 +1344,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     let prep=lectureText;
     try{
       const r=await fetch(resolveApiUrl('/api/ai/lecture-prep'),{method:'POST',
-        headers:{'Content-Type':'application/json'},body:JSON.stringify({text:lectureText})});
+        headers:{'Content-Type':'application/json',...getAiHeaders()},body:JSON.stringify({text:lectureText})});
       const d=await r.json();
       if(d?.success&&d?.processedText) prep=d.processedText;
     }catch(_){}
@@ -1177,7 +1352,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     setStatus('connecting');
     const key=(localStorage.getItem('aiProvider')||'gemini')==='gemini'?(localStorage.getItem('customAiKey')||''):'';
     const params=new URLSearchParams({key,lang:'ar',mode:'lecture',voice});
-    audioCtxRef.current=new AudioContext({sampleRate:16000});
+    audioCtxRef.current=new AudioContext();
     playTimeRef.current=audioCtxRef.current.currentTime;
 
     const proto=window.location.protocol==='https:'?'wss:':'ws:';
@@ -1195,8 +1370,9 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
         }else if(msg.type==='lecture_progress'){
           setChunkIndex(msg.index); setChunkText(msg.text);
           setAskMode(false); setStatus('narrating');
-          // New chunk — release user draw lock so auto-analysis can run
-          userDrawLockRef.current=false;
+          // Only release lock if no active manual drawing — prevents chart auto-analysis
+          // from overwriting/hiding a drawing the user pinned on the whiteboard
+          if(!manualDrawImgRef.current) userDrawLockRef.current=false;
           analyzeChart(msg.text);
         }else if(msg.type==='audio'){
           if(statusRef.current!=='paused') playChunk(msg.data);
@@ -1224,6 +1400,10 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
           if(role==='user'&&DRAW_CMD.test(txt)){
             handleDirectDraw(txt);
           }
+          // User asks "انظر الرسم" / "اشرح السبورة" → describe what's on the whiteboard
+          if(role==='user'&&LOOK_DRAWING_CMD.test(txt)){
+            handleLookAtWhiteboard();
+          }
         }else if(msg.type==='turn_complete'){
           // Wait 250ms so any in-flight transcript WS messages arrive before we process
           setTimeout(()=>{
@@ -1245,7 +1425,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     };
     ws.onerror=()=>{setErrorMsg('تعذّر الاتصال بالخادم.');setStatus('error');};
     ws.onclose=()=>{stopMic();};
-  },[lectureText,voice,playChunk,hardStop,analyzeChart,handleDirectDraw,clearDrawFallback,triggerChartFromBuffer]);
+  },[lectureText,voice,playChunk,hardStop,analyzeChart,handleDirectDraw,handleLookAtWhiteboard,clearDrawFallback,triggerChartFromBuffer]);
 
   const stop=useCallback(()=>{
     wsRef.current?.send(JSON.stringify({type:'stop_lecture'}));
@@ -1451,109 +1631,109 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   );
 
   // ── SESSION VIEW ──────────────────────────────────────────────
+  // Whiteboard fills the entire area; controls float as a glass bar at bottom
   const renderSession=()=>(
-    <div className="flex flex-col h-full min-h-0">
-      {/* Status strip */}
-      <div className="shrink-0 flex items-center justify-between px-4 py-2 border-b border-white/5">
-        <div className="flex items-center gap-2">
-          <div className={`w-2.5 h-2.5 rounded-full ${statusColor[status]}`}/>
-          <span className="text-xs font-bold text-slate-300">{statusLabel[status]}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          {isDrawingChart&&<span className="text-[10px] text-indigo-300 animate-pulse">📊 رسم بياني…</span>}
-          {currentChart?.hasChart&&!isDrawingChart&&(
-            <span className="text-[10px] text-indigo-400 flex items-center gap-1">📊 {currentChart.title||'رسم بياني'}</span>
-          )}
-        </div>
-      </div>
+    <div className="relative flex flex-col h-full min-h-0">
 
-      {/* ⭐ WHITEBOARD — takes all flex space ⭐ */}
-      <div className="relative flex-1 min-h-0">
-        <Whiteboard
-          text={chunkText}
-          chart={currentChart}
-          chunkIdx={chunkIndex}
-          totalChunks={totalChunks}
-          isDrawingChart={isDrawingChart}
-          chartErrorMsg={chartErrorMsg}
-          manualDrawImg={manualDrawImg}
-          onClearDrawing={()=>setManualDrawImg(null)}/>
-        {/* Draw Pad overlay — appears inside the whiteboard area */}
-        {showDrawPad&&(
-          <DrawPad
-            onSubmit={handleExplainDrawing}
-            onCancel={()=>setShowDrawPad(false)}
-            analyzing={drawPadAnalyzing}/>
-        )}
-      </div>
+      {/* ⭐ WHITEBOARD — fills 100% of the space ⭐ */}
+      <Whiteboard
+        text={chunkText}
+        chart={currentChart}
+        chunkIdx={chunkIndex}
+        totalChunks={totalChunks}
+        isDrawingChart={isDrawingChart}
+        chartErrorMsg={chartErrorMsg}
+        drawImg={manualDrawImg}
+        isAnalyzingDraw={isEnhancing}
+        onClearDraw={()=>{setManualDrawImg(null);lastDrawDescriptionRef.current='';userDrawLockRef.current=false;}}
+        svgContent={svgContent}
+        onClearSvg={()=>{setSvgContent(null);userDrawLockRef.current=false;}}/>
 
-      {/* Q&A strip (collapsible) */}
-      {qa.length>0&&(
-        <div className="shrink-0 max-h-28 overflow-y-auto border-t border-white/5 px-4 py-2 space-y-1.5">
-          {qa.slice(-4).map(item=>(
-            <div key={item.id} className={`flex ${item.role==='user'?'justify-end':'justify-start'}`}>
-              <div className={`max-w-[88%] px-3 py-1.5 rounded-xl text-[12px] leading-relaxed ${
-                item.role==='user'?'bg-blue-600/30 border border-blue-500/30 text-blue-100 rounded-tr-sm'
-                :'bg-purple-600/20 border border-purple-500/20 text-purple-100 rounded-tl-sm'}`}>
-                <MathText text={item.text} dir="rtl"/>
-              </div>
+      {/* DrawPad overlay — covers the whiteboard when active */}
+      {showDrawPad&&(
+        <DrawPad
+          onClose={()=>setShowDrawPad(false)}
+          onEnhance={handleExplainDrawing}
+          isEnhancing={isEnhancing}/>
+      )}
+
+      {/* ── Floating overlay panel (bottom of whiteboard) ── */}
+      {!showDrawPad&&(
+        <div className="absolute bottom-3 left-3 right-3 z-20 flex flex-col gap-1.5 pointer-events-none">
+
+          {/* Q&A bubbles */}
+          {qa.length>0&&(
+            <div className="pointer-events-auto max-h-24 overflow-y-auto rounded-xl bg-black/70 backdrop-blur-md px-3 py-2 space-y-1.5 border border-white/10">
+              {qa.slice(-3).map(item=>(
+                <div key={item.id} className={`flex ${item.role==='user'?'justify-end':'justify-start'}`}>
+                  <div className={`max-w-[88%] px-3 py-1.5 rounded-xl text-[11px] leading-relaxed ${
+                    item.role==='user'?'bg-blue-600/50 text-blue-100':'bg-purple-600/35 text-purple-100'}`}>
+                    <MathText text={item.text} dir="rtl"/>
+                  </div>
+                </div>
+              ))}
+              <div ref={qaEndRef}/>
             </div>
-          ))}
-          <div ref={qaEndRef}/>
+          )}
+
+          {/* Direct draw command bar */}
+          {showCmdBar&&(
+            <div className="pointer-events-auto flex gap-2 rounded-xl bg-black/70 backdrop-blur-md px-3 py-2 border border-white/10">
+              <input value={directCmd} onChange={e=>setDirectCmd(e.target.value)}
+                onKeyDown={e=>{if(e.key==='Enter'&&directCmd.trim())handleDirectDraw(directCmd);if(e.key==='Escape')setShowCmdBar(false);}}
+                placeholder="ارسم مخطط عمودي للبيانات… أو ارسم دورة حياة البكتيريا"
+                className="flex-1 bg-white/10 border border-white/15 rounded-xl px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 outline-none focus:ring-1 focus:ring-indigo-500"/>
+              <button onClick={()=>{if(directCmd.trim())handleDirectDraw(directCmd);}}
+                disabled={!directCmd.trim()}
+                className="px-4 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold disabled:opacity-40 transition">
+                ارسم
+              </button>
+              <button onClick={()=>{setShowCmdBar(false);setDirectCmd('');}}
+                className="px-2.5 rounded-xl bg-white/5 text-slate-400 hover:text-slate-200 text-xs transition">✕</button>
+            </div>
+          )}
+
+          {/* Main control bar — glass morphism */}
+          <div className="pointer-events-auto flex items-center gap-2 rounded-2xl bg-black/75 backdrop-blur-md px-4 py-2.5 border border-white/10 shadow-xl">
+            {/* Status */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              <div className={`w-2 h-2 rounded-full ${statusColor[status]}`}/>
+              <span className="text-[10px] font-bold text-slate-400">{statusLabel[status]}</span>
+            </div>
+            <div className="flex-1"/>
+            {/* Buttons */}
+            <button onClick={askNow} disabled={status==='listening'||status==='paused'}
+              className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-extrabold transition ${
+                status==='listening'?'bg-blue-600/80 text-white cursor-default'
+                :'bg-blue-600/30 border border-blue-500/40 text-blue-200 hover:bg-blue-600/50'} disabled:opacity-50`}>
+              🎙 اسأل
+            </button>
+            <button onClick={()=>setShowCmdBar(s=>!s)}
+              className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-extrabold border transition ${
+                showCmdBar?'bg-indigo-600 border-indigo-500 text-white':'bg-indigo-600/20 border-indigo-500/40 text-indigo-300 hover:bg-indigo-600/35'}`}>
+              📊 ارسم نصياً
+            </button>
+            <button onClick={()=>setShowDrawPad(true)}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-extrabold border border-amber-500/40 bg-amber-600/20 text-amber-300 hover:bg-amber-600/35 transition">
+              ✏️ ارسم يدوياً
+            </button>
+            {manualDrawImg&&(
+              <button onClick={handleLookAtWhiteboard}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-extrabold border border-emerald-500/40 bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/35 transition">
+                🔍 اشرح الرسم
+              </button>
+            )}
+            <button onClick={togglePause} disabled={status==='listening'||status==='answering'||status==='done'}
+              className="px-3 py-1.5 rounded-xl bg-white/5 border border-white/15 text-slate-200 hover:bg-white/15 text-xs font-extrabold disabled:opacity-40 transition">
+              {status==='paused'?'▶ استكمال':'⏸ توقف'}
+            </button>
+            <button onClick={stop}
+              className="px-3 py-1.5 rounded-xl bg-red-600/30 border border-red-500/40 text-red-300 hover:bg-red-600/50 text-xs font-extrabold transition">
+              ⏹ إنهاء
+            </button>
+          </div>
         </div>
       )}
-
-      {/* Direct draw command bar */}
-      {showCmdBar&&(
-        <div className="shrink-0 flex gap-2 px-4 py-2 border-t border-white/5">
-          <input value={directCmd} onChange={e=>setDirectCmd(e.target.value)}
-            onKeyDown={e=>{if(e.key==='Enter'&&directCmd.trim())handleDirectDraw(directCmd);if(e.key==='Escape')setShowCmdBar(false);}}
-            placeholder="ارسم مخطط عمودي للبيانات… أو ارسم دورة حياة البكتيريا"
-            className="flex-1 bg-white/5 border border-white/15 rounded-xl px-3 py-2 text-xs text-slate-200 placeholder-slate-500 outline-none focus:ring-1 focus:ring-indigo-500"/>
-          <button onClick={()=>{if(directCmd.trim())handleDirectDraw(directCmd);}}
-            disabled={!directCmd.trim()}
-            className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold disabled:opacity-40 transition">
-            ارسم
-          </button>
-          <button onClick={()=>{setShowCmdBar(false);setDirectCmd('');}}
-            className="px-3 py-2 rounded-xl bg-white/5 text-slate-400 hover:text-slate-200 text-xs transition">✕</button>
-        </div>
-      )}
-
-      {/* Controls */}
-      <div className="shrink-0 px-4 py-3 border-t border-white/5 space-y-2">
-        <div className="flex items-center justify-center gap-2">
-          <button onClick={askNow} disabled={status==='listening'||status==='paused'}
-            className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-extrabold transition ${
-              status==='listening'?'bg-blue-600/60 text-white cursor-default'
-              :'bg-blue-600/25 border border-blue-500/40 text-blue-200 hover:bg-blue-600/40'} disabled:opacity-60`}>
-            🎙 اسأل
-          </button>
-          <button onClick={()=>setShowCmdBar(s=>!s)}
-            className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-extrabold border transition ${
-              showCmdBar?'bg-indigo-600 border-indigo-500 text-white':'bg-indigo-600/20 border-indigo-500/40 text-indigo-300 hover:bg-indigo-600/35'}`}>
-            📊 ارسم
-          </button>
-          <button onClick={()=>{setShowDrawPad(s=>!s);setShowCmdBar(false);}}
-            className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-extrabold border transition ${
-              showDrawPad?'bg-violet-600 border-violet-500 text-white':'bg-violet-600/20 border-violet-500/40 text-violet-300 hover:bg-violet-600/35'}`}>
-            ✏️ يدوي
-          </button>
-          <button onClick={togglePause} disabled={status==='listening'||status==='answering'||status==='done'}
-            className="px-4 py-2.5 rounded-xl bg-white/5 border border-white/15 text-slate-200 hover:bg-white/10 text-xs font-extrabold disabled:opacity-40 transition">
-            {status==='paused'?'▶ استكمال':'⏸ توقف'}
-          </button>
-          <button onClick={stop}
-            className="px-4 py-2.5 rounded-xl bg-red-600/30 border border-red-500/50 text-red-300 hover:bg-red-600/50 text-xs font-extrabold transition">
-            إنهاء
-          </button>
-        </div>
-        <p className="text-[10px] text-center text-slate-500">
-          {askMode?'🎙 تحدّث الآن — هو يستمع لك':
-           status==='done'?'انتهى الشرح — يمكنك الرسم أو طرح أسئلة':
-           'يمكنك المقاطعة بصوتك أو بالأمر "ارسم …"'}
-        </p>
-      </div>
     </div>
   );
 

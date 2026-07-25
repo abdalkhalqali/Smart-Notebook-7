@@ -6,10 +6,78 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Modality, Type } from "@google/genai";
 import "dotenv/config";
 
-// Helper to get server Gemini key — checks both env var names for backward compatibility
-const getServerGeminiKey = () => (process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_AL || "").trim();
-// Helper to get server OpenAI key, used as fallback when provider=openai and no personal key was entered
-const getServerOpenAIKey = () => (process.env.OPENAI_API_KEY || "").trim();
+// ── Multi-Key Pool: rotates automatically when a key hits quota ───────────────
+// Reads GEMINI_API_KEY, GEMINI_API_KEY_2, GEMINI_API_KEY_3 … from env.
+// The same pattern applies to all providers (OPENAI_API_KEY_2, GROQ_API_KEY_2 …).
+function readKeyList(baseVar: string, ...aliases: string[]): string[] {
+  const keys: string[] = [];
+  // Try the base name and any aliases as slot #1
+  const base = aliases.reduce(
+    (acc, alias) => acc || (process.env[alias] || "").trim(),
+    (process.env[baseVar] || "").trim()
+  );
+  if (base) keys.push(base);
+  // Numbered slots: GEMINI_API_KEY_2, GEMINI_API_KEY_3 … up to _20
+  for (let i = 2; i <= 20; i++) {
+    const k = (process.env[`${baseVar}_${i}`] || "").trim();
+    if (k) keys.push(k);
+  }
+  return keys;
+}
+
+class KeyPool {
+  private keys: string[];
+  private idx = 0;
+  private exhaustedAt: Map<number, number> = new Map(); // idx → epoch ms when exhausted
+  private readonly COOLDOWN_MS = 60 * 60 * 1000; // 1 h before retrying an exhausted key
+
+  constructor(keys: string[]) { this.keys = keys; }
+
+  get size() { return this.keys.length; }
+
+  /** Current best key (first non-exhausted from current position). */
+  current(): string {
+    if (!this.keys.length) return "";
+    const now = Date.now();
+    for (let i = 0; i < this.keys.length; i++) {
+      const candidate = (this.idx + i) % this.keys.length;
+      const ex = this.exhaustedAt.get(candidate) ?? 0;
+      if (now - ex > this.COOLDOWN_MS) {
+        this.idx = candidate;
+        return this.keys[candidate];
+      }
+    }
+    // All keys on cooldown — reset and use first one anyway
+    this.exhaustedAt.clear();
+    this.idx = 0;
+    return this.keys[0];
+  }
+
+  /** Mark the active key as quota-exhausted and advance to the next. */
+  rotate(): string {
+    if (this.keys.length <= 1) return this.current();
+    this.exhaustedAt.set(this.idx, Date.now());
+    this.idx = (this.idx + 1) % this.keys.length;
+    console.warn(`[KeyPool] Key #${this.idx} quota exhausted. Rotating to key #${(this.idx + 1) % this.keys.length + 1} of ${this.keys.length}…`);
+    return this.current();
+  }
+}
+
+// One pool per provider — populated lazily from environment variables
+const geminiPool  = new KeyPool(readKeyList("GEMINI_API_KEY", "GOOGLE_GEMINI_AL"));
+const openaiPool  = new KeyPool(readKeyList("OPENAI_API_KEY"));
+const openrouterPool = new KeyPool(readKeyList("OPENROUTER_API_KEY"));
+const hfPool      = new KeyPool(readKeyList("HF_TOKEN"));
+const groqPool    = new KeyPool(readKeyList("GROQ_API_KEY"));
+const deepseekPool = new KeyPool(readKeyList("DEEPSEEK_API_KEY"));
+
+// Backwards-compatible helpers (return current pool key)
+const getServerGeminiKey    = () => geminiPool.current();
+const getServerOpenAIKey    = () => openaiPool.current();
+const getServerOpenRouterKey = () => openrouterPool.current();
+const getServerHFKey        = () => hfPool.current();
+const getServerGroqKey      = () => groqPool.current();
+const getServerDeepSeekKey  = () => deepseekPool.current();
 
 // Wrap raw 16-bit PCM audio (as returned by Gemini TTS) in a valid WAV container
 function pcm16ToWavBase64(pcmBase64: string, sampleRate = 24000, channels = 1): string {
@@ -80,7 +148,7 @@ app.use((req, res, next) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
   }
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type,x-custom-api-key,x-custom-provider");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type,x-custom-api-key,x-custom-provider,x-custom-endpoint-url,x-custom-model");
   if (req.method === "OPTIONS") {
     return res.sendStatus(204);
   }
@@ -202,14 +270,25 @@ async function executeGeminiOrOpenRouterCall(req: express.Request, systemPrompt:
     if (hfText.startsWith("```json")) hfText = hfText.replace(/^```json\s*/, "").replace(/\s*```$/, "");
     else if (hfText.startsWith("```")) hfText = hfText.replace(/^```\s*/, "").replace(/\s*```$/, "");
     return hfText.trim();
-  } else if (provider === "openai" || provider === "custom") {
-    const openaiKey = trimmedKey || getServerOpenAIKey();
+  } else if (provider === "openai" || provider === "groq" || provider === "deepseek" || provider === "custom") {
+    const serverFallback = provider === "openai" ? getServerOpenAIKey()
+      : provider === "groq" ? getServerGroqKey()
+      : provider === "deepseek" ? getServerDeepSeekKey()
+      : "";
+    const openaiKey = trimmedKey || serverFallback;
     if (!openaiKey) throw new Error("API_KEY_MISSING");
     const endpointUrl = provider === "custom"
       ? ((req.headers["x-custom-endpoint-url"] as string) || "").trim()
-      : "https://api.openai.com/v1/chat/completions";
+      : provider === "openai" ? "https://api.openai.com/v1/chat/completions"
+      : provider === "groq" ? "https://api.groq.com/openai/v1/chat/completions"
+      : provider === "deepseek" ? "https://api.deepseek.com/v1/chat/completions"
+      : "";
     if (!endpointUrl) throw new Error("CUSTOM_ENDPOINT_MISSING");
-    const customModel = ((req.headers["x-custom-model"] as string) || "").trim() || (provider === "openai" ? "gpt-4o-mini" : "gpt-4o-mini");
+    const defaultModel = provider === "openai" ? "gpt-4o-mini"
+      : provider === "groq" ? "llama3-70b-8192"
+      : provider === "deepseek" ? "deepseek-chat"
+      : "gpt-4o-mini";
+    const customModel = ((req.headers["x-custom-model"] as string) || "").trim() || defaultModel;
     const oaMessages: any[] = [];
     if (systemPrompt) oaMessages.push({ role: "system", content: systemPrompt });
     const oaUserContent = systemSchema
@@ -222,7 +301,7 @@ async function executeGeminiOrOpenRouterCall(req: express.Request, systemPrompt:
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${openaiKey}` },
         body: JSON.stringify({ model: customModel, messages: oaMessages, max_tokens: 2000 })
       });
-      if (!resp.ok) { const t = await resp.text(); throw new Error(`${provider === "openai" ? "OpenAI" : "Custom endpoint"} failed: ${resp.status} - ${t}`); }
+      if (!resp.ok) { const t = await resp.text(); throw new Error(`${provider === "openai" ? "OpenAI" : provider === "groq" ? "GROQ" : provider === "deepseek" ? "DeepSeek" : "Custom endpoint"} failed: ${resp.status} - ${t}`); }
       return resp;
     });
     const oaData: any = await oaRes.json();
@@ -380,18 +459,26 @@ function isAuthError(error: any): boolean {
   return status === 401 || status === 403 || msg.includes("api key") || msg.includes("unauthorized") || msg.includes("invalid key");
 }
 
-// Detects Gemini 429 / quota exhaustion errors (free tier or paid limit reached)
+// Detects Gemini rate-limit (per-minute, temporary) — HTTP 429 without quota language
+function isRateLimitError(error: any): boolean {
+  const status = error?.status || error?.code;
+  const msg = (error?.message || "").toLowerCase();
+  if (status === 429 && !msg.includes("quota") && !msg.includes("exceeded your current quota") && !msg.includes("resource_exhausted")) return true;
+  if (msg.includes("rate limit") || msg.includes("rate_limit")) return true;
+  return false;
+}
+
+// Detects Gemini true quota exhaustion (daily/monthly limit reached)
 function isQuotaError(error: any): boolean {
   const status = error?.status || error?.code;
   const msg = (error?.message || "").toLowerCase();
   return (
-    status === 429 ||
     status === "RESOURCE_EXHAUSTED" ||
     msg.includes("quota") ||
     msg.includes("resource_exhausted") ||
     msg.includes("exceeded your current quota") ||
-    msg.includes("rate limit") ||
-    msg.includes("free tier")
+    msg.includes("free tier") ||
+    (status === 429 && (msg.includes("quota") || msg.includes("resource_exhausted")))
   );
 }
 
@@ -408,9 +495,19 @@ async function callWithRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 150
     } catch (error: any) {
       attempt++;
 
-      // Fail fast — never retry auth errors or quota errors
+      // Fail fast — never retry auth errors or true quota exhaustion
       if (isAuthError(error)) throw error;
       if (isQuotaError(error)) throw error;
+      // Rate limits (per-minute 429) → retry with longer backoff, not fail-fast
+      if (isRateLimitError(error)) {
+        if (attempt < retries) {
+          const wait = 4000 + Math.random() * 2000;
+          console.warn(`[Rate-limit] 429 per-minute limit hit (attempt ${attempt}/${retries}). Waiting ${Math.round(wait)}ms...`);
+          await new Promise(r => setTimeout(r, wait));
+          continue;
+        }
+        throw error;
+      }
 
       const isTemporary = 
         error?.status === "UNAVAILABLE" ||
@@ -439,36 +536,77 @@ async function callWithRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 150
   throw new Error("Unable to contact Gemini AI after multiple attempts.");
 }
 
-// 🌐 Seamless Fallback mechanism to 'gemini-2.0-flash' in case 'gemini-2.5-flash' is overloaded with 503/UNAVAILABLE errors
-async function generateContentWithRetryAndFallback(ai: any, p: { model: string; contents: any; config?: any }): Promise<any> {
+/** Build a fresh GoogleGenAI client from a key (used for pool rotation). */
+function makeGeminiClient(apiKey: string) {
+  return new GoogleGenAI({ apiKey, httpOptions: { headers: { "User-Agent": "aistudio-build" } } });
+}
+
+// 🌐 Seamless Fallback + Key Rotation:
+//   1. Retry on temporary 503/429 (backoff).
+//   2. If the primary model is still failing → switch gemini-2.5-flash → gemini-2.0-flash.
+//   3. If it's a true quota exhaustion AND we have more server keys → rotate to the next key.
+//   4. After rotating, retry both model variants with the new key.
+// Rotation is attempted for any quota error when the pool has >1 key available.
+// If the active `ai` was using a personal key that's exhausted, falling back to
+// a server pool key is the right thing to do (better than a hard failure).
+async function generateContentWithRetryAndFallback(
+  ai: any,
+  p: { model: string; contents: any; config?: any }
+): Promise<any> {
+  const isDemandOrQuota = (error: any) =>
+    error?.status === "UNAVAILABLE" ||
+    error?.status === "RESOURCE_EXHAUSTED" ||
+    error?.code === 503 ||
+    error?.code === 429 ||
+    isQuotaError(error) ||
+    isRateLimitError(error) ||
+    !!(error?.message && (
+      error.message.includes("503") ||
+      error.message.includes("429") ||
+      error.message.includes("high demand") ||
+      error.message.includes("temporary") ||
+      error.message.includes("UNAVAILABLE") ||
+      error.message.includes("Unavailable") ||
+      error.message.includes("busy")
+    ));
+
+  // ── Attempt with the primary model ────────────────────────────
+  let primaryError: any = null;
   try {
     return await callWithRetry(() => ai.models.generateContent(p));
   } catch (error: any) {
-    const isDemandError = 
-      error?.status === "UNAVAILABLE" || 
-      error?.status === "RESOURCE_EXHAUSTED" ||
-      error?.code === 503 ||
-      error?.code === 429 ||
-      (error?.message && (
-        error.message.includes("503") || 
-        error.message.includes("429") ||
-        error.message.includes("high demand") || 
-        error.message.includes("temporary") ||
-        error.message.includes("UNAVAILABLE") ||
-        error.message.includes("Unavailable") ||
-        error.message.includes("busy")
-      ));
-
-    if (isDemandError && p.model === "gemini-2.5-flash") {
-      console.warn("[Gemini API Fallback Warning] 'gemini-2.5-flash' returned 503 high demand or was busy. Swapping model to 'gemini-2.0-flash' and retrying call...");
-      const fallbackParams = {
-        ...p,
-        model: "gemini-2.0-flash"
-      };
-      return await callWithRetry(() => ai.models.generateContent(fallbackParams));
-    }
-    throw error;
+    primaryError = error;
+    if (!isDemandOrQuota(error)) throw error; // auth / unknown → rethrow immediately
   }
+
+  // ── Fallback 1: switch gemini-2.5-flash → gemini-2.0-flash ────
+  if (p.model === "gemini-2.5-flash") {
+    console.warn("[Gemini Fallback] gemini-2.5-flash busy/quota. Trying gemini-2.0-flash…");
+    try {
+      return await callWithRetry(() => ai.models.generateContent({ ...p, model: "gemini-2.0-flash" }));
+    } catch (_) { /* continue to key rotation */ }
+  }
+
+  // ── Fallback 2: quota exhausted → rotate server key ────────────
+  if (isQuotaError(primaryError) && geminiPool.size > 1) {
+    const nextKey = geminiPool.rotate();
+    if (nextKey) {
+      console.warn("[Key Rotation] Retrying with next Gemini server key…");
+      const newAi = makeGeminiClient(nextKey);
+      try {
+        return await callWithRetry(() => newAi.models.generateContent(p));
+      } catch (err2: any) {
+        // Also try the model fallback on the new key
+        if (p.model === "gemini-2.5-flash") {
+          try {
+            return await callWithRetry(() => newAi.models.generateContent({ ...p, model: "gemini-2.0-flash" }));
+          } catch (_) {}
+        }
+      }
+    }
+  }
+
+  throw primaryError;
 }
 
 // Memory caches for PDF.js scripts
@@ -671,6 +809,61 @@ app.post("/api/ai/validate-key", async (req, res) => {
         expiryDate: "نشط ومستمر",
         status: "مفتاح OpenAI فَعَّال ونشط ✅"
       });
+
+    } else if (prov === "groq") {
+      const groqResp = await fetch("https://api.groq.com/openai/v1/models", {
+        headers: { "Authorization": `Bearer ${trimmedKey}` }
+      });
+      if (!groqResp.ok) {
+        const errTxt = await groqResp.text();
+        let displayError = errTxt;
+        try { const parsed = JSON.parse(errTxt); if (parsed.error?.message) displayError = parsed.error.message; } catch (_) {}
+        throw new Error(`فشل التحقق من مفتاح GROQ: ${groqResp.status} - ${displayError}`);
+      }
+      return res.json({
+        valid: true,
+        provider: "groq",
+        owner: "حساب GROQ مفعّل ✅",
+        permissions: [
+          "الوصول الكامل لجميع ميزات الدفتر الذكي 🚀",
+          "سرعة استجابة عالية جداً باستخدام نماذج Llama وMixtral ⚡",
+          "حل الواجبات والتلخيص والأسئلة الأكاديمية 🧠",
+          "تحليل الصور والنصوص بالذكاء الاصطناعي 📚"
+        ],
+        quotaAllowed: "حسب خطة GROQ",
+        quotaUsed: `${extraUsed} طلب مستهلك`,
+        quotaRemaining: "حسب رصيد الحساب",
+        expiryDate: "نشط ومستمر",
+        status: "مفتاح GROQ فَعَّال ونشط ✅"
+      });
+
+    } else if (prov === "deepseek") {
+      const dsResp = await fetch("https://api.deepseek.com/models", {
+        headers: { "Authorization": `Bearer ${trimmedKey}` }
+      });
+      if (!dsResp.ok) {
+        const errTxt = await dsResp.text();
+        let displayError = errTxt;
+        try { const parsed = JSON.parse(errTxt); if (parsed.error?.message) displayError = parsed.error.message; } catch (_) {}
+        throw new Error(`فشل التحقق من مفتاح DeepSeek: ${dsResp.status} - ${displayError}`);
+      }
+      return res.json({
+        valid: true,
+        provider: "deepseek",
+        owner: "حساب DeepSeek مفعّل ✅",
+        permissions: [
+          "الوصول الكامل لجميع ميزات الدفتر الذكي 🚀",
+          "نماذج DeepSeek قوية في التفكير والبرمجة والرياضيات 🧠",
+          "حل الواجبات والتلخيص والأسئلة الأكاديمية 📝",
+          "تحليل الصور والنصوص بالذكاء الاصطناعي 📚"
+        ],
+        quotaAllowed: "حسب خطة DeepSeek",
+        quotaUsed: `${extraUsed} طلب مستهلك`,
+        quotaRemaining: "حسب رصيد الحساب",
+        expiryDate: "نشط ومستمر",
+        status: "مفتاح DeepSeek فَعَّال ونشط ✅"
+      });
+
     } else {
       // "custom" endpoint provider — requires the user to also provide the endpoint URL,
       // since we can't guess it. We genuinely call it rather than pretending success.
@@ -867,14 +1060,18 @@ app.post("/api/ai/ocr", async (req, res) => {
 
     res.json({ text: responseText.trim() || "" });
   } catch (error) {
+    console.error("OCR error:", error);
+    // Always return 200 so frontend can read the error field from the body
     if (isAuthError(error)) {
-      return res.status(401).json({ error: "فشل الاتصال: مفتاح API غير صالح." });
+      return res.json({ error: "auth", text: null });
     }
-    console.error("OCR error (falling back to stub):", error);
-    res.json({
-      text: "تم مسح الصورة بنجاح وتوليد المربعات النصية الذكية الداعمة للصفحة تلقائياً في الدفتر.",
-      isFallback: true
-    });
+    if (isQuotaError(error)) {
+      return res.json({ error: "quota", text: null });
+    }
+    if (isRateLimitError(error)) {
+      return res.json({ error: "rate_limit", text: null });
+    }
+    res.json({ error: "ocr_failed", text: null });
   }
 });
 
@@ -1100,7 +1297,8 @@ app.post("/api/ai/podcast", async (req, res) => {
       model: "gemini-2.5-flash",
       contents: `أعد صياغة هذا الملخص لمحاضرة بعنوان (${title || "محاضرة اليوم"}) ليصبح سيناريو بودكاست شيق للغاية ومبسط بصوت متحدث واحد باللغة العربية الفصحى المبسطة. يجب أن يكون قصيراً جداً (لا يتجاوز 70 كلمة) لكي يناسب التنزيل الصوتي المباشر.
       الملخص:
-      ${summary}`
+      ${summary}`,
+      config: { thinkingConfig: { thinkingBudget: 0 } }
     });
 
     const podcastSpeechText = scriptResponse.text?.trim() || `أهلاً بكم في بودكاست المحاضرة السريع. اليوم سنتحدث باختصار عن أهم النقاط التي وردت في تلخيص درس ${title || "اليوم"}. شكراً لكم ونلتقي في المراجعة القادمة.`;
@@ -1197,16 +1395,11 @@ app.post("/api/ai/transcribe",
         const ai = getAI(req);
         const response = await generateContentWithRetryAndFallback(ai, {
           model: "gemini-2.5-flash",
-          contents: [{
-            parts: [
-              {
-                text: "أنت نظام تحويل صوت إلى نص متخصص في اللغة العربية. حوّل هذا التسجيل الصوتي إلى نص عربي كامل ودقيق. اكتب النص كما هو مسموع حرفياً دون أي تعليقات أو مقدمات. إذا كان أي جزء غير مسموع اكتب [غير واضح] بدلاً منه."
-              },
-              {
-                inlineData: { mimeType, data: base64Audio }
-              }
-            ]
-          }]
+          contents: [
+            { inlineData: { mimeType, data: base64Audio } },
+            { text: "أنت نظام تحويل صوت إلى نص متخصص في اللغة العربية. حوّل هذا التسجيل الصوتي إلى نص عربي كامل ودقيق. اكتب النص كما هو مسموع حرفياً دون أي تعليقات أو مقدمات. إذا كان أي جزء غير مسموع اكتب [غير واضح] بدلاً منه." }
+          ],
+          config: { thinkingConfig: { thinkingBudget: 0 } }
         });
         transcript = response.text?.trim() || "";
       }
@@ -1355,22 +1548,18 @@ app.post("/api/ai/parse-document", async (req, res) => {
         const response = await generateContentWithRetryAndFallback(ai, {
           model: "gemini-2.5-flash",
           contents: [
-            {
-              inlineData: {
-                data: base64Data,
-                mimeType: "application/pdf"
-              }
-            },
-            `أنت محلل المناهج الجامعية الذكي. قام الطالب برفع مستند PDF دراسي بعنوان (${fileName}).
+            { inlineData: { data: base64Data, mimeType: "application/pdf" } },
+            { text: `أنت محلل المناهج الجامعية الذكي. قام الطالب برفع مستند PDF دراسي بعنوان (${fileName}).
             حلل هذا المستند الدراسي واستخرج منه تلخيصاً وهيكلاً لمذاكرته بأسلوب علمي رصين باللغة العربية الفصحى.
             التزم بالهيكل التالي وأعطه لي في هيئة مستند JSON حصراً:
             1. topic: عنوان واسع يغطي موضوع المستند بشكل محترف ومميز.
             2. summary: تلخيص تفصيلي للمحاضرة منسق ومفهوم.
             3. boxes: مصفوفة من 3 نصوص مستقلة (كل نص بحدود 25 كلمة) تحتوي على أهم المفاهيم أو القواعد أو المعادلات الحصرية للاختبار.
             4. cues: الكلمات والمفاهيم المفتاحية.
-            5. cornellSummary: خلاصة مكثفة جداً في سطرين.`
+            5. cornellSummary: خلاصة مكثفة جداً في سطرين.` }
           ],
           config: {
+            thinkingConfig: { thinkingBudget: 0 },
             responseMimeType: "application/json",
             responseSchema: {
               type: Type.OBJECT,
@@ -1409,6 +1598,7 @@ app.post("/api/ai/parse-document", async (req, res) => {
           4. cues: الكلمات والرموز المرجعية.
           5. cornellSummary: ملخص نهائي متقن لبطاقة المذاكرة السريعة.`,
           config: {
+            thinkingConfig: { thinkingBudget: 0 },
             responseMimeType: "application/json",
             responseSchema: {
               type: Type.OBJECT,
@@ -1523,11 +1713,12 @@ app.post("/api/ai/analyze-document", async (req, res) => {
     if (inlineData) {
       contents.push({ inlineData });
     }
-    contents.push(`${instructions}\n\nاسم المستند المرفق: ${fileName}`);
+    contents.push({ text: `${instructions}\n\nاسم المستند المرفق: ${fileName}` });
 
     const response = await generateContentWithRetryAndFallback(ai, {
       model: "gemini-2.5-flash",
-      contents
+      contents,
+      config: { thinkingConfig: { thinkingBudget: 0 } }
     });
 
     const contentText = (response.text || "لم نتمكن من الحصول على استجابة تحليلية واضحة.").trim();
@@ -1684,14 +1875,14 @@ app.post("/api/ai/lecture-extract-file", async (req, res) => {
       const customKey = (req.headers["x-custom-api-key"] as string || "").trim();
       const apiKey = customKey || getServerGeminiKey();
       if (!apiKey) return res.status(400).json({ success: false, error: "مفتاح API مطلوب لمعالجة الصور. أضفه من إعدادات الذكاء الاصطناعي." });
-      const ai = new GoogleGenAI({ apiKey });
+      const ai = new GoogleGenAI({ apiKey, httpOptions: { headers: { "User-Agent": "aistudio-build" } } });
       try {
         const result: any = await generateContentWithRetryAndFallback(ai, {
           model: "gemini-2.5-flash",
-          contents: [{ role: "user", parts: [
+          contents: [
             { inlineData: { mimeType: mime || "image/png", data: fileData } },
             { text: "استخرج كل النصوص الموجودة في هذه الصورة بدقة كاملة، محافظاً على التنسيق الأصلي قدر الإمكان. أعِد النص فقط دون أي تعليق." }
-          ]}],
+          ],
           config: { thinkingConfig: { thinkingBudget: 0 } }
         });
         extractedText = (result?.text || "").trim();
@@ -1777,11 +1968,11 @@ Provide a deep, comprehensive academic explanation as if lecturing university st
 - Do NOT summarize — elaborate fully in academic depth.
 - Start directly with the academic content, no preambles.`;
 
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey, httpOptions: { headers: { "User-Agent": "aistudio-build" } } });
     const result: any = await generateContentWithRetryAndFallback(ai, {
       model: "gemini-2.5-flash",
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      config: { thinkingConfig: { thinkingBudget: 8192 } }
+      contents: prompt,
+      config: { thinkingConfig: { thinkingBudget: 0 } }
     });
     const explanation = (result?.text || "").trim();
     if (!explanation) throw new Error("لم يُعِد الذكاء الاصطناعي أي محتوى");
@@ -1938,15 +2129,15 @@ app.post("/api/qr-session/:sessionId/upload", async (req, res) => {
 
   // Process image asynchronously — extract text with Gemini Vision
   try {
-    const ai = new GoogleGenAI({ apiKey: session.apiKey });
+    const ai = new GoogleGenAI({ apiKey: session.apiKey, httpOptions: { headers: { "User-Agent": "aistudio-build" } } });
     const mime = (fileType || "image/jpeg") as string;
     const result: any = await generateContentWithRetryAndFallback(ai, {
       model: "gemini-2.5-flash",
-      contents: [{ role: "user", parts: [
+      contents: [
         { inlineData: { mimeType: mime, data: fileData } },
         { text: `أنت خبير في قراءة النصوص والخطوط اليدوية.\nاستخرج كل ما هو مكتوب في هذه الصورة بدقة تامة، بما في ذلك:\n- الخط اليدوي بأي لغة\n- المعادلات الرياضية\n- الجداول والقوائم\n- العناوين والرموز\nحافظ على التنسيق الأصلي قدر الإمكان. أعِد النص فقط دون أي تعليق أو مقدمة.` }
-      ]}],
-      config: { thinkingConfig: { thinkingBudget: 512 } }
+      ],
+      config: { thinkingConfig: { thinkingBudget: 0 } }
     });
     const text = (result?.text || "").trim();
     if (!text) {
@@ -1984,7 +2175,7 @@ app.post("/api/ai/lecture-chart-analyze", async (req, res) => {
     const apiKey = customKey || getServerGeminiKey();
     if (!apiKey) return res.json({ hasChart: false, chartType: "none" });
 
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey, httpOptions: { headers: { "User-Agent": "aistudio-build" } } });
     const schema = {
       type: Type.OBJECT,
       properties: {
@@ -2039,7 +2230,7 @@ app.post("/api/ai/lecture-chart-analyze", async (req, res) => {
 
     const result: any = await generateContentWithRetryAndFallback(ai, {
       model: "gemini-2.5-flash",
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      contents: prompt,
       config: {
         thinkingConfig: { thinkingBudget: 0 },
         responseMimeType: "application/json",
@@ -2050,11 +2241,111 @@ app.post("/api/ai/lecture-chart-analyze", async (req, res) => {
     try { chartData = JSON.parse(result?.text || "{}"); } catch (_) {}
     return res.json(chartData);
   } catch (err: any) {
-    console.error("lecture-chart-analyze error:", err);
-    if (isQuotaError(err)) {
+    console.error(`[lecture-chart-analyze] error: status=${err?.status||err?.code} msg=${err?.message}`);
+    if (isQuotaError(err) || isRateLimitError(err)) {
       return res.json({ hasChart: false, chartType: "none", quotaExceeded: true });
     }
     return res.json({ hasChart: false, chartType: "none" });
+  }
+});
+
+// ==========================================
+// Explain hand-drawn sketch — vision + structured chart extraction
+// ==========================================
+app.post("/api/ai/explain-drawing", async (req, res) => {
+  try {
+    const { imageBase64, mimeType = "image/jpeg" } = req.body || {};
+    if (!imageBase64) return res.status(400).json({ success: false, error: "missing image" });
+
+    const customKey = (req.headers["x-custom-api-key"] as string || "").trim();
+    const apiKey = customKey || getServerGeminiKey();
+
+    // Log which key source is being used (masked) — helps diagnose quota issues
+    const keySource = customKey ? `custom(${customKey.slice(0,8)}...)` : (getServerGeminiKey() ? "server" : "none");
+    console.log(`[explain-drawing] key=${keySource} mime=${mimeType} size=${Math.round((imageBase64.length*3/4)/1024)}KB`);
+
+    if (!apiKey) return res.json({ success: false, error: "no_api_key", hasChart: false, chartType: "none" });
+
+    const ai = new GoogleGenAI({ apiKey, httpOptions: { headers: { "User-Agent": "aistudio-build" } } });
+
+    const schema = {
+      type: Type.OBJECT,
+      properties: {
+        explanation:  { type: Type.STRING },
+        hasChart:     { type: Type.BOOLEAN },
+        chartType:    { type: Type.STRING },
+        title:        { type: Type.STRING },
+        labels:       { type: Type.ARRAY,  items: { type: Type.STRING } },
+        datasets: { type: Type.ARRAY, items: {
+          type: Type.OBJECT,
+          properties: { name: { type: Type.STRING }, values: { type: Type.ARRAY, items: { type: Type.NUMBER } } },
+          required: ["name","values"]
+        }},
+        tableHeaders: { type: Type.ARRAY, items: { type: Type.STRING } },
+        tableRows:    { type: Type.ARRAY, items: { type: Type.ARRAY, items: { type: Type.STRING } } },
+        diagramNodes: { type: Type.ARRAY, items: {
+          type: Type.OBJECT,
+          properties: { id: { type: Type.STRING }, label: { type: Type.STRING }, shape: { type: Type.STRING } },
+          required: ["id","label","shape"]
+        }},
+        diagramEdges: { type: Type.ARRAY, items: {
+          type: Type.OBJECT,
+          properties: { from: { type: Type.STRING }, to: { type: Type.STRING }, label: { type: Type.STRING } },
+          required: ["from","to","label"]
+        }},
+        coordPoints: { type: Type.ARRAY, items: {
+          type: Type.OBJECT,
+          properties: { x: { type: Type.NUMBER }, y: { type: Type.NUMBER }, label: { type: Type.STRING } },
+          required: ["x","y"]
+        }},
+        coordLines: { type: Type.ARRAY, items: {
+          type: Type.OBJECT,
+          properties: { x1: { type: Type.NUMBER }, y1: { type: Type.NUMBER }, x2: { type: Type.NUMBER }, y2: { type: Type.NUMBER }, label: { type: Type.STRING } },
+          required: ["x1","y1","x2","y2"]
+        }}
+      },
+      required: ["explanation","hasChart","chartType"]
+    };
+
+    const prompt =
+      "أنت مدرّس ذكي. المستخدم رسم رسمًا يدويًا على السبورة الرقمية.\n\n" +
+      "⚠️ تنبيه مهم عن نظام الإحداثيات في الصورة:\n" +
+      "الصورة مأخوذة من canvas HTML حيث y=0 في الأعلى ويزيد نحو الأسفل (عكس الرياضيات).\n" +
+      "لذلك: خط يرتفع بصرياً (من أسفل إلى أعلى في الصورة) يمثّل قيم y موجبة ومتزايدة في الرياضيات.\n" +
+      "يجب دائماً عكس محور y عند استخراج الإحداثيات الرياضية: ما يبدو في الأعلى هو y موجب، ما في الأسفل هو y سالب.\n\n" +
+      "افهم الرسم ثم:\n" +
+      "1. اشرح محتواه في جملة أو جملتين واضحتين بالعربية (explanation).\n" +
+      "2. إذا كان الرسم يمثّل بيانات قابلة للتمثيل (مخطط، جدول، مخطط انسيابي، محاور إحداثيات) → hasChart=true وأعطِ البيانات المناسبة.\n" +
+      "3. إذا لم يكن قابلاً للتمثيل → hasChart=false, chartType=none.\n\n" +
+      "chartType: bar|line|pie|table|diagram|coordinate|none\n" +
+      "- bar/line/pie: labels وdatasets\n" +
+      "- table: tableHeaders وtableRows\n" +
+      "- diagram: diagramNodes(shape:box|circle|diamond) وdiagramEdges\n" +
+      "- coordinate: coordPoints[{x,y,label}] و/أو coordLines[{x1,y1,x2,y2,label}]\n" +
+      "  للميل (slope): الخط الذي يرتفع من اليسار إلى اليمين له ميل موجب (x2>x1 و y2>y1)";
+
+    const result: any = await generateContentWithRetryAndFallback(ai, {
+      model: "gemini-2.5-flash",
+      contents: [
+        { inlineData: { mimeType, data: imageBase64 } },
+        { text: prompt }
+      ],
+      config: {
+        thinkingConfig: { thinkingBudget: 0 },
+        responseMimeType: "application/json",
+        responseSchema: schema
+      }
+    });
+
+    let data: any = { explanation: "تعذّر تحليل الرسم", hasChart: false, chartType: "none" };
+    try { data = JSON.parse(result?.text || "{}"); } catch (_) {}
+    return res.json({ success: true, ...data });
+  } catch (err: any) {
+    const errMsg = (err?.message || "").toLowerCase();
+    console.error(`[explain-drawing] error: status=${err?.status||err?.code} msg=${err?.message}`);
+    if (isQuotaError(err)) return res.json({ success: false, error: "quota", hasChart: false, chartType: "none" });
+    if (isRateLimitError(err)) return res.json({ success: false, error: "rate_limit", hasChart: false, chartType: "none" });
+    return res.json({ success: false, error: "فشل التحليل", hasChart: false, chartType: "none" });
   }
 });
 
@@ -2074,11 +2365,11 @@ app.post("/api/ai/lecture-prep", async (req, res) => {
       // No key — just return the original text, math simply won't be typeset.
       return res.json({ success: true, processedText: text });
     }
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey, httpOptions: { headers: { "User-Agent": "aistudio-build" } } });
     const prompt = `أعد كتابة النص التالي حرفياً كما هو دون أي تغيير في الكلمات أو الترتيب أو الحذف أو الإضافة، والتزم فقط بتنفيذ هذا التعديل الوحيد: كل تعبير أو رمز رياضي موجود في النص (معادلات، كسور، جذور، أُسس، رموز يونانية، متغيرات...) أعد كتابته بصيغة LaTeX صحيحة ثم ضعه بين علامتي $ (مثال: $x^2 + y^2 = z^2$). إن لم يوجد أي رمز رياضي في النص أعده كما هو دون أي علامات $. أعد فقط النص النهائي بدون أي شرح إضافي.\n\nالنص:\n"""${text}"""`;
     const result: any = await generateContentWithRetryAndFallback(ai, {
       model: "gemini-2.5-flash",
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      contents: prompt,
       config: { thinkingConfig: { thinkingBudget: 0 } },
     });
     const out = result?.text || text;
@@ -2267,8 +2558,8 @@ app.post("/api/ai/chat", async (req, res) => {
       model: "gemini-2.5-flash",
       contents: contents,
       config: {
-        systemInstruction: systemPrompt,
-        thinkingConfig: { thinkingBudget: 0 }
+        thinkingConfig: { thinkingBudget: 0 },
+        systemInstruction: systemPrompt
       }
     });
 
@@ -2530,6 +2821,43 @@ Drawing rules — very important:
     clientWs.on("error", () => {
       try { geminiSession?.close?.(); } catch (_) {}
     });
+  });
+
+  // ══════════════════════════════════════════════════════════════════
+  // AI SVG Drawing — generates real SVG diagrams from text description
+  // ══════════════════════════════════════════════════════════════════
+  app.post("/api/ai/draw-svg", async (req, res) => {
+    try {
+      const { prompt } = req.body as { prompt?: string };
+      if (!prompt?.trim()) return res.json({ error: "no_prompt" });
+
+      const ai = getAI(req);
+      const response = await generateContentWithRetryAndFallback(ai, {
+        model: "gemini-2.5-flash",
+        contents: `أنت رسام SVG متخصص في الرسوم العلمية والهندسية والتقنية.
+المستخدم يريد رسم: "${prompt.trim()}"
+
+أنشئ SVG دقيق ومفصل يمثل هذا الطلب تماماً. اتبع هذه القواعد بدقة:
+- الناتج يجب أن يكون SVG نظيف 100% يبدأ بـ <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 350">
+- استخدم ألوان احترافية: خلفية بيضاء أو فاتحة، خطوط وأشكال بألوان واضحة
+- للدوائر الكهربائية: ارسم المكونات بالرموز القياسية (بطارية ╫, مقاومة zig-zag, مكثف ||, مصباح ⊗, مفتاح /, diode ▷|)
+- للمخططات العلمية والرياضية: دقة هندسية مع تسميات وأرقام
+- للتشريح والأحياء: رسوم تفصيلية مع مؤشرات (lines pointing to parts)
+- للهندسة المعمارية والميكانيكية: قياسات وتفاصيل دقيقة
+- أضف نصوص توضيحية مناسبة بالعربية أو الإنجليزية حسب السياق
+- لا تُضف أي نص أو شرح خارج SVG — فقط SVG نقي من أول حرف لآخر حرف`,
+        config: { thinkingConfig: { thinkingBudget: 0 } }
+      });
+
+      const raw = response.text || "";
+      const match = raw.match(/<svg[\s\S]*?<\/svg>/i);
+      if (!match) return res.json({ error: "no_svg", raw: raw.slice(0, 300) });
+
+      res.json({ svg: match[0] });
+    } catch (err: any) {
+      console.error("[draw-svg] error:", err?.message);
+      res.status(500).json({ error: "server_error", message: err?.message });
+    }
   });
 
   httpServer.listen(PORT, "0.0.0.0", () => {

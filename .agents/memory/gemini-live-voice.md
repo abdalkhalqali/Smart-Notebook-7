@@ -1,29 +1,58 @@
 ---
-name: Gemini Live voice model quirks
-description: Correct model/modality combo for @google/genai live.connect (Gemini Live bidiGenerateContent), and how to diagnose silent WS failures.
+name: Gemini API model availability and correct usage pattern
+description: Which Gemini models work with this project's API key, the correct contents format, and thinkingConfig usage.
 ---
 
-# Gemini Live voice quirks
+## Available models (verified via direct test July 2026)
+- `gemini-2.5-flash` ✅ — primary model for all text + vision
+- `gemini-2.0-flash` ✅ — fallback on quota/overload
+- `gemini-2.5-flash-preview-tts` — TTS only
+- `gemini-2.5-flash-native-audio-latest` — Live voice bidi only
 
-- A wrong live model name (e.g. `gemini-2.0-flash-live-001`) or an unsupported
-  `responseModalities` combo (e.g. `[AUDIO, TEXT]` together) makes the Gemini Live
-  session close immediately after `onopen`. The client WebSocket just sees a bare
-  close (code 1005/1008) with **no error frame**, because the failure happens on the
-  `geminiSession.onclose`/`onerror` callback path, not inside the outer try/catch
-  around `live.connect()`. If a live voice feature "just stops responding" with no
-  error shown, add a console.error in the session's `onclose`/`onerror` callbacks
-  first — don't assume it's an API-key problem.
-- Find the actual usable live model + its supported response modality by querying
-  `GET https://generativelanguage.googleapis.com/v1beta/models?key=$KEY` and filtering
-  for `supportedGenerationMethods` including `bidiGenerateContent`. As of writing, that
-  was `gemini-2.5-flash-native-audio-latest`, and it only supports `responseModalities: [AUDIO]`
-  (not TEXT alongside it) — get the model's spoken transcript via
-  `outputAudioTranscription`/`inputAudioTranscription` config instead of a text response part.
-- Also watch for `part.thought === true` in `serverContent.modelTurn.parts` — that's the
-  model's internal reasoning trace, not the actual reply; filter it out before treating
-  `part.text` as a transcript.
+## ❌ gemini-1.5-flash and gemini-1.5-pro do NOT exist
+Return 404 "not found for API version v1beta". This is not a quota error — they are absent from the v1beta endpoint used by @google/genai library regardless of free-tier documentation claims.
 
-**Why:** cost real debugging time tracing a "no voice reply" bug back through a completely
-silent failure path in a Node/Express WS proxy wrapping `@google/genai`'s live API.
+## Correct API usage pattern (from confirmed-working reference code)
 
-**How to apply:** when building/debugging any Gemini Live (real-time voice) integration.
+### getAI() — must include User-Agent header
+```ts
+new GoogleGenAI({
+  apiKey: key,
+  httpOptions: { headers: { "User-Agent": "aistudio-build" } }
+})
+```
+
+### Vision calls — flat parts array (NOT role-wrapped)
+```ts
+// ✅ CORRECT (matches old working code)
+contents: [imagePart, { text: promptText }],
+config: { thinkingConfig: { thinkingBudget: 0 } }
+
+// ❌ WRONG — causes silent failures
+contents: [{ role: "user", parts: [imagePart, { text: promptText }] }]
+```
+
+### Text calls — plain string contents
+```ts
+contents: "system prompt\n\nuser prompt",
+config: { thinkingConfig: { thinkingBudget: 0 } }
+```
+
+### thinkingConfig: { thinkingBudget: 0 }
+- Setting budget to 0 = disable thinking = works on BOTH gemini-2.5-flash AND gemini-2.0-flash
+- Do NOT strip thinkingConfig on fallback — budget:0 is universally compatible
+- Only non-zero budgets require gemini-2.5 or higher
+
+## Fallback strategy (current)
+Simple two-level: `gemini-2.5-flash` → `gemini-2.0-flash` on 503/429/UNAVAILABLE/RESOURCE_EXHAUSTED.
+Keep thinkingConfig unchanged (budget:0 is compatible).
+
+## OCR endpoint design
+- Always return HTTP 200 from catch block — never 4xx/5xx
+- Put error code in body: `{ error: "quota"|"rate_limit"|"auth"|"ocr_failed", text: null }`
+- Frontend reads `data.error` from body, not `res.ok`
+
+## Voice AudioContext
+- Create `new AudioContext()` with no sampleRate arg — let browser choose native rate
+- Gemini Live input expects 16kHz PCM — downsample in ScriptProcessor.onaudioprocess
+- Gemini Live output is 24kHz — plays correctly in native-rate AudioContext

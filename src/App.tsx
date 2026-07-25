@@ -15,6 +15,7 @@ import PhysicsLab from "./components/PhysicsLab";
 import VoiceConversation from "./components/VoiceConversation";
 import LectureNarrator from "./components/LectureNarrator";
 import { resolveApiUrl } from "./utils/apiBase";
+import { AiProvider, AiKeyEntry, loadKeys, saveKeys, getActiveKey, getActiveRequestHeaders, providerLabel, providerPlaceholder, PROVIDER_OPTIONS, addKey, removeKey, updateKey } from "./utils/aiKeys";
 
 // Lucide icons
 import {
@@ -29,7 +30,7 @@ import {
 // because the mobile WebView has no backend behind it and relative URLs would resolve to the device.
 if (typeof window !== "undefined") {
   const _patchFetch = (originalFetch: typeof window.fetch) => {
-    return function (input: RequestInfo | URL, init?: RequestInit) {
+    return async function (input: RequestInfo | URL, init?: RequestInit) {
       let url = typeof input === "string" ? input : (input as Request).url;
 
       // Rewrite relative /api/ paths to absolute server URL on native mobile
@@ -42,32 +43,38 @@ if (typeof window !== "undefined") {
       const isAiEndpoint = url && url.includes("/api/ai/");
       const isValidation = url && url.includes("validate-key");
 
+      let activeKey: AiKeyEntry | undefined;
       if (isAiEndpoint) {
-        const storedKey = localStorage.getItem("customAiKey") || "";
-        const storedProvider = localStorage.getItem("aiProvider") || "gemini";
-        if (storedKey && storedKey.trim() !== "") {
+        const aiKeys = await import("./utils/aiKeys");
+        const storedProvider = (localStorage.getItem("aiProvider") as AiProvider) || "gemini";
+        const keys = aiKeys.loadKeys();
+        activeKey = aiKeys.getActiveKey(keys, storedProvider);
+        if (activeKey?.key.trim()) {
           init = init || {};
           const headers = new Headers(init.headers || {});
-          headers.set("x-custom-api-key", storedKey.trim());
+          headers.set("x-custom-api-key", activeKey.key.trim());
           headers.set("x-custom-provider", storedProvider);
+          if (storedProvider === "custom" && activeKey.endpointUrl?.trim()) {
+            headers.set("x-custom-endpoint-url", activeKey.endpointUrl.trim());
+          }
+          if (activeKey.model?.trim()) {
+            headers.set("x-custom-model", activeKey.model.trim());
+          }
           init.headers = headers;
         }
       }
 
       const fetchPromise = originalFetch.call(window, input, init);
 
-      if (isAiEndpoint && !isValidation) {
-        const storedKey = localStorage.getItem("customAiKey") || "";
-        if (storedKey && storedKey.trim() !== "") {
-          fetchPromise.then(res => {
-            if (res && res.ok) {
-              const cleanedKey = storedKey.trim();
-              const storageKey = `localUsedCount_${cleanedKey}`;
-              const current = parseInt(localStorage.getItem(storageKey) || "0", 10);
-              localStorage.setItem(storageKey, String(current + 1));
-            }
-          }).catch(() => {});
-        }
+      if (isAiEndpoint && !isValidation && activeKey?.key.trim()) {
+        fetchPromise.then((res: Response) => {
+          if (res && res.ok) {
+            const cleanedKey = activeKey!.key.trim();
+            const storageKey = `localUsedCount_${cleanedKey}`;
+            const current = parseInt(localStorage.getItem(storageKey) || "0", 10);
+            localStorage.setItem(storageKey, String(current + 1));
+          }
+        }).catch(() => {});
       }
 
       return fetchPromise;
@@ -101,10 +108,17 @@ export default function App() {
   const [showFloatingQuickActions, setShowFloatingQuickActions] = useState(() => {
     return localStorage.getItem("showFloatingQuickActions") !== "false";
   });
-  const [aiProvider, setAiProvider] = useState(() => localStorage.getItem("aiProvider") || "gemini");
-  const [customAiKey, setCustomAiKey] = useState(() => localStorage.getItem("customAiKey") || "");
-  const [customEndpointUrl, setCustomEndpointUrl] = useState(() => localStorage.getItem("customEndpointUrl") || "");
+  const [aiProvider, setAiProvider] = useState<AiProvider>(() => (localStorage.getItem("aiProvider") as AiProvider) || "gemini");
+  const [aiKeys, setAiKeys] = useState<AiKeyEntry[]>(() => loadKeys());
   const [showAiKeyModal, setShowAiKeyModal] = useState(false);
+  const [visibleKeyIds, setVisibleKeyIds] = useState<Set<string>>(new Set());
+  const [newKeyDraft, setNewKeyDraft] = useState<{ provider: AiProvider; key: string; label: string; endpointUrl: string; model: string }>(() => ({
+    provider: (localStorage.getItem("aiProvider") as AiProvider) || "gemini",
+    key: "",
+    label: "",
+    endpointUrl: "",
+    model: "",
+  }));
   const [serverUrl, setServerUrl] = useState(() => {
     const stored = localStorage.getItem("serverUrl");
     if (stored) return stored;
@@ -113,7 +127,6 @@ export default function App() {
     return defaultUrl;
   });
   const [serverUrlTestStatus, setServerUrlTestStatus] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle');
-  const [showApiKey, setShowApiKey] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [isEditingAcademic, setIsEditingAcademic] = useState(false);
   const [showWelcomeOverlay, setShowWelcomeOverlay] = useState(false);
@@ -387,8 +400,8 @@ export default function App() {
     error?: string;
   } | null>(null);
 
-  const handleVerifyKey = async (keyToCheck: string, providerToCheck: string) => {
-    if (!keyToCheck || !keyToCheck.trim()) {
+  const handleVerifyKey = async (entry: AiKeyEntry) => {
+    if (!entry.key.trim()) {
       setKeyValidationResult({
         checked: true,
         valid: false,
@@ -399,7 +412,7 @@ export default function App() {
     setIsCheckingKey(true);
     setKeyValidationResult(null);
     try {
-      const cleanedKey = keyToCheck.trim();
+      const cleanedKey = entry.key.trim();
       const storageKey = `localUsedCount_${cleanedKey}`;
       const localCount = parseInt(localStorage.getItem(storageKey) || "0", 10);
 
@@ -408,11 +421,11 @@ export default function App() {
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({ 
-          key: keyToCheck, 
-          provider: providerToCheck,
+        body: JSON.stringify({
+          key: entry.key,
+          provider: entry.provider,
           localUsedCount: localCount,
-          endpointUrl: providerToCheck === "custom" ? customEndpointUrl.trim() : undefined
+          endpointUrl: entry.provider === "custom" ? entry.endpointUrl?.trim() : undefined
         })
       });
       const data = await response.json();
@@ -993,16 +1006,7 @@ export default function App() {
   // (Gemini / OpenRouter / HuggingFace / Custom Endpoint) is actually honored everywhere,
   // not just in a few components. Falls back to the server's own key when nothing is set.
   const getAiHeaders = (): Record<string, string> => {
-    const headers: Record<string, string> = {};
-    const key = customAiKey.trim();
-    if (key) {
-      headers["x-custom-api-key"] = key;
-      headers["x-custom-provider"] = aiProvider;
-      if (aiProvider === "custom" && customEndpointUrl.trim()) {
-        headers["x-custom-endpoint-url"] = customEndpointUrl.trim();
-      }
-    }
-    return headers;
+    return getActiveRequestHeaders();
   };
 
   const getSelectedSubject = (): SubjectItem | undefined => {
@@ -1629,12 +1633,7 @@ export default function App() {
           setIsTranscribing(recId);
           try {
             const audioMime = blob.type.startsWith('video/') ? 'audio/webm' : (blob.type || 'audio/webm');
-            const txHeaders: Record<string, string> = { 'Content-Type': audioMime };
-            const storedKey = localStorage.getItem("customAiKey")?.trim() || "";
-            if (storedKey) {
-              txHeaders['x-custom-api-key'] = storedKey;
-              txHeaders['x-custom-provider'] = localStorage.getItem("aiProvider") || "gemini";
-            }
+            const txHeaders: Record<string, string> = { 'Content-Type': audioMime, ...getActiveRequestHeaders() };
             const response = await fetch('/api/ai/transcribe', {
               method: 'POST', headers: txHeaders, body: blob,
             });
@@ -1902,12 +1901,7 @@ export default function App() {
           try {
             // Normalise video blobs → audio/webm so Gemini transcription accepts them
             const sendMime = blob.type.startsWith('video/') ? 'audio/webm' : (blob.type || 'audio/webm');
-            const vidTxHeaders: Record<string, string> = { 'Content-Type': sendMime };
-            const storedKeyV = localStorage.getItem("customAiKey")?.trim() || "";
-            if (storedKeyV) {
-              vidTxHeaders['x-custom-api-key'] = storedKeyV;
-              vidTxHeaders['x-custom-provider'] = localStorage.getItem("aiProvider") || "gemini";
-            }
+            const vidTxHeaders: Record<string, string> = { 'Content-Type': sendMime, ...getActiveRequestHeaders() };
             const response = await fetch('/api/ai/transcribe', {
               method: 'POST',
               headers: vidTxHeaders,
@@ -1985,11 +1979,8 @@ export default function App() {
       const blobMime = blob.type.startsWith('video/') ? 'audio/webm' : (blob.type || 'audio/webm');
       const headers: Record<string, string> = {
         'Content-Type': blobMime,
+        ...getActiveRequestHeaders(),
       };
-      if (customAiKey.trim()) {
-        headers['x-custom-api-key'] = customAiKey.trim();
-        headers['x-custom-provider'] = aiProvider;
-      }
 
       const response = await fetch('/api/ai/transcribe', {
         method: 'POST',
@@ -2919,26 +2910,32 @@ export default function App() {
         headers: { "Content-Type": "application/json", ...getAiHeaders() },
         body: JSON.stringify({ imageData: doc.base64 })
       });
-      if (!res.ok) throw new Error("فشل الخادم في قراءة الصورة واكتشاف النصوص.");
       const data = await res.json();
       
-      if (data.text) {
-        // Update document with transcription list
-        const updatedDocs = (lecture.documents || []).map(d =>
-          d.id === docId ? { ...d, transcription: data.text } : d
-        );
-        updateLectureData(lecture.id, { 
-          documents: updatedDocs,
-          lectureText: data.text
-        });
-        setLectureTextEdit(data.text);
-        alert(`🎉 تم نجاح استخراج النص من الصورة! تم نسخه أيضاً إلى مفكرة تفريغ المحاضرة.`);
-      } else {
-        alert("لم يتم العثور على أي نصوص واضحة في الصورة المحددة.");
+      if (data.error || !data.text) {
+        const msg = data.error === "quota"
+          ? "⚠️ نفدت حصة Gemini API اليومية — جرّب مفتاحاً آخر من الإعدادات أو انتظر حتى الغد."
+          : data.error === "rate_limit"
+          ? "⏱️ تجاوزت الحد المسموح في الدقيقة — جرّب مرة ثانية بعد لحظة."
+          : data.error === "auth"
+          ? "🔑 مفتاح API غير صالح — تحقق من إعداداتك."
+          : "❌ تعذّر استخراج النص — تأكد أن الصورة واضحة وتحتوي على نص مقروء.";
+        return alert(msg);
       }
+
+      // Update document with transcription
+      const updatedDocs = (lecture.documents || []).map(d =>
+        d.id === docId ? { ...d, transcription: data.text } : d
+      );
+      updateLectureData(lecture.id, { 
+        documents: updatedDocs,
+        lectureText: data.text
+      });
+      setLectureTextEdit(data.text);
+      alert(`🎉 تم نجاح استخراج النص من الصورة! تم نسخه أيضاً إلى مفكرة تفريغ المحاضرة.`);
     } catch (err: any) {
       console.error(err);
-      alert(`خطأ أثناء مسح الصورة: ${err.message}`);
+      alert(`❌ خطأ غير متوقع: ${err.message}`);
     } finally {
       setIsParsingDocument(false);
     }
@@ -3215,6 +3212,18 @@ export default function App() {
         body: JSON.stringify({ imageData: base64 })
       });
       const data = await res.json();
+
+      // Map server error codes to Arabic messages
+      if (data.error || !data.text) {
+        const errMsg = data.error === "quota"
+          ? "⚠️ نفدت حصة Gemini API اليومية — جرّب مفتاحاً آخر من الإعدادات أو انتظر حتى الغد."
+          : data.error === "rate_limit"
+          ? "⏱️ تجاوزت الحد المسموح في الدقيقة — جرّب مرة ثانية بعد لحظة."
+          : "❌ تعذّر استخراج النص من الصورة — تأكد أن الصورة واضحة وتحتوي على نص مقروء.";
+        setScannedTextOCR(errMsg);
+        return;
+      }
+
       setScannedTextOCR(data.text);
       const lecture = getSelectedLecture();
       if (lecture && lecture.pages.length > 0) {
@@ -3246,7 +3255,7 @@ export default function App() {
         updateLectureData(lecture.id, { documents: [...(lecture.documents || []), newDoc] });
       }
     } catch (err) {
-      setScannedTextOCR("تعذر قراءة الصورة، يرجى المحاولة مرة أخرى.");
+      setScannedTextOCR("❌ تعذر قراءة الصورة، يرجى المحاولة مرة أخرى.");
     } finally {
       setScanningImageOCR(false);
       // Reset input so same file can be selected again
@@ -6993,82 +7002,214 @@ export default function App() {
                   </div>
 
                   <div className="space-y-1.5 pt-1">
-                    <label className="text-[11px] text-slate-300 font-bold block">مزوّد الخدمة الحالي (Provider)</label>
+                    <label className="text-[11px] text-slate-300 font-bold block">نوع المفتاح المراد إضافته (Provider)</label>
                     <select
-                      value={aiProvider}
+                      value={newKeyDraft.provider}
                       onChange={(e) => {
-                        const val = e.target.value;
+                        const val = e.target.value as AiProvider;
+                        setNewKeyDraft(prev => ({ ...prev, provider: val }));
                         setAiProvider(val);
                         localStorage.setItem("aiProvider", val);
-                        localStorage.setItem("x-custom-provider", val);
                       }}
                       className="w-full bg-slate-950 border border-slate-850 rounded-lg p-2.5 text-xs text-slate-200 text-right focus:ring-1 focus:ring-indigo-500 outline-none"
                     >
-                      <option value="gemini">Google Gemini AI (الافتراضي)</option>
-                      <option value="openrouter">OpenRouter API (مستقل متعدد النماذج)</option>
-                      <option value="huggingface">HuggingFace Inference API (نماذج مفتوحة المصدر)</option>
-                      <option value="openai">OpenAI API (GPT-4o / GPT-4o-mini)</option>
-                      <option value="custom">مخدم ذكاء اصطناعي خاص (Custom Endpoint)</option>
+                      {PROVIDER_OPTIONS.map((p) => (
+                        <option key={p.value} value={p.value}>{p.label}</option>
+                      ))}
                     </select>
+                    <p className="text-[10px] text-slate-500">عند تغيير النوع، سيصبح المزود النشط للطلبات هو نفسه النوع المختار.</p>
                   </div>
 
-                  {/* رابط المخدم الخاص — يظهر فقط عند اختيار Custom Endpoint */}
-                  {aiProvider === "custom" && (
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] text-slate-300 font-bold block">رابط المخدم الخاص (Endpoint URL)</label>
-                      <input
-                        type="url"
-                        placeholder="https://your-server.com/v1/chat/completions"
-                        value={customEndpointUrl}
-                        autoComplete="off"
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setCustomEndpointUrl(val);
-                          localStorage.setItem("customEndpointUrl", val);
-                        }}
-                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-200 placeholder-slate-600 focus:ring-1 focus:ring-indigo-500 outline-none font-mono"
-                      />
-                      <p className="text-[10px] text-slate-500">أدخل رابط API متوافق مع OpenAI (chat/completions)</p>
-                    </div>
-                  )}
-
-                   <div className="space-y-1.5">
-                    <label className="text-[11px] text-slate-300 font-bold block">كود تشغيل التطبيق الشخصي (API Key)</label>
+                  {/* Key value input */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] text-slate-300 font-bold block">قيمة المفتاح (API Key)</label>
                     <div className="flex gap-2">
                       <div className="flex-1 relative">
                         <input
-                          type={showApiKey ? "text" : "password"}
-                          placeholder="أدخل مفتاح الـ API هنا (مثال: AIza... / sk-or-... / hf_...)"
-                          value={customAiKey}
+                          type={visibleKeyIds.has("new") ? "text" : "password"}
+                          placeholder={providerPlaceholder(newKeyDraft.provider)}
+                          value={newKeyDraft.key}
                           autoComplete="off"
                           autoCorrect="off"
                           spellCheck={false}
                           onChange={(e) => {
-                            const val = e.target.value;
-                            setCustomAiKey(val);
-                            localStorage.setItem("customAiKey", val);
+                            setNewKeyDraft(prev => ({ ...prev, key: e.target.value }));
                             setKeyValidationResult(null);
                           }}
                           className="w-full bg-slate-950 border border-slate-850 rounded-lg p-2.5 pr-9 text-xs text-slate-200 text-right placeholder-slate-600 focus:ring-1 focus:ring-indigo-500 outline-none font-mono"
                         />
                         <button
                           type="button"
-                          onClick={() => setShowApiKey(v => !v)}
+                          onClick={() => {
+                            setVisibleKeyIds(prev => {
+                              const next = new Set(prev);
+                              if (next.has("new")) next.delete("new"); else next.add("new");
+                              return next;
+                            });
+                          }}
                           className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition text-sm"
-                          title={showApiKey ? "إخفاء المفتاح" : "إظهار المفتاح"}
+                          title={visibleKeyIds.has("new") ? "إخفاء المفتاح" : "إظهار المفتاح"}
                         >
-                          {showApiKey ? "🙈" : "👁️"}
+                          {visibleKeyIds.has("new") ? "🙈" : "👁️"}
                         </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => handleVerifyKey(customAiKey, aiProvider)}
-                        disabled={isCheckingKey}
-                        className="px-3 bg-indigo-950 text-indigo-400 hover:bg-slate-800 disabled:bg-slate-950/80 disabled:text-slate-600 border border-indigo-900/60 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer"
-                      >
-                        {isCheckingKey ? "جاري الفحص..." : "فحص المفتاح 🔍"}
-                      </button>
                     </div>
+                  </div>
+
+                  {/* Optional label */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] text-slate-300 font-bold block">اسم أو ملاحظة للمفتاح (اختياري)</label>
+                    <input
+                      type="text"
+                      placeholder="مثال: مفتاح Gemini الرئيسي"
+                      value={newKeyDraft.label}
+                      onChange={(e) => setNewKeyDraft(prev => ({ ...prev, label: e.target.value }))}
+                      className="w-full bg-slate-950 border border-slate-850 rounded-lg p-2.5 text-xs text-slate-200 text-right placeholder-slate-600 focus:ring-1 focus:ring-indigo-500 outline-none"
+                    />
+                  </div>
+
+                  {/* Custom model for providers that support it */}
+                  {(newKeyDraft.provider === "openrouter" || newKeyDraft.provider === "openai" || newKeyDraft.provider === "groq" || newKeyDraft.provider === "deepseek" || newKeyDraft.provider === "custom") && (
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] text-slate-300 font-bold block">نموذج مخصص (Model — اختياري)</label>
+                      <input
+                        type="text"
+                        placeholder={newKeyDraft.provider === "openrouter" ? "google/gemini-2.5-flash" : newKeyDraft.provider === "openai" ? "gpt-4o-mini" : newKeyDraft.provider === "groq" ? "llama3-70b-8192" : newKeyDraft.provider === "deepseek" ? "deepseek-chat" : "gpt-4o-mini"}
+                        value={newKeyDraft.model}
+                        onChange={(e) => setNewKeyDraft(prev => ({ ...prev, model: e.target.value }))}
+                        className="w-full bg-slate-950 border border-slate-850 rounded-lg p-2.5 text-xs text-slate-200 text-right placeholder-slate-600 focus:ring-1 focus:ring-indigo-500 outline-none font-mono"
+                      />
+                    </div>
+                  )}
+
+                  {/* Custom endpoint URL */}
+                  {newKeyDraft.provider === "custom" && (
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] text-slate-300 font-bold block">رابط المخدم الخاص (Endpoint URL)</label>
+                      <input
+                        type="url"
+                        placeholder="https://your-server.com/v1/chat/completions"
+                        value={newKeyDraft.endpointUrl}
+                        autoComplete="off"
+                        onChange={(e) => setNewKeyDraft(prev => ({ ...prev, endpointUrl: e.target.value }))}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-200 placeholder-slate-600 focus:ring-1 focus:ring-indigo-500 outline-none font-mono"
+                      />
+                      <p className="text-[10px] text-slate-500">أدخل رابط API متوافق مع OpenAI (chat/completions)</p>
+                    </div>
+                  )}
+
+                  {/* Add key button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!newKeyDraft.key.trim()) {
+                        alert("الرجاء إدخال قيمة المفتاح أولاً قبل الإضافة.");
+                        return;
+                      }
+                      const next = addKey(aiKeys, {
+                        provider: newKeyDraft.provider,
+                        key: newKeyDraft.key.trim(),
+                        label: newKeyDraft.label.trim(),
+                        endpointUrl: newKeyDraft.endpointUrl.trim(),
+                        model: newKeyDraft.model.trim(),
+                      });
+                      setAiKeys(next);
+                      saveKeys(next);
+                      setNewKeyDraft(prev => ({ ...prev, key: "", label: "", endpointUrl: "", model: "" }));
+                      setKeyValidationResult(null);
+                    }}
+                    className="w-full py-2 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl text-xs font-black transition cursor-pointer flex items-center justify-center gap-1"
+                  >
+                    <Plus className="w-4 h-4" /> إضافة مفتاح {providerLabel(newKeyDraft.provider)}
+                  </button>
+
+                  {/* Test current draft before adding */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const draftEntry: AiKeyEntry = {
+                        id: "draft-test",
+                        provider: newKeyDraft.provider,
+                        key: newKeyDraft.key,
+                        label: newKeyDraft.label,
+                        endpointUrl: newKeyDraft.endpointUrl,
+                        model: newKeyDraft.model,
+                        createdAt: Date.now(),
+                      };
+                      handleVerifyKey(draftEntry);
+                    }}
+                    disabled={isCheckingKey || !newKeyDraft.key.trim()}
+                    className="w-full py-2 bg-indigo-950 text-indigo-400 hover:bg-slate-800 disabled:bg-slate-950/80 disabled:text-slate-600 border border-indigo-900/60 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer"
+                  >
+                    {isCheckingKey ? "جاري الفحص..." : "فحص المفتاح قبل الإضافة 🔍"}
+                  </button>
+
+                  {/* Saved keys list */}
+                  <div className="border-t border-slate-800 pt-3">
+                    <label className="text-[11px] text-slate-300 font-bold block mb-2">المفاتيح المُضافة ({aiKeys.length})</label>
+                    {aiKeys.length === 0 ? (
+                      <p className="text-xs text-slate-500 leading-relaxed">لا توجد مفاتيح مضافة حالياً. سيتم استخدام مفتاح الخادم الافتراضي للذكاء الاصطناعي.</p>
+                    ) : (
+                      <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar pr-1">
+                        {aiKeys.map((entry) => (
+                          <div key={entry.id} className="p-3 bg-slate-950 border border-slate-850 rounded-xl space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold text-slate-200">{providerLabel(entry.provider)}</span>
+                                {entry.label && <span className="text-[10px] text-slate-400">• {entry.label}</span>}
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span className="text-[10px] text-slate-500">{entry.id.slice(0, 8)}</span>
+                                {entry.model && <span className="text-[10px] text-indigo-400">{entry.model}</span>}
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              <div className="flex-1 relative">
+                                <input
+                                  type={visibleKeyIds.has(entry.id) ? "text" : "password"}
+                                  value={entry.key}
+                                  readOnly
+                                  className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 pr-9 text-xs text-slate-200 text-right font-mono outline-none"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setVisibleKeyIds(prev => {
+                                      const next = new Set(prev);
+                                      if (next.has(entry.id)) next.delete(entry.id); else next.add(entry.id);
+                                      return next;
+                                    });
+                                  }}
+                                  className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition text-sm"
+                                >
+                                  {visibleKeyIds.has(entry.id) ? "🙈" : "👁️"}
+                                </button>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleVerifyKey(entry)}
+                                disabled={isCheckingKey}
+                                className="px-2.5 bg-indigo-950 text-indigo-400 hover:bg-slate-800 disabled:bg-slate-950/80 disabled:text-slate-600 border border-indigo-900/60 rounded-lg text-[10px] font-bold transition cursor-pointer"
+                              >
+                                فحص
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const next = removeKey(aiKeys, entry.id);
+                                  setAiKeys(next);
+                                  saveKeys(next);
+                                }}
+                                className="px-2.5 bg-rose-950 text-rose-400 hover:bg-rose-900 border border-rose-900/60 rounded-lg text-[10px] font-bold transition cursor-pointer"
+                                title="حذف المفتاح"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   {/* Key Verification & License Ticket Display */}
@@ -7080,9 +7221,8 @@ export default function App() {
                             <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 font-extrabold text-[10px] border border-emerald-900/40">
                               {keyValidationResult.status || "نشط وفعّال"}
                             </span>
-                            <span className="text-slate-400 font-bold text-[10px]">البطاقة التقنية للمفتاح الدراسي</span>
+                            <span className="text-slate-400 font-bold text-[10px]">البطاقة التقنية للمفتاح</span>
                           </div>
-
                           <div className="space-y-1.5 text-slate-300">
                             <div>
                               <span className="text-slate-500 font-medium ml-1">👤 الجهة والمالك المانح:</span>
@@ -7090,30 +7230,29 @@ export default function App() {
                             </div>
                             <div className="grid grid-cols-2 gap-2 text-[11px] pt-1.5 border-t border-slate-900/40">
                               <div>
-                                <span className="text-slate-500 block">📊 إجمالي رصيد المفتاح:</span>
+                                <span className="text-slate-500 block">📊 إجمالي الرصيد:</span>
                                 <span className="text-slate-200 font-extrabold">{keyValidationResult.quotaAllowed}</span>
                               </div>
                               {keyValidationResult.quotaRemaining && (
                                 <div>
-                                  <span className="text-slate-500 block">🔄 المتبقي الفعلي المضمون:</span>
+                                  <span className="text-slate-500 block">🔄 المتبقي:</span>
                                   <span className="text-emerald-400 font-extrabold">{keyValidationResult.quotaRemaining}</span>
                                 </div>
                               )}
                             </div>
                             <div className="grid grid-cols-2 gap-2 text-[11px]">
                               <div>
-                                <span className="text-slate-500 block">📅 صلاحية المدة الزمنية:</span>
+                                <span className="text-slate-500 block">📅 الصلاحية:</span>
                                 <span className="text-slate-400">{keyValidationResult.expiryDate}</span>
                               </div>
                               <div>
-                                <span className="text-slate-500 block">📉 ما تم استهلاكه بالفعل:</span>
+                                <span className="text-slate-500 block">📉 المستهلك:</span>
                                 <span className="text-amber-400 font-extrabold">{keyValidationResult.quotaUsed}</span>
                               </div>
                             </div>
                           </div>
-
                           <div className="pt-2 border-t border-slate-900">
-                            <span className="text-slate-500 font-bold block mb-1 text-[10px]">🛡️ الصلاحيات الممنوحة للرمز:</span>
+                            <span className="text-slate-500 font-bold block mb-1 text-[10px]">🛡️ الصلاحيات:</span>
                             <div className="flex flex-wrap gap-1">
                               {keyValidationResult.permissions?.map((perm, pIdx) => (
                                 <span key={pIdx} className="px-2 py-0.5 rounded bg-indigo-950/40 border border-indigo-900/30 text-[10px] text-slate-300">
@@ -7141,12 +7280,13 @@ export default function App() {
 
                   <button
                     onClick={() => {
-                      alert("✅ تم حفظ كود التطبيق بنجاح! سيتم تطبيقه تلقائياً على كل الطلبات الذكية 🚀");
+                      saveKeys(aiKeys);
+                      alert("✅ تم حفظ المفاتيح بنجاح! سيتم تطبيقها تلقائياً على كل الطلبات الذكية 🚀");
                       setShowAiKeyModal(false);
                     }}
                     className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-black transition cursor-pointer"
                   >
-                    تأكيد وحفظ الكود
+                    تأكيد وحفظ المفاتيح
                   </button>
                 </div>
               </div>
