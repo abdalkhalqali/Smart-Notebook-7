@@ -1154,8 +1154,9 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
         body:JSON.stringify({text})
       });
       const data=await res.json();
-      if(data.cmd&&data.cmd.action==='draw'){
-        setCleverPaintCmd({...data.cmd});
+      const cmd=data.cmd||data.command;
+      if(cmd&&cmd.action==='draw'){
+        setCleverPaintCmd({...cmd});
         // CleverPainterRenderer will call onResult → setCleverPaintImg
       } else {
         setIsDrawingChart(false);

@@ -2428,10 +2428,56 @@ app.post("/api/ai/clever-painter-command", async (req, res) => {
     const cmd = parsed?.action ? parsed : (parsed?.command || null);
 
     console.log(`[clever-painter] type=${cmd?.type ?? "none"} text="${text.slice(0, 60)}…"`);
-    return res.json({ command: cmd });
+    // Return both "cmd" (client expects) and "command" (legacy) for compatibility
+    return res.json({ cmd, command: cmd });
   } catch (err: any) {
     console.error("[clever-painter-command] error:", err?.message);
-    return res.json({ command: null, error: "فشل توليد الأمر" });
+    return res.json({ cmd: null, command: null, error: "فشل توليد الأمر" });
+  }
+});
+
+// ==========================================
+// Smart Board Dictation — AI text enhancement
+// ==========================================
+app.post("/api/ai/dictate", async (req, res) => {
+  try {
+    const { text, context } = req.body || {};
+    if (!text?.trim()) return res.json({ enhanced: "" });
+
+    const customKey = (req.headers["x-custom-api-key"] as string || "").trim();
+    const apiKey = customKey || getServerGeminiKey();
+    if (!apiKey) return res.json({ enhanced: text, error: "no_api_key" });
+
+    const ai = new GoogleGenAI({ apiKey, httpOptions: { headers: { "User-Agent": "aistudio-build" } } });
+
+    const systemCtx = context || "تحسين نص محاضرة علمية";
+    const prompt = `أنت مساعد أكاديمي. المهمة: ${systemCtx}.
+
+النص الخام (مُملى صوتياً بالعربية):
+${text}
+
+القواعد:
+- صحّح الأخطاء الإملائية والنحوية
+- حوّل الأرقام المكتوبة بالكلمات إلى أرقام (مثل: ثلاثة → 3)
+- عبّر عن القوانين والمعادلات الرياضية بصيغة LaTeX (ضمن $...$) إن وجدت
+- أضف رموز رياضية مناسبة (∑، ∫، √، ⁻¹) عند الحاجة
+- حافظ على المحتوى العلمي الأصلي تماماً — لا تحذف أو تضيف معلومات
+- أرجع كل سطر من الإدخال كسطر محسَّن مقابله
+
+أرجع فقط النص المحسَّن بدون شرح أو تمهيد.`;
+
+    const result: any = await generateContentWithRetryAndFallback(ai, {
+      model: "gemini-2.5-flash",
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config: { thinkingConfig: { thinkingBudget: 0 } },
+    });
+
+    const enhanced = (result?.text || text).trim();
+    console.log(`[dictate] enhanced ${text.length} → ${enhanced.length} chars`);
+    return res.json({ enhanced });
+  } catch (err: any) {
+    console.error("[dictate] error:", err?.message);
+    return res.json({ enhanced: req.body?.text || "", error: "فشل التحسين" });
   }
 });
 
