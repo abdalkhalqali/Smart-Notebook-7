@@ -23,7 +23,7 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm install --ignore-engines --registry https://registry.npmjs.org
+        run: npm ci --ignore-engines
 
       - name: Type check
         run: npm run lint

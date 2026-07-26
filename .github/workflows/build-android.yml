@@ -21,7 +21,7 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm install --ignore-engines
+        run: npm ci --ignore-engines
 
       - name: Build web app (Vite)
         run: npx vite build
