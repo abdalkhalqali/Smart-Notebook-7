@@ -1004,6 +1004,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   const [status,setStatus]=useState<Status>('idle');
   const [lectureText,setLectureText]=useState(initialText);
   const [voice,setVoice]=useState('Charon');
+  const [isMuted,setIsMuted]=useState(false);
   const [errorMsg,setErrorMsg]=useState('');
   const [qa,setQa]=useState<QAItem[]>([]);
   const [totalChunks,setTotalChunks]=useState(0);
@@ -1053,6 +1054,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   const audioCtxRef=useRef<AudioContext|null>(null);
   const procRef=useRef<ScriptProcessorNode|null>(null);
   const streamRef=useRef<MediaStream|null>(null);
+  const isMutedRef=useRef(false);
   const playTimeRef=useRef(0);
   const sourcesRef=useRef<AudioBufferSourceNode[]>([]);
   const statusRef=useRef<Status>('idle');
@@ -1117,6 +1119,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
       proc.onaudioprocess=(e)=>{
         if(!wsRef.current||wsRef.current.readyState!==WebSocket.OPEN) return;
         if(statusRef.current==='paused') return;
+        if(isMutedRef.current) return;
         // ── إصلاح حلقة الصوت عند تسجيل الشاشة ──
         // عندما يكون الذكاء الاصطناعي يتحدث (narrating/answering)، لا نُرسل صوت
         // الميكروفون إلى الخادم — هذا يمنع التقاط صوت الذكاء الاصطناعي من خلال
@@ -1580,6 +1583,13 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     if(status==='paused'){wsRef.current.send(JSON.stringify({type:'resume_lecture'}));setStatus('narrating');}
     else{hardStop();wsRef.current.send(JSON.stringify({type:'pause_lecture'}));setStatus('paused');}
   },[status,hardStop]);
+  const toggleMute=useCallback(()=>{
+    setIsMuted(m=>{
+      const next=!m;
+      isMutedRef.current=next;
+      return next;
+    });
+  },[]);
 
   useEffect(()=>()=>{wsRef.current?.close();stopMic();},[]);
 
@@ -1863,6 +1873,10 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
                 status==='listening'?'bg-blue-600/80 text-white cursor-default'
                 :'bg-blue-600/30 border border-blue-500/40 text-blue-200 hover:bg-blue-600/50'} disabled:opacity-50`}>
               🎙 اسأل
+            </button>
+            <button onClick={toggleMute}
+              className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-extrabold border transition ${isMuted?'bg-red-600/30 border-red-500/40 text-red-300 hover:bg-red-600/50':'bg-white/5 border-white/15 text-slate-200 hover:bg-white/15'}`}>
+              {isMuted?'🔇 كتم':'🎤 غير كتم'}
             </button>
             <button onClick={()=>setShowCmdBar(s=>!s)}
               className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-extrabold border transition ${
