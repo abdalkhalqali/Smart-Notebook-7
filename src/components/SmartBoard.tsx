@@ -2,8 +2,10 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Pencil, Eraser, Trash2, Download, Undo, Redo,
   Type, Minus, ArrowRight, Square, Circle,
-  Triangle, Palette, Play, Pause, Highlighter, Spline
+  Triangle, Palette, Play, Pause, Highlighter, Spline,
+  Mic, MicOff
 } from 'lucide-react';
+import SmartDictationPanel from './SmartDictationPanel';
 
 interface Point { x: number; y: number; }
 
@@ -40,6 +42,7 @@ interface SmartBoardProps {
 export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = 'السبورة الذكية' }: SmartBoardProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null); // live preview for shapes
+  const canvasContainerRef = useRef<HTMLDivElement>(null);
 
   const [isDrawing, setIsDrawing] = useState(false);
   const [paths, setPaths] = useState<DrawingPath[]>([]);
@@ -51,6 +54,7 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
   const [tool, setTool] = useState<DrawTool>('pen');
   const [color, setColor] = useState(isDarkMode ? '#ffffff' : '#1e293b');
   const [lineWidth, setLineWidth] = useState(3);
+  const [fontSize, setFontSize] = useState(18); // حجم خط النص
   const [texts, setTexts] = useState<TextItem[]>([]);
 
   // Undo / Redo — snapshots of {paths, shapes}
@@ -58,12 +62,32 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
   const [historyIndex, setHistoryIndex] = useState(0);
 
   const [isRecording, setIsRecording] = useState(false);
+  const [isDictationMode, setIsDictationMode] = useState(false);
+  // عداد لتحريك موضع النص الجديد على السبورة
+  const dictationTextCount = useRef(0);
+  
+  // ── حالة تحرير النص ──────────────────────────────────────────────
+  const [editingTextId, setEditingTextId] = useState<string | null>(null);
+  const [editingTextValue, setEditingTextValue] = useState('');
+  const [editingTextPos, setEditingTextPos] = useState({ x: 0, y: 0, w: 200, h: 40 });
+  
+  // عند تفعيل الإملاء → نختار القلم تلقائياً
+  useEffect(() => {
+    if (isDictationMode) {
+      setTool('pen');
+      setLineWidth(3);
+    }
+  }, [isDictationMode]);
+  
+  // في وضع الإملاء: الخلفية بيضاء والألوان داكنة (كالوضع الفاتح)
+  const effectiveDark = isDictationMode ? false : isDarkMode;
 
-  const colors = isDarkMode
+  const colors = effectiveDark
     ? ['#ffffff', '#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899']
     : ['#1e293b', '#dc2626', '#ea580c', '#ca8a04', '#16a34a', '#0891b2', '#2563eb', '#7c3aed', '#db2777'];
 
   const lineWidths = [2, 4, 6, 8, 12];
+  const fontSizes = [14, 18, 22, 28, 36, 48];
 
   const isShapeTool = (t: DrawTool) => ['line', 'rect', 'circle', 'triangle', 'arrow'].includes(t);
   const isFreehandTool = (t: DrawTool) => ['pen', 'highlighter', 'eraser'].includes(t);
@@ -166,12 +190,12 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
     const canvas = canvasRef.current;
     if (!ctx || !canvas) return;
 
-    ctx.fillStyle = isDarkMode ? '#1e293b' : '#f8fafc';
+    ctx.fillStyle = effectiveDark ? '#1e293b' : '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Grid dots for light mode
-    if (!isDarkMode) {
-      ctx.fillStyle = '#e2e8f0';
+    // Grid dots for light mode / dictation mode
+    if (!effectiveDark) {
+      ctx.fillStyle = '#e8ecf0';
       for (let x = 0; x < canvas.width; x += 30) {
         for (let y = 0; y < canvas.height; y += 30) {
           ctx.beginPath();
@@ -185,7 +209,7 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
     paths.forEach(path => {
       if (path.points.length < 2) return;
       ctx.strokeStyle = path.tool === 'eraser'
-        ? (isDarkMode ? '#1e293b' : '#f8fafc')
+        ? (effectiveDark ? '#1e293b' : '#ffffff')
         : path.color;
       ctx.lineWidth = path.tool === 'eraser' ? path.width * 3 : path.width;
       ctx.lineCap = 'round';
@@ -207,8 +231,7 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
       ctx.fillStyle = t.color;
       ctx.font = `${t.fontSize}px 'Tajawal', Arial`;
       ctx.fillText(t.text, t.x, t.y);
-    });
-  }, [paths, shapes, texts, isDarkMode]);
+    });    }, [paths, shapes, texts, effectiveDark]);
 
   // Redraw on state change
   useEffect(() => { redrawCanvas(); }, [redrawCanvas]);
@@ -267,7 +290,7 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
         const ctx = canvasRef.current?.getContext('2d');
         if (ctx && next.length >= 2) {
           ctx.strokeStyle = tool === 'eraser'
-            ? (isDarkMode ? '#1e293b' : '#f8fafc')
+            ? (effectiveDark ? '#1e293b' : '#ffffff')
             : color;
           ctx.lineWidth = tool === 'eraser' ? lineWidth * 3 : lineWidth;
           ctx.lineCap = 'round';
@@ -306,7 +329,7 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
         const newPath: DrawingPath = {
           id: Date.now().toString(),
           points: currentPath,
-          color: tool === 'eraser' ? (isDarkMode ? '#1e293b' : '#f8fafc') : color,
+          color: tool === 'eraser' ? (effectiveDark ? '#1e293b' : '#ffffff') : color,
           width: tool === 'eraser' ? lineWidth * 3 : lineWidth,
           tool,
         };
@@ -364,9 +387,92 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
       y: 100 + Math.random() * 200,
       text,
       color,
-      fontSize: lineWidth * 5,
+      fontSize,
     }]);
   };
+
+  // ── العثور على النص الذي تم الضغط عليه ───────────────────────────
+  const findTextAtPosition = useCallback((px: number, py: number): TextItem | null => {
+    const ctx = canvasRef.current?.getContext('2d');
+    if (!ctx) return null;
+    // نبحث من آخر نص (الأحدث) إلى أقدم نص
+    for (let i = texts.length - 1; i >= 0; i--) {
+      const t = texts[i];
+      ctx.font = `${t.fontSize}px 'Tajawal', Arial`;
+      const metrics = ctx.measureText(t.text);
+      const tw = metrics.width;
+      const th = t.fontSize * 1.4; // ارتفاع تقريبي مع فراغ
+      const tx = t.x;
+      const ty = t.y - t.fontSize; // y هي baseline، النص يبدأ من فوق
+      // هامش خطأ 10px لتسهيل الضغط
+      if (px >= tx - 8 && px <= tx + tw + 8 && py >= ty - 8 && py <= ty + th + 8) {
+        return t;
+      }
+    }
+    return null;
+  }, [texts]);
+
+  // ── الضغط المزدوج لتحرير النص ──────────────────────────────────
+  const handleCanvasDoubleClick = useCallback((e: React.MouseEvent) => {
+    const pt = getEventPos(e);
+    const found = findTextAtPosition(pt.x, pt.y);
+    if (found) {
+      const ctx = canvasRef.current?.getContext('2d');
+      const tw = ctx ? ctx.measureText(found.text).width : 200;
+      const th = found.fontSize * 1.4;
+      setEditingTextId(found.id);
+      setEditingTextValue(found.text);
+      setEditingTextPos({
+        x: found.x,
+        y: found.y - found.fontSize, // أعلى النص
+        w: Math.max(tw + 24, 160),
+        h: Math.max(th + 16, 40),
+      });
+    }
+  }, [findTextAtPosition]);
+
+  // ── حفظ تعديل النص ──────────────────────────────────────────────
+  const saveTextEdit = () => {
+    if (editingTextId && editingTextValue.trim()) {
+      setTexts(prev => prev.map(t =>
+        t.id === editingTextId ? { ...t, text: editingTextValue.trim() } : t
+      ));
+    }
+    setEditingTextId(null);
+    setEditingTextValue('');
+  };
+
+  // ── إلغاء تعديل النص ──────────────────────────────────────────────
+  const cancelTextEdit = () => {
+    setEditingTextId(null);
+    setEditingTextValue('');
+  };
+
+  // ── إضافة نص من الإملاء إلى السبورة ──────────────────────────
+  const addDictatedText = useCallback((enhancedText: string, rawText: string, textColor?: string) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    dictationTextCount.current += 1;
+    const count = dictationTextCount.current;
+    
+    // موضع النص: يتراكم عمودياً كلما أضيف نص جديد
+    const margin = 30;
+    const lineHeight = 35;
+    const x = margin + 20;
+    const y = margin + (count - 1) * lineHeight;
+    
+    // استخدم النص المحسَّن (مع الرموز) إن وجد، وإلا استخدم النص الخام
+    const displayText = enhancedText || rawText;
+    
+    setTexts(prev => [...prev, {
+      id: `dict-${Date.now()}`,
+      x,
+      y,
+      text: displayText,
+      color: textColor || '#1e293b',
+      fontSize,
+    }]);
+  }, []);
 
   const saveBoard = () => {
     const canvas = canvasRef.current;
@@ -394,7 +500,7 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
     { key: 'arrow',    label: 'سهم',          icon: <ArrowRight className="w-4 h-4" /> },
   ];
 
-  const btn = (active: boolean, dark = isDarkMode) =>
+  const btn = (active: boolean, dark = effectiveDark) =>
     `p-2 rounded-lg transition ${
       active
         ? 'bg-teal-600 text-white shadow-md scale-105'
@@ -404,44 +510,54 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
     }`;
 
   return (
-    <div className={`h-full flex flex-col ${isDarkMode ? 'bg-slate-900' : 'bg-slate-100'}`}>
+    <div className={`h-full flex flex-col ${effectiveDark ? 'bg-slate-900' : 'bg-slate-100'}`}>
       {/* ── Header ── */}
-      <div className={`flex items-center justify-between px-3 py-2 border-b ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+      <div className={`flex items-center justify-between px-3 py-2 border-b ${effectiveDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-full flex items-center justify-center bg-gradient-to-br from-amber-500 to-orange-500 shadow">
             <Palette className="w-4 h-4 text-white" />
           </div>
           <div>
-            <h3 className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{lectureTitle}</h3>
-            <p className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>السبورة الذكية التفاعلية</p>
+            <h3 className={`text-sm font-bold ${effectiveDark ? 'text-white' : 'text-slate-800'}`}>{lectureTitle}</h3>
+            <p className={`text-[10px] ${effectiveDark ? 'text-slate-400' : 'text-slate-500'}`}>{isDictationMode ? 'وضع الإملاء الذكي' : 'السبورة الذكية التفاعلية'}</p>
           </div>
         </div>
         <div className="flex items-center gap-1.5">
+          {/* 🎤 زر الإملاء الذكي — الأزرق اللامع الأول */}
+          <button
+            onClick={() => setIsDictationMode(!isDictationMode)}
+            title="الإملاء الذكي - تحدث وسأكتب بالرموز"
+            style={{ background: isDictationMode ? 'linear-gradient(135deg, #ef4444, #ec4899)' : 'linear-gradient(135deg, #14b8a6, #10b981)' }}
+            className="flex items-center gap-1 px-3 py-2 rounded-xl text-white text-xs font-bold shadow-lg transition-all hover:scale-105">
+            <Mic className="w-5 h-5" />
+            <span className="hidden xs:inline">إملاء</span>
+          </button>
+
           <button onClick={startRecording} title="تسجيل"
-            className={`p-2 rounded-lg transition ${isRecording ? 'bg-red-500 animate-pulse' : isDarkMode ? 'bg-slate-700 hover:bg-slate-600' : 'bg-slate-200 hover:bg-slate-300'} text-white`}>
+            className={`p-2 rounded-lg transition ${isRecording ? 'bg-red-500 animate-pulse' : effectiveDark ? 'bg-slate-700 hover:bg-slate-600' : 'bg-slate-200 hover:bg-slate-300'} text-white`}>
             {isRecording ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
           </button>
           <button onClick={saveBoard} title="حفظ الصورة"
-            className={`p-2 rounded-lg transition ${isDarkMode ? 'bg-slate-700 hover:bg-slate-600 text-green-400' : 'bg-slate-200 hover:bg-slate-300 text-green-600'}`}>
+            className={`p-2 rounded-lg transition ${effectiveDark ? 'bg-slate-700 hover:bg-slate-600 text-green-400' : 'bg-slate-200 hover:bg-slate-300 text-green-600'}`}>
             <Download className="w-4 h-4" />
           </button>
           <button onClick={undo} disabled={historyIndex <= 0} title="تراجع"
-            className={`p-2 rounded-lg transition ${historyIndex <= 0 ? 'opacity-40 cursor-not-allowed' : isDarkMode ? 'bg-slate-700 hover:bg-slate-600 text-blue-400' : 'bg-slate-200 hover:bg-slate-300 text-blue-600'}`}>
+            className={`p-2 rounded-lg transition ${historyIndex <= 0 ? 'opacity-40 cursor-not-allowed' : effectiveDark ? 'bg-slate-700 hover:bg-slate-600 text-blue-400' : 'bg-slate-200 hover:bg-slate-300 text-blue-600'}`}>
             <Undo className="w-4 h-4" />
           </button>
           <button onClick={redo} disabled={historyIndex >= history.length - 1} title="إعادة"
-            className={`p-2 rounded-lg transition ${historyIndex >= history.length - 1 ? 'opacity-40 cursor-not-allowed' : isDarkMode ? 'bg-slate-700 hover:bg-slate-600 text-blue-400' : 'bg-slate-200 hover:bg-slate-300 text-blue-600'}`}>
+            className={`p-2 rounded-lg transition ${historyIndex >= history.length - 1 ? 'opacity-40 cursor-not-allowed' : effectiveDark ? 'bg-slate-700 hover:bg-slate-600 text-blue-400' : 'bg-slate-200 hover:bg-slate-300 text-blue-600'}`}>
             <Redo className="w-4 h-4" />
           </button>
           <button onClick={clearBoard} title="مسح الكل"
-            className={`p-2 rounded-lg transition ${isDarkMode ? 'bg-slate-700 hover:bg-slate-600 text-red-400' : 'bg-slate-200 hover:bg-slate-300 text-red-600'}`}>
+            className={`p-2 rounded-lg transition ${effectiveDark ? 'bg-slate-700 hover:bg-slate-600 text-red-400' : 'bg-slate-200 hover:bg-slate-300 text-red-600'}`}>
             <Trash2 className="w-4 h-4" />
           </button>
         </div>
       </div>
 
       {/* ── Tools Bar ── */}
-      <div className={`flex flex-wrap items-center gap-2 px-3 py-2 border-b ${isDarkMode ? 'bg-slate-850 border-slate-700' : 'bg-white border-slate-200'}`}>
+      <div className={`flex flex-wrap items-center gap-2 px-3 py-2 border-b ${effectiveDark ? 'bg-slate-850 border-slate-700' : 'bg-white border-slate-200'}`}>
         {/* Freehand tools */}
         <div className="flex items-center gap-1">
           <button onClick={() => setTool('pen')} title="قلم حر" className={btn(tool === 'pen')}>
@@ -456,7 +572,7 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
         </div>
 
         {/* Separator */}
-        <div className={`w-px h-7 ${isDarkMode ? 'bg-slate-600' : 'bg-slate-300'}`} />
+        <div className={`w-px h-7 ${effectiveDark ? 'bg-slate-600' : 'bg-slate-300'}`} />
 
         {/* Shape tools */}
         <div className="flex items-center gap-1">
@@ -469,7 +585,7 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
         </div>
 
         {/* Separator */}
-        <div className={`w-px h-7 ${isDarkMode ? 'bg-slate-600' : 'bg-slate-300'}`} />
+        <div className={`w-px h-7 ${effectiveDark ? 'bg-slate-600' : 'bg-slate-300'}`} />
 
         {/* Colors */}
         <div className="flex items-center gap-1 flex-wrap">
@@ -483,39 +599,59 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
         </div>
 
         {/* Separator */}
-        <div className={`w-px h-7 ${isDarkMode ? 'bg-slate-600' : 'bg-slate-300'}`} />
+        <div className={`w-px h-7 ${effectiveDark ? 'bg-slate-600' : 'bg-slate-300'}`} />
 
         {/* Line widths */}
         <div className="flex items-center gap-1">
           {lineWidths.map(w => (
             <button key={w} onClick={() => setLineWidth(w)} title={`سُمك ${w}`}
-              className={`w-7 h-7 rounded-lg flex items-center justify-center transition ${lineWidth === w ? 'bg-teal-600' : isDarkMode ? 'bg-slate-700 hover:bg-slate-600' : 'bg-slate-200 hover:bg-slate-300'}`}>
+              className={`w-7 h-7 rounded-lg flex items-center justify-center transition ${lineWidth === w ? 'bg-teal-600' : effectiveDark ? 'bg-slate-700 hover:bg-slate-600' : 'bg-slate-200 hover:bg-slate-300'}`}>
               <div className="rounded-full bg-current" style={{ width: w * 2, height: w * 2, backgroundColor: lineWidth === w ? '#fff' : color }} />
             </button>
           ))}
         </div>
 
         {/* Separator */}
-        <div className={`w-px h-7 ${isDarkMode ? 'bg-slate-600' : 'bg-slate-300'}`} />
+        <div className={`w-px h-7 ${effectiveDark ? 'bg-slate-600' : 'bg-slate-300'}`} />
+
+        {/* Font sizes */}
+        <div className="flex items-center gap-1">
+          <span className={`text-[10px] font-bold ml-0.5 ${effectiveDark ? 'text-slate-400' : 'text-slate-500'}`}>نص</span>
+          {fontSizes.map(fs => (
+            <button key={fs} onClick={() => setFontSize(fs)} title={`حجم ${fs}`}
+              className={`w-8 h-7 rounded-lg flex items-center justify-center transition ${
+                fontSize === fs
+                  ? 'bg-teal-600 text-white shadow-md'
+                  : effectiveDark
+                    ? 'bg-slate-700 hover:bg-slate-600 text-slate-300'
+                    : 'bg-slate-200 hover:bg-slate-300 text-slate-600'
+              }`}>
+              <span style={{ fontSize: Math.min(fs / 3, 16), fontWeight: 700 }}>{fs}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Separator */}
+        <div className={`w-px h-7 ${effectiveDark ? 'bg-slate-600' : 'bg-slate-300'}`} />
 
         {/* Text */}
         <button onClick={addText} title="إضافة نص"
-          className={`p-2 rounded-lg transition ${isDarkMode ? 'bg-slate-700 hover:bg-slate-600 text-slate-300' : 'bg-slate-200 hover:bg-slate-300 text-slate-600'}`}>
+          className={`p-2 rounded-lg transition ${effectiveDark ? 'bg-slate-700 hover:bg-slate-600 text-slate-300' : 'bg-slate-200 hover:bg-slate-300 text-slate-600'}`}>
           <Type className="w-4 h-4" />
         </button>
 
         {/* Tool hint */}
         {isShapeTool(tool) && (
-          <span className={`text-[10px] font-bold px-2 py-1 rounded-lg ${isDarkMode ? 'bg-teal-900/60 text-teal-300' : 'bg-teal-50 text-teal-700'}`}>
+          <span className={`text-[10px] font-bold px-2 py-1 rounded-lg ${effectiveDark ? 'bg-teal-900/60 text-teal-300' : 'bg-teal-50 text-teal-700'}`}>
             اسحب على اللوحة لرسم {shapeTools.find(s => s.key === tool)?.label}
           </span>
         )}
       </div>
 
       {/* ── Canvas Area ── */}
-      <div className="flex-1 overflow-auto p-3">
-        <div className={`relative rounded-xl overflow-hidden shadow-xl border ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}
-          style={{ width: '100%', aspectRatio: '2 / 1', minHeight: 300 }}>
+      <div className="flex-1 overflow-auto relative" ref={canvasContainerRef}>
+        <div className={`relative rounded-xl overflow-hidden shadow-xl border ${effectiveDark ? 'border-slate-700' : 'border-slate-200'} mx-3 mt-3`}
+          style={{ width: 'calc(100% - 1.5rem)', aspectRatio: '2 / 1', minHeight: 300 }}>
           {/* Main drawing canvas */}
           <canvas
             ref={canvasRef}
@@ -527,6 +663,7 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
             onMouseMove={draw}
             onMouseUp={stopDrawing}
             onMouseLeave={stopDrawing}
+            onDoubleClick={handleCanvasDoubleClick}
             onTouchStart={startDrawing}
             onTouchMove={draw}
             onTouchEnd={stopDrawing}
@@ -538,11 +675,72 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
             height={600}
             className="absolute inset-0 w-full h-full pointer-events-none"
           />
+
+          {/* ── نافذة تعديل النص (تظهر عند الضغط المزدوج) ── */}
+          {editingTextId && (
+            <div
+              className="absolute z-30"
+              style={{
+                left: editingTextPos.x * (canvasRef.current ? canvasRef.current.getBoundingClientRect().width / canvasRef.current.width : 1),
+                top: editingTextPos.y * (canvasRef.current ? canvasRef.current.getBoundingClientRect().height / canvasRef.current.height : 1),
+              }}
+            >
+              <div
+                className="bg-white rounded-xl shadow-2xl border border-slate-200 p-2"
+                style={{
+                  width: Math.min(editingTextPos.w, 400),
+                  maxWidth: 'calc(100vw - 40px)',
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <textarea
+                  autoFocus
+                  value={editingTextValue}
+                  onChange={(e) => setEditingTextValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      saveTextEdit();
+                    }
+                    if (e.key === 'Escape') cancelTextEdit();
+                  }}
+                  className="w-full resize-none rounded-lg border border-slate-200 p-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
+                  style={{ minHeight: 36, direction: 'rtl', fontFamily: 'Tajawal, Arial' }}
+                  rows={1}
+                  placeholder="عدل النص..."
+                />
+                <div className="flex items-center justify-between gap-1.5 mt-1.5">
+                  <span className="text-[9px] text-slate-400">Enter ↵ للحفظ | ESC للإلغاء</span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={saveTextEdit}
+                      className="px-3 py-1 rounded-lg bg-gradient-to-r from-teal-500 to-emerald-500 text-white text-[11px] font-bold hover:shadow-md transition"
+                    >
+                      حفظ
+                    </button>
+                    <button
+                      onClick={cancelTextEdit}
+                      className="px-3 py-1 rounded-lg bg-slate-200 text-slate-600 text-[11px] font-bold hover:bg-slate-300 transition"
+                    >
+                      إلغاء
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
+
+        {/* 🆕 Dictation Panel — لوحة عائمة في الأسفل (لا تمنع الرسم) */}
+        <SmartDictationPanel
+          isActive={isDictationMode}
+          onClose={() => setIsDictationMode(false)}
+          onEntryEnhanced={addDictatedText}
+        />
       </div>
 
       {/* ── Info bar ── */}
-      <div className={`text-center py-1.5 text-[11px] ${isDarkMode ? 'bg-slate-800 text-slate-500' : 'bg-white text-slate-400'}`}>
+      <div className={`text-center py-1.5 text-[11px] ${effectiveDark ? 'bg-slate-800 text-slate-500' : 'bg-white text-slate-400'}`}>
         ✏️ قلم حر مع Bezier ناعم &nbsp;|&nbsp; اسحب لرسم أشكال هندسية &nbsp;|&nbsp; Ctrl+Z = تراجع
       </div>
     </div>
