@@ -1145,6 +1145,32 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     if(drawFallbackTimerRef.current){clearTimeout(drawFallbackTimerRef.current);drawFallbackTimerRef.current=null;}
   },[]);
 
+  // ── handleCleverPaint — calls server to get a clever-painter command, then renders it ──
+  const handleCleverPaint=useCallback(async(text:string)=>{
+    setIsDrawingChart(true);
+    try{
+      const res=await fetch(resolveApiUrl('/api/ai/clever-painter-command'),{
+        method:'POST',headers:{'Content-Type':'application/json',...getAiHeaders()},
+        body:JSON.stringify({text})
+      });
+      const data=await res.json();
+      if(data.cmd&&data.cmd.action==='draw'){
+        setCleverPaintCmd({...data.cmd});
+        // CleverPainterRenderer will call onResult → setCleverPaintImg
+      } else {
+        setIsDrawingChart(false);
+        userDrawLockRef.current=false;
+        setChartErrorMsg('لم أتمكن من توليد رسم فيزيائي لهذا الطلب.');
+        setTimeout(()=>setChartErrorMsg(''),5000);
+      }
+    }catch{
+      setIsDrawingChart(false);
+      userDrawLockRef.current=false;
+      setChartErrorMsg('خطأ في الاتصال بخدمة clever-painter.');
+      setTimeout(()=>setChartErrorMsg(''),5000);
+    }
+  },[]);
+
   const triggerChartFromBuffer=useCallback(()=>{
     const fullDesc=modelTransBuf.current.trim();
     drawPendingRef.current=false; modelTransBuf.current='';
@@ -1152,6 +1178,12 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     const gen=++drawGenRef.current;
     setIsDrawingChart(true);
     chartCacheRef.current.delete(fullDesc);
+
+    // ── Check for physics/engineering diagram first (clever-painter) ─
+    if(CLEVER_PAINTER_CMD.test(fullDesc)){
+      handleCleverPaint(fullDesc);
+      return;
+    }
 
     // ── Try local parser first (instant, zero API cost) ─────────────
     const local=parseChartLocally(fullDesc);
@@ -1179,7 +1211,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
       setIsDrawingChart(false);
       userDrawLockRef.current=false;
     });
-  },[]);
+  },[handleCleverPaint]);
 
   // Chart analysis — for AUTOMATIC detection from lecture chunks.
   // Respects userDrawLockRef: never clears a user-requested chart.
@@ -1266,6 +1298,12 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     const myGen=++userDrawGenRef.current;
     const text=cmd.replace(DRAW_CMD,'').trim()||cmd;
     setIsDrawingChart(true); setChunkText(cmd); setDirectCmd('');
+
+    // ── Step 0: Physics/engineering diagrams → clever-painter ──────
+    if(CLEVER_PAINTER_CMD.test(text)){
+      handleCleverPaint(text);
+      return;
+    }
 
     // ── Step 1: Try local parser immediately (zero API cost) ───────
     const local=parseChartLocally(text);
@@ -1744,7 +1782,27 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
         isAnalyzingDraw={isEnhancing}
         onClearDraw={()=>{setManualDrawImg(null);lastDrawDescriptionRef.current='';userDrawLockRef.current=false;}}
         svgContent={svgContent}
-        onClearSvg={()=>{setSvgContent(null);userDrawLockRef.current=false;}}/>
+        onClearSvg={()=>{setSvgContent(null);userDrawLockRef.current=false;}}
+        cleverPaintImg={cleverPaintImg}
+        onClearCleverPaint={()=>{setCleverPaintImg(null);cleverPaintImgRef.current=null;setCleverPaintCmd(null);userDrawLockRef.current=false;}}/>
+
+      {/* Clever Painter hidden renderer — draws to off-screen canvas and calls back with PNG */}
+      <CleverPainterRenderer
+        cmd={cleverPaintCmd}
+        onResult={(png)=>{
+          cleverPaintImgRef.current=png;
+          setCleverPaintImg(png);
+          setCleverPaintCmd(null);
+          setIsDrawingChart(false);
+          userDrawLockRef.current=false;
+        }}
+        onError={(msg)=>{
+          setCleverPaintCmd(null);
+          setIsDrawingChart(false);
+          userDrawLockRef.current=false;
+          setChartErrorMsg(`خطأ في clever-painter: ${msg}`);
+          setTimeout(()=>setChartErrorMsg(''),6000);
+        }}/>
 
       {/* DrawPad overlay — covers the whiteboard when active */}
       {showDrawPad&&(
