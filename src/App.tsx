@@ -731,6 +731,11 @@ export default function App() {
       
       setOverlaySize({ width: widthVal, height: heightVal });
       setOverlayPos({ x, y });
+      
+      // السبورة الذكية تفتح بملء الشاشة تلقائياً
+      if (activeOverlay === 'smart-board') {
+        setOverlayIsFullscreen(true);
+      }
     }
   }, [activeOverlay]);
 
@@ -4449,7 +4454,7 @@ export default function App() {
             )}
 
             {/* General Overlay Portal container (شاشة تطفو فوق الدفتر بشكل كامل يحاكي سطح مكتب الكمبيوتر الاحترافي) */}
-            {activeOverlay && !isAiAdvisorCollapsed && (
+            {activeOverlay && activeOverlay !== 'smart-board' && !isAiAdvisorCollapsed && (
               <>
                 {/* Backdrop Blur overlay to keep desktop focus */}
                 <div 
@@ -5396,13 +5401,9 @@ export default function App() {
                     </div>
                   )}
 
-                  {/* 12. Smart Board - السبورة الذكية */}
+                  {/* 12. Smart Board - معروض خارج overlay كطبقة كاملة */}
                   {activeOverlay === 'smart-board' && (
-                    <div className="h-full min-h-[400px]">
-                      <SmartBoard 
-                        lectureTitle={lecture?.title || 'السبورة الذكية'}
-                      />
-                    </div>
+                    <div className="h-0 w-0 overflow-hidden" />
                   )}
 
                   {/* 14. Physics Lab - محاكاة التجارب الفيزيائية */}
@@ -8156,6 +8157,15 @@ export default function App() {
           </a>
         </div>
       </div>
+
+      {/* ═══ SmartBoard Fullscreen Overlay - خارج النافذة يملأ الشاشة ═══ */}
+      {activeOverlay === 'smart-board' && !isAiAdvisorCollapsed && (
+        <div className="fixed inset-0 z-[100]">
+          <SmartBoard 
+            lectureTitle={lecture?.title || 'السبورة الذكية'}
+          />
+        </div>
+      )}
     </>
   );
 }

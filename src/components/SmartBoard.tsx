@@ -42,7 +42,38 @@ interface SmartBoardProps {
 export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = 'السبورة الذكية' }: SmartBoardProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null); // live preview for shapes
-  const canvasContainerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // ResizeObserver لضبط حجم canvas ديناميكياً مع تغير حجم النافذة
+  useEffect(() => {
+    const container = containerRef.current;
+    const canvas = canvasRef.current;
+    if (!container || !canvas) return;
+
+    const resizeCanvas = () => {
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      if (w === 0 || h === 0) return;
+      
+      canvas.width = Math.round(w * devicePixelRatio);
+      canvas.height = Math.round(h * devicePixelRatio);
+      
+      const overlay = overlayRef.current;
+      if (overlay) {
+        overlay.width = canvas.width;
+        overlay.height = canvas.height;
+      }
+      
+      // إعادة الرسم بعد تغيير الحجم
+      redrawCanvas();
+    };
+
+    const observer = new ResizeObserver(resizeCanvas);
+    observer.observe(container);
+    resizeCanvas();
+
+    return () => observer.disconnect();
+  }, []);
 
   const [isDrawing, setIsDrawing] = useState(false);
   const [paths, setPaths] = useState<DrawingPath[]>([]);
@@ -510,239 +541,210 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
     }`;
 
   return (
-    <div className={`h-full flex flex-col ${effectiveDark ? 'bg-slate-900' : 'bg-slate-100'}`}>
-      {/* ── Header ── */}
-      <div className={`flex items-center justify-between px-3 py-2 border-b ${effectiveDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full flex items-center justify-center bg-gradient-to-br from-amber-500 to-orange-500 shadow">
-            <Palette className="w-4 h-4 text-white" />
-          </div>
-          <div>
-            <h3 className={`text-sm font-bold ${effectiveDark ? 'text-white' : 'text-slate-800'}`}>{lectureTitle}</h3>
-            <p className={`text-[10px] ${effectiveDark ? 'text-slate-400' : 'text-slate-500'}`}>{isDictationMode ? 'وضع الإملاء الذكي' : 'السبورة الذكية التفاعلية'}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-1.5">
-          {/* 🎤 زر الإملاء الذكي — الأزرق اللامع الأول */}
-          <button
-            onClick={() => setIsDictationMode(!isDictationMode)}
-            title="الإملاء الذكي - تحدث وسأكتب بالرموز"
-            style={{ background: isDictationMode ? 'linear-gradient(135deg, #ef4444, #ec4899)' : 'linear-gradient(135deg, #14b8a6, #10b981)' }}
-            className="flex items-center gap-1 px-3 py-2 rounded-xl text-white text-xs font-bold shadow-lg transition-all hover:scale-105">
-            <Mic className="w-5 h-5" />
-            <span className="hidden xs:inline">إملاء</span>
-          </button>
+    <div 
+      ref={containerRef}
+      className={`relative w-full h-full overflow-hidden ${effectiveDark ? 'bg-slate-900' : 'bg-slate-100'}`}
+      dir="rtl"
+    >
+      {/* ═══ Canvas الرئيسي — يملأ الشاشة بالكامل ═══ */}
+      <canvas
+        ref={canvasRef}
+        width={1200}
+        height={800}
+        className="absolute inset-0 w-full h-full touch-none"
+        style={{ cursor: isShapeTool(tool) ? 'crosshair' : tool === 'eraser' ? 'cell' : 'default' }}
+        onMouseDown={startDrawing}
+        onMouseMove={draw}
+        onMouseUp={stopDrawing}
+        onMouseLeave={stopDrawing}
+        onDoubleClick={handleCanvasDoubleClick}
+        onTouchStart={startDrawing}
+        onTouchMove={draw}
+        onTouchEnd={stopDrawing}
+      />
+      {/* Overlay canvas للـ shape preview (بدون pointer events) */}
+      <canvas
+        ref={overlayRef}
+        width={1200}
+        height={800}
+        className="absolute inset-0 w-full h-full pointer-events-none"
+      />
 
-          <button onClick={startRecording} title="تسجيل"
-            className={`p-2 rounded-lg transition ${isRecording ? 'bg-red-500 animate-pulse' : effectiveDark ? 'bg-slate-700 hover:bg-slate-600' : 'bg-slate-200 hover:bg-slate-300'} text-white`}>
-            {isRecording ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-          </button>
-          <button onClick={saveBoard} title="حفظ الصورة"
-            className={`p-2 rounded-lg transition ${effectiveDark ? 'bg-slate-700 hover:bg-slate-600 text-green-400' : 'bg-slate-200 hover:bg-slate-300 text-green-600'}`}>
-            <Download className="w-4 h-4" />
-          </button>
-          <button onClick={undo} disabled={historyIndex <= 0} title="تراجع"
-            className={`p-2 rounded-lg transition ${historyIndex <= 0 ? 'opacity-40 cursor-not-allowed' : effectiveDark ? 'bg-slate-700 hover:bg-slate-600 text-blue-400' : 'bg-slate-200 hover:bg-slate-300 text-blue-600'}`}>
-            <Undo className="w-4 h-4" />
-          </button>
-          <button onClick={redo} disabled={historyIndex >= history.length - 1} title="إعادة"
-            className={`p-2 rounded-lg transition ${historyIndex >= history.length - 1 ? 'opacity-40 cursor-not-allowed' : effectiveDark ? 'bg-slate-700 hover:bg-slate-600 text-blue-400' : 'bg-slate-200 hover:bg-slate-300 text-blue-600'}`}>
-            <Redo className="w-4 h-4" />
-          </button>
-          <button onClick={clearBoard} title="مسح الكل"
-            className={`p-2 rounded-lg transition ${effectiveDark ? 'bg-slate-700 hover:bg-slate-600 text-red-400' : 'bg-slate-200 hover:bg-slate-300 text-red-600'}`}>
-            <Trash2 className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* ── Tools Bar ── */}
-      <div className={`flex flex-wrap items-center gap-2 px-3 py-2 border-b ${effectiveDark ? 'bg-slate-850 border-slate-700' : 'bg-white border-slate-200'}`}>
-        {/* Freehand tools */}
-        <div className="flex items-center gap-1">
-          <button onClick={() => setTool('pen')} title="قلم حر" className={btn(tool === 'pen')}>
-            <Pencil className="w-4 h-4" />
-          </button>
-          <button onClick={() => setTool('highlighter')} title="تحديد فسفوري" className={btn(tool === 'highlighter', isDarkMode)}>
-            <Highlighter className="w-4 h-4" />
-          </button>
-          <button onClick={() => setTool('eraser')} title="ممحاة" className={btn(tool === 'eraser', isDarkMode)}>
-            <Eraser className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Separator */}
-        <div className={`w-px h-7 ${effectiveDark ? 'bg-slate-600' : 'bg-slate-300'}`} />
-
-        {/* Shape tools */}
-        <div className="flex items-center gap-1">
-          {shapeTools.map(st => (
-            <button key={st.key} onClick={() => setTool(st.key)} title={st.label}
-              className={btn(tool === st.key, isDarkMode)}>
-              {st.icon}
-            </button>
-          ))}
-        </div>
-
-        {/* Separator */}
-        <div className={`w-px h-7 ${effectiveDark ? 'bg-slate-600' : 'bg-slate-300'}`} />
-
-        {/* Colors */}
-        <div className="flex items-center gap-1 flex-wrap">
-          {colors.map(c => (
-            <button key={c} onClick={() => setColor(c)}
-              className={`w-5 h-5 rounded-full border-2 transition-transform ${color === c ? 'border-white scale-125 shadow-lg' : 'border-transparent hover:scale-110'}`}
-              style={{ backgroundColor: c }} />
-          ))}
-          <input type="color" value={color} onChange={e => setColor(e.target.value)}
-            title="لون مخصص" className="w-6 h-6 border-0 rounded cursor-pointer bg-transparent" />
-        </div>
-
-        {/* Separator */}
-        <div className={`w-px h-7 ${effectiveDark ? 'bg-slate-600' : 'bg-slate-300'}`} />
-
-        {/* Line widths */}
-        <div className="flex items-center gap-1">
-          {lineWidths.map(w => (
-            <button key={w} onClick={() => setLineWidth(w)} title={`سُمك ${w}`}
-              className={`w-7 h-7 rounded-lg flex items-center justify-center transition ${lineWidth === w ? 'bg-teal-600' : effectiveDark ? 'bg-slate-700 hover:bg-slate-600' : 'bg-slate-200 hover:bg-slate-300'}`}>
-              <div className="rounded-full bg-current" style={{ width: w * 2, height: w * 2, backgroundColor: lineWidth === w ? '#fff' : color }} />
-            </button>
-          ))}
-        </div>
-
-        {/* Separator */}
-        <div className={`w-px h-7 ${effectiveDark ? 'bg-slate-600' : 'bg-slate-300'}`} />
-
-        {/* Font sizes */}
-        <div className="flex items-center gap-1">
-          <span className={`text-[10px] font-bold ml-0.5 ${effectiveDark ? 'text-slate-400' : 'text-slate-500'}`}>نص</span>
-          {fontSizes.map(fs => (
-            <button key={fs} onClick={() => setFontSize(fs)} title={`حجم ${fs}`}
-              className={`w-8 h-7 rounded-lg flex items-center justify-center transition ${
-                fontSize === fs
-                  ? 'bg-teal-600 text-white shadow-md'
-                  : effectiveDark
-                    ? 'bg-slate-700 hover:bg-slate-600 text-slate-300'
-                    : 'bg-slate-200 hover:bg-slate-300 text-slate-600'
-              }`}>
-              <span style={{ fontSize: Math.min(fs / 3, 16), fontWeight: 700 }}>{fs}</span>
-            </button>
-          ))}
-        </div>
-
-        {/* Separator */}
-        <div className={`w-px h-7 ${effectiveDark ? 'bg-slate-600' : 'bg-slate-300'}`} />
-
-        {/* Text */}
-        <button onClick={addText} title="إضافة نص"
-          className={`p-2 rounded-lg transition ${effectiveDark ? 'bg-slate-700 hover:bg-slate-600 text-slate-300' : 'bg-slate-200 hover:bg-slate-300 text-slate-600'}`}>
-          <Type className="w-4 h-4" />
-        </button>
-
-        {/* Tool hint */}
-        {isShapeTool(tool) && (
-          <span className={`text-[10px] font-bold px-2 py-1 rounded-lg ${effectiveDark ? 'bg-teal-900/60 text-teal-300' : 'bg-teal-50 text-teal-700'}`}>
-            اسحب على اللوحة لرسم {shapeTools.find(s => s.key === tool)?.label}
-          </span>
-        )}
-      </div>
-
-      {/* ── Canvas Area ── */}
-      <div className="flex-1 overflow-auto relative" ref={canvasContainerRef}>
-        <div className={`relative rounded-xl overflow-hidden shadow-xl border ${effectiveDark ? 'border-slate-700' : 'border-slate-200'} mx-3 mt-3`}
-          style={{ width: 'calc(100% - 1.5rem)', aspectRatio: '2 / 1', minHeight: 300 }}>
-          {/* Main drawing canvas */}
-          <canvas
-            ref={canvasRef}
-            width={1200}
-            height={600}
-            className="absolute inset-0 w-full h-full touch-none"
-            style={{ cursor: isShapeTool(tool) ? 'crosshair' : tool === 'eraser' ? 'cell' : 'default' }}
-            onMouseDown={startDrawing}
-            onMouseMove={draw}
-            onMouseUp={stopDrawing}
-            onMouseLeave={stopDrawing}
-            onDoubleClick={handleCanvasDoubleClick}
-            onTouchStart={startDrawing}
-            onTouchMove={draw}
-            onTouchEnd={stopDrawing}
-          />
-          {/* Overlay canvas for shape preview (pointer-events-none) */}
-          <canvas
-            ref={overlayRef}
-            width={1200}
-            height={600}
-            className="absolute inset-0 w-full h-full pointer-events-none"
-          />
-
-          {/* ── نافذة تعديل النص (تظهر عند الضغط المزدوج) ── */}
-          {editingTextId && (
-            <div
-              className="absolute z-30"
-              style={{
-                left: editingTextPos.x * (canvasRef.current ? canvasRef.current.getBoundingClientRect().width / canvasRef.current.width : 1),
-                top: editingTextPos.y * (canvasRef.current ? canvasRef.current.getBoundingClientRect().height / canvasRef.current.height : 1),
-              }}
-            >
-              <div
-                className="bg-white rounded-xl shadow-2xl border border-slate-200 p-2"
-                style={{
-                  width: Math.min(editingTextPos.w, 400),
-                  maxWidth: 'calc(100vw - 40px)',
-                }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <textarea
-                  autoFocus
-                  value={editingTextValue}
-                  onChange={(e) => setEditingTextValue(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      saveTextEdit();
-                    }
-                    if (e.key === 'Escape') cancelTextEdit();
-                  }}
-                  className="w-full resize-none rounded-lg border border-slate-200 p-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
-                  style={{ minHeight: 36, direction: 'rtl', fontFamily: 'Tajawal, Arial' }}
-                  rows={1}
-                  placeholder="عدل النص..."
-                />
-                <div className="flex items-center justify-between gap-1.5 mt-1.5">
-                  <span className="text-[9px] text-slate-400">Enter ↵ للحفظ | ESC للإلغاء</span>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={saveTextEdit}
-                      className="px-3 py-1 rounded-lg bg-gradient-to-r from-teal-500 to-emerald-500 text-white text-[11px] font-bold hover:shadow-md transition"
-                    >
-                      حفظ
-                    </button>
-                    <button
-                      onClick={cancelTextEdit}
-                      className="px-3 py-1 rounded-lg bg-slate-200 text-slate-600 text-[11px] font-bold hover:bg-slate-300 transition"
-                    >
-                      إلغاء
-                    </button>
-                  </div>
-                </div>
-              </div>
+      {/* ═══ شريط الأدوات الزجاجي العائم ═══ */}
+      <div 
+        className={`absolute top-3 left-3 right-3 z-20 rounded-2xl backdrop-blur-xl border transition-all duration-300 ${
+          effectiveDark 
+            ? 'bg-slate-900/85 border-slate-700/60 shadow-2xl shadow-black/40' 
+            : 'bg-white/90 border-slate-200/80 shadow-xl'
+        }`}
+      >
+        {/* السطر الأول: العنوان والأزرار الرئيسية */}
+        <div className="flex items-center justify-between px-3 py-2">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-full flex items-center justify-center bg-gradient-to-br from-amber-500 to-orange-500 shadow">
+              <Palette className="w-3.5 h-3.5 text-white" />
             </div>
+            <span className={`text-xs font-bold ${effectiveDark ? 'text-white' : 'text-slate-800'}`}>{lectureTitle}</span>
+            {isDictationMode && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-gradient-to-r from-red-500 to-pink-500 text-white font-bold animate-pulse">
+                🎤 إملاء
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setIsDictationMode(!isDictationMode)}
+              title="الإملاء الذكي"
+              className={`p-1.5 rounded-lg transition-all hover:scale-105 ${
+                isDictationMode 
+                  ? 'bg-gradient-to-r from-red-500 to-pink-500 text-white shadow-lg' 
+                  : effectiveDark ? 'bg-slate-700/70 text-slate-300 hover:bg-slate-600' : 'bg-slate-200/70 text-slate-600 hover:bg-slate-300'
+              }`}
+            >
+              <Mic className="w-4 h-4" />
+            </button>
+            <button onClick={undo} disabled={historyIndex <= 0} title="تراجع"
+              className={`p-1.5 rounded-lg transition ${historyIndex <= 0 ? 'opacity-30 cursor-not-allowed' : effectiveDark ? 'bg-slate-700/70 hover:bg-slate-600 text-blue-400' : 'bg-slate-200/70 hover:bg-slate-300 text-blue-600'}`}>
+              <Undo className="w-4 h-4" />
+            </button>
+            <button onClick={redo} disabled={historyIndex >= history.length - 1} title="إعادة"
+              className={`p-1.5 rounded-lg transition ${historyIndex >= history.length - 1 ? 'opacity-30 cursor-not-allowed' : effectiveDark ? 'bg-slate-700/70 hover:bg-slate-600 text-blue-400' : 'bg-slate-200/70 hover:bg-slate-300 text-blue-600'}`}>
+              <Redo className="w-4 h-4" />
+            </button>
+            <button onClick={clearBoard} title="مسح الكل"
+              className={`p-1.5 rounded-lg transition ${effectiveDark ? 'bg-slate-700/70 hover:bg-slate-600 text-red-400' : 'bg-slate-200/70 hover:bg-slate-300 text-red-600'}`}>
+              <Trash2 className="w-4 h-4" />
+            </button>
+            <button onClick={saveBoard} title="حفظ الصورة"
+              className={`p-1.5 rounded-lg transition ${effectiveDark ? 'bg-slate-700/70 hover:bg-slate-600 text-green-400' : 'bg-slate-200/70 hover:bg-slate-300 text-green-600'}`}>
+              <Download className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* السطر الثاني: أدوات الرسم */}
+        <div className={`flex flex-wrap items-center gap-1.5 px-3 py-1.5 border-t ${effectiveDark ? 'border-slate-700/50' : 'border-slate-200/70'}`}>
+          {/* أدوات الرسم الحر */}
+          <div className="flex items-center gap-0.5">
+            <button onClick={() => setTool('pen')} title="قلم" className={`p-1.5 rounded-lg transition ${tool === 'pen' ? 'bg-teal-600 text-white shadow' : effectiveDark ? 'bg-slate-700/50 text-slate-300 hover:bg-slate-600/50' : 'bg-slate-200/50 text-slate-600 hover:bg-slate-300/50'}`}>
+              <Pencil className="w-3.5 h-3.5" />
+            </button>
+            <button onClick={() => setTool('highlighter')} title="تحديد" className={`p-1.5 rounded-lg transition ${tool === 'highlighter' ? 'bg-teal-600 text-white shadow' : effectiveDark ? 'bg-slate-700/50 text-slate-300 hover:bg-slate-600/50' : 'bg-slate-200/50 text-slate-600 hover:bg-slate-300/50'}`}>
+              <Highlighter className="w-3.5 h-3.5" />
+            </button>
+            <button onClick={() => setTool('eraser')} title="ممحاة" className={`p-1.5 rounded-lg transition ${tool === 'eraser' ? 'bg-teal-600 text-white shadow' : effectiveDark ? 'bg-slate-700/50 text-slate-300 hover:bg-slate-600/50' : 'bg-slate-200/50 text-slate-600 hover:bg-slate-300/50'}`}>
+              <Eraser className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className={`w-px h-5 ${effectiveDark ? 'bg-slate-600/50' : 'bg-slate-300/50'}`} />
+
+          {/* الأشكال الهندسية */}
+          <div className="flex items-center gap-0.5">
+            {shapeTools.map(st => (
+              <button key={st.key} onClick={() => setTool(st.key)} title={st.label}
+                className={`p-1.5 rounded-lg transition ${tool === st.key ? 'bg-teal-600 text-white shadow' : effectiveDark ? 'bg-slate-700/50 text-slate-300 hover:bg-slate-600/50' : 'bg-slate-200/50 text-slate-600 hover:bg-slate-300/50'}`}>
+                {st.icon}
+              </button>
+            ))}
+          </div>
+
+          <div className={`w-px h-5 ${effectiveDark ? 'bg-slate-600/50' : 'bg-slate-300/50'}`} />
+
+          {/* الألوان */}
+          <div className="flex items-center gap-0.5 flex-wrap">
+            {colors.map(c => (
+              <button key={c} onClick={() => setColor(c)}
+                className={`w-4 h-4 rounded-full border transition-all ${color === c ? 'border-white scale-125 shadow' : 'border-transparent hover:scale-110'}`}
+                style={{ backgroundColor: c }} />
+            ))}
+            <input type="color" value={color} onChange={e => setColor(e.target.value)}
+              title="لون مخصص" className="w-5 h-5 border-0 rounded cursor-pointer bg-transparent" />
+          </div>
+
+          <div className={`w-px h-5 ${effectiveDark ? 'bg-slate-600/50' : 'bg-slate-300/50'}`} />
+
+          {/* سُمك الخط */}
+          <div className="flex items-center gap-0.5">
+            {lineWidths.map(w => (
+              <button key={w} onClick={() => setLineWidth(w)} title={`سُمك ${w}`}
+                className={`w-6 h-6 rounded-lg flex items-center justify-center transition ${lineWidth === w ? 'bg-teal-600' : effectiveDark ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-slate-200/50 hover:bg-slate-300/50'}`}>
+                <div className="rounded-full" style={{ width: w * 1.5, height: w * 1.5, backgroundColor: lineWidth === w ? '#fff' : effectiveDark ? '#94a3b8' : '#475569' }} />
+              </button>
+            ))}
+          </div>
+
+          <div className={`w-px h-5 ${effectiveDark ? 'bg-slate-600/50' : 'bg-slate-300/50'}`} />
+
+          {/* حجم النص */}
+          <div className="flex items-center gap-0.5">
+            <span className={`text-[9px] font-bold ${effectiveDark ? 'text-slate-400' : 'text-slate-500'}`}>نص</span>
+            {fontSizes.slice(0, 4).map(fs => (
+              <button key={fs} onClick={() => setFontSize(fs)} title={`حجم ${fs}`}
+                className={`w-6 h-6 rounded-lg flex items-center justify-center transition ${fontSize === fs ? 'bg-teal-600 text-white shadow' : effectiveDark ? 'bg-slate-700/50 text-slate-300 hover:bg-slate-600/50' : 'bg-slate-200/50 text-slate-600 hover:bg-slate-300/50'}`}>
+                <span style={{ fontSize: Math.min(fs / 3.5, 13), fontWeight: 700 }}>{fs}</span>
+              </button>
+            ))}
+            <button onClick={addText} title="إضافة نص"
+              className={`p-1.5 rounded-lg transition ${effectiveDark ? 'bg-slate-700/50 hover:bg-slate-600/50 text-slate-300' : 'bg-slate-200/50 hover:bg-slate-300/50 text-slate-600'}`}>
+              <Type className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* تلميح الأداة */}
+          {isShapeTool(tool) && (
+            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-lg ${effectiveDark ? 'bg-teal-900/60 text-teal-300' : 'bg-teal-50 text-teal-700'}`}>
+              {shapeTools.find(s => s.key === tool)?.label}
+            </span>
           )}
         </div>
-
-        {/* 🆕 Dictation Panel — لوحة عائمة في الأسفل (لا تمنع الرسم) */}
-        <SmartDictationPanel
-          isActive={isDictationMode}
-          onClose={() => setIsDictationMode(false)}
-          onEntryEnhanced={addDictatedText}
-        />
       </div>
 
-      {/* ── Info bar ── */}
-      <div className={`text-center py-1.5 text-[11px] ${effectiveDark ? 'bg-slate-800 text-slate-500' : 'bg-white text-slate-400'}`}>
-        ✏️ قلم حر مع Bezier ناعم &nbsp;|&nbsp; اسحب لرسم أشكال هندسية &nbsp;|&nbsp; Ctrl+Z = تراجع
-      </div>
+      {/* ═══ نافذة تعديل النص ═══ */}
+      {editingTextId && (
+        <div className="absolute z-30"
+          style={{
+            left: editingTextPos.x,
+            top: editingTextPos.y,
+          }}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl border border-slate-200 p-2"
+            style={{ width: Math.min(editingTextPos.w, 360), maxWidth: '90vw' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <textarea
+              autoFocus
+              value={editingTextValue}
+              onChange={(e) => setEditingTextValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveTextEdit(); }
+                if (e.key === 'Escape') cancelTextEdit();
+              }}
+              className="w-full resize-none rounded-lg border border-slate-200 p-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
+              style={{ minHeight: 36, direction: 'rtl', fontFamily: 'Tajawal, Arial' }}
+              rows={1}
+              placeholder="عدل النص..."
+            />
+            <div className="flex items-center justify-between gap-1.5 mt-1.5">
+              <span className="text-[8px] text-slate-400">Enter ↵ | ESC ⎋</span>
+              <div className="flex items-center gap-1.5">
+                <button onClick={saveTextEdit}
+                  className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-teal-500 to-emerald-500 text-white text-[10px] font-bold hover:shadow transition">حفظ</button>
+                <button onClick={cancelTextEdit}
+                  className="px-2.5 py-1 rounded-lg bg-slate-200 text-slate-600 text-[10px] font-bold hover:bg-slate-300 transition">إلغاء</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ لوحة الإملاء الذكي — تظهر في الأسفل عند التفعيل ═══ */}
+      <SmartDictationPanel
+        isActive={isDictationMode}
+        onClose={() => setIsDictationMode(false)}
+        onEntryEnhanced={addDictatedText}
+      />
     </div>
   );
 }
