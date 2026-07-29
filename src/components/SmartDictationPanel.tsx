@@ -290,6 +290,7 @@ export default function SmartDictationPanel({
   const [showExport, setShowExport] = useState(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const transcriptTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isListeningRef = useRef(false);
   const entriesEndRef = useRef<HTMLDivElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
 
@@ -399,10 +400,13 @@ export default function SmartDictationPanel({
         alert('يرجى السماح بالوصول إلى الميكروفون.');
       }
       setIsListening(false);
+      isListeningRef.current = false;
     };
 
+    // نستخدم ref بدلاً من state لتجنب stale closure
+    // isListening في الـ closure يكون false دائماً
     recognition.onend = () => {
-      if (isListening) {
+      if (isListeningRef.current) {
         try { recognition.start(); } catch (e) { /* */ }
       }
     };
@@ -410,14 +414,16 @@ export default function SmartDictationPanel({
     try {
       recognition.start();
       recognitionRef.current = recognition;
+      isListeningRef.current = true;
       setIsListening(true);
       setLiveTranscript('جاري الاستماع...');
     } catch (e) {
       console.warn('Failed to start recognition:', e);
     }
-  }, [isListening]);
+  }, []); // ← dependency array أصبح [] لأننا نستخدم ref
 
   const stopListening = useCallback(() => {
+    isListeningRef.current = false;
     if (recognitionRef.current) {
       try { recognitionRef.current.stop(); } catch (e) { /* */ }
       recognitionRef.current = null;
