@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useLayoutEffect } from 'react';
 import {
   Pencil, Eraser, Trash2, Download, Undo, Redo,
   Type, Minus, ArrowRight, Square, Circle,
@@ -45,35 +45,30 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
   const overlayRef = useRef<HTMLCanvasElement>(null); // live preview for shapes
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // ResizeObserver لضبط حجم canvas ديناميكياً مع تغير حجم النافذة
-  useEffect(() => {
+  // ضبط حجم Canvas مرة واحدة عند التحميل مع تخزين DPR في ref
+  // لا يتغير canvas.width/height أبداً بعد ذلك — نظام إحداثيات ثابت
+  useLayoutEffect(() => {
     const container = containerRef.current;
     const canvas = canvasRef.current;
     if (!container || !canvas) return;
-
-    const resizeCanvas = () => {
-      const w = container.clientWidth;
-      const h = container.clientHeight;
-      if (w === 0 || h === 0) return;
-      
-      canvas.width = Math.round(w * devicePixelRatio);
-      canvas.height = Math.round(h * devicePixelRatio);
-      
-      const overlay = overlayRef.current;
-      if (overlay) {
-        overlay.width = canvas.width;
-        overlay.height = canvas.height;
-      }
-      
-      // إعادة الرسم بعد تغيير الحجم
-      redrawCanvas();
-    };
-
-    const observer = new ResizeObserver(resizeCanvas);
-    observer.observe(container);
-    resizeCanvas();
-
-    return () => observer.disconnect();
+    
+    const w = container.clientWidth;
+    const h = container.clientHeight;
+    if (w === 0 || h === 0) return;
+    
+    const dpr = window.devicePixelRatio || 1;
+    dprRef.current = dpr;
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    
+    const overlay = overlayRef.current;
+    if (overlay) {
+      overlay.width = canvas.width;
+      overlay.height = canvas.height;
+    }
+    
+    // الرسم الأولي
+    redrawCanvas();
   }, []);
 
   const [isDrawing, setIsDrawing] = useState(false);
@@ -131,21 +126,27 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
   const isFreehandTool = (t: DrawTool) => ['pen', 'highlighter', 'eraser'].includes(t);
 
   // ─── Canvas helpers ─────────────────────────────────────────────────
+  // Ref ثابت لـ DPR — يُحسب مرة واحدة ولا يتغير
+  const dprRef = useRef(1);
+  
   const getEventPos = (e: React.MouseEvent | React.TouchEvent): Point => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
+    // canvas.width = rect.width * dpr (ثابت لا يتغير)
+    // canvas.width / rect.width = dpr دائماً
+    const dpr = dprRef.current;
+    const effectiveScaleX = dpr;
+    const effectiveScaleY = dpr;
     if ('touches' in e) {
       return {
-        x: (e.touches[0].clientX - rect.left) * scaleX,
-        y: (e.touches[0].clientY - rect.top) * scaleY,
+        x: (e.touches[0].clientX - rect.left) * effectiveScaleX,
+        y: (e.touches[0].clientY - rect.top) * effectiveScaleY,
       };
     }
     return {
-      x: (e.clientX - rect.left) * scaleX,
-      y: (e.clientY - rect.top) * scaleY,
+      x: (e.clientX - rect.left) * effectiveScaleX,
+      y: (e.clientY - rect.top) * effectiveScaleY,
     };
   };
 
@@ -558,8 +559,6 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
       {/* ═══ Canvas الرئيسي — يملأ الشاشة بالكامل ═══ */}
       <canvas
         ref={canvasRef}
-        width={1200}
-        height={800}
         className="absolute inset-0 w-full h-full touch-none"
         style={{ cursor: isShapeTool(tool) ? 'crosshair' : tool === 'eraser' ? 'cell' : 'default' }}
         onMouseDown={startDrawing}
@@ -574,8 +573,6 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
       {/* Overlay canvas للـ shape preview (بدون pointer events) */}
       <canvas
         ref={overlayRef}
-        width={1200}
-        height={800}
         className="absolute inset-0 w-full h-full pointer-events-none"
       />
 
