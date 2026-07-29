@@ -104,6 +104,77 @@ export function arabicMathToLatex(text: string): string {
 }
 
 /**
+ * Convert Arabic math words directly to Unicode symbols for canvas rendering.
+ * No LaTeX — outputs actual Unicode characters that ctx.fillText can display.
+ */
+export function arabicToUnicode(text: string): string {
+  let result = text;
+
+  const replacements: [RegExp, string][] = [
+    // Greek letters
+    [/\bألفا\b/g, '\u03B1'],
+    [/\bبيتا\b/g, '\u03B2'],
+    [/\bغاما\b/g, '\u03B3'],
+    [/\bدلتا\b/g, '\u0394'],
+    [/\bثيتا\b/g, '\u03B8'],
+    [/\bباي\b/g, '\u03C0'],
+    [/\bπ\b/g, '\u03C0'],
+    [/\bلامدا\b/g, '\u03BB'],
+    [/\bسيجما\b/g, '\u03C3'],
+    [/\bأوميجا\b/g, '\u03C9'],
+    [/\bفاي\b/g, '\u03C6'],
+    [/\bإبسيلون\b/g, '\u03B5'],
+
+    // Math symbols
+    [/\bتكامل\b/g, '\u222B'],
+    [/\bمجموع\b/g, '\u2211'],
+    [/\bجذر\s+تربيعي\b/g, '\u221A'],
+    [/\bجذر\b/g, '\u221A'],
+    [/\bلانهاية\b/g, '\u221E'],
+    [/\bما\s+لا\s+نهاية\b/g, '\u221E'],
+    [/\bنهاية\b/g, 'lim'],
+    [/\bمشتقة\b/g, 'd/dx'],
+
+    // Operators
+    [/\s+زائد\s+/g, ' + '],
+    [/\s+ناقص\s+/g, ' \u2212 '],
+    [/\s+ضرب\s+/g, ' \u00D7 '],
+    [/\s+في\s+/g, ' \u00D7 '],
+    [/\s+مقسوم\s+على\s+/g, ' \u00F7 '],
+    [/\s+يساوي\s+/g, ' = '],
+
+    // Powers: "X تربيع" → X²
+    [/([a-zA-Z0-9\u0600-\u06FF])\s+تربيع/g, '$1²'],
+    [/([a-zA-Z0-9\u0600-\u06FF])\s+مربع/g, '$1²'],
+    [/([a-zA-Z0-9\u0600-\u06FF])\s+مكعب/g, '$1³'],
+
+    // Functions
+    [/\bجيب\s+تمام\s*/g, 'cos '],
+    [/\bجيب\s*/g, 'sin '],
+    [/\bظل\s*/g, 'tan '],
+    [/\bلوغاريتم\s+طبيعي\s*/g, 'ln '],
+    [/\bلوغاريتم\s*/g, 'log '],
+
+    // Variables
+    [/\bاكس\b/g, 'x'],
+    [/\bواي\b/g, 'y'],
+    [/\bزد\b/g, 'z'],
+    [/\bان\b/g, 'n'],
+    [/\bار\b/g, 'r'],
+
+    // Fractions as simple division for canvas (no real fractions possible)
+    [/(\d+)\s+على\s+(\d+)/g, '$1/$2'],
+    [/كسر\s+([^\s]+)\s+على\s+([^\s]+)/g, '$1/$2'],
+  ];
+
+  for (const [pattern, replacement] of replacements) {
+    result = result.replace(pattern, replacement);
+  }
+
+  return result;
+}
+
+/**
  * Wrap detected math expressions in $...$
  * Used to make raw Arabic math AI text renderable
  */

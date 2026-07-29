@@ -6,6 +6,7 @@ import {
   Mic, MicOff
 } from 'lucide-react';
 import SmartDictationPanel from './SmartDictationPanel';
+import { arabicToUnicode } from '../utils/mathUtils';
 
 interface Point { x: number; y: number; }
 
@@ -492,8 +493,8 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
     const x = margin + 20;
     const y = margin + (count - 1) * lineHeight;
     
-    // استخدم النص المحسَّن (مع الرموز) إن وجد، وإلا استخدم النص الخام
-    const displayText = enhancedText || rawText;
+    // استخدم النص المحسَّن مع تحويل الكلمات الرياضية لرموز Unicode
+    const displayText = arabicToUnicode(enhancedText || rawText);
     
     setTexts(prev => [...prev, {
       id: `dict-${Date.now()}`,
