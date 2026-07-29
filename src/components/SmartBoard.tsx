@@ -95,8 +95,14 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
 
   const [isRecording, setIsRecording] = useState(false);
   const [isDictationMode, setIsDictationMode] = useState(false);
-  // عداد لتحريك موضع النص الجديد على السبورة
-  const dictationTextCount = useRef(0);
+  // Ref لتتبع موقع آخر نص إملاء (لتجنب مشكلة stale closure)
+  const dictationTextYRef = useRef(30);
+  const fontSizeRef = useRef(fontSize);
+  
+  // ── مزامنة fontSizeRef مع state ─────────────────────────────────
+  useEffect(() => {
+    fontSizeRef.current = fontSize;
+  }, [fontSize]);
   
   // ── حالة تحرير النص ──────────────────────────────────────────────
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
@@ -405,6 +411,7 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
     setPaths([]);
     setShapes([]);
     setTexts([]);
+    dictationTextYRef.current = 30; // إعادة تعيين موقع الإملاء
     const snap: HistorySnapshot = { paths: [], shapes: [] };
     setHistory([snap]);
     setHistoryIndex(0);
@@ -481,19 +488,17 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
   };
 
   // ── إضافة نص من الإملاء إلى السبورة ──────────────────────────
+  // ملاحظة: نقرأ fontSize من ref (fontSizeRef) لتجنب stale closure
   const addDictatedText = useCallback((enhancedText: string, rawText: string, textColor?: string) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    dictationTextCount.current += 1;
-    const count = dictationTextCount.current;
     
-    // موضع النص: يتراكم عمودياً كلما أضيف نص جديد
-    const margin = 30;
-    const lineHeight = 35;
+    const currentFontSize = fontSizeRef.current || 18;
+    const margin = 24;
+    const lineHeight = Math.max(36, currentFontSize * 1.8);
     const x = margin + 20;
-    const y = margin + (count - 1) * lineHeight;
+    const y = dictationTextYRef.current;
     
-    // استخدم النص المحسَّن مع تحويل الكلمات الرياضية لرموز Unicode
     const displayText = arabicToUnicode(enhancedText || rawText);
     
     setTexts(prev => [...prev, {
@@ -502,8 +507,11 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
       y,
       text: displayText,
       color: textColor || '#1e293b',
-      fontSize,
+      fontSize: currentFontSize,
     }]);
+    
+    // تحديث ref للموقع التالي (فوري، بدون انتظار React render)
+    dictationTextYRef.current = y + lineHeight;
   }, []);
 
   const saveBoard = () => {
