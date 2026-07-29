@@ -3,6 +3,92 @@
  * Supports both inline $...$ and block $$...$$ LaTeX notation
  */
 
+/**
+ * Convert Arabic math words to Unicode symbols for canvas rendering
+ * This works with ctx.fillText() on HTML Canvas
+ */
+export function arabicToUnicode(text: string): string {
+  let result = text;
+  
+  const unicodeMap: [RegExp, string][] = [
+    // Integral
+    [/تكامل\s+من\s+([^\s]+)\s+إلى\s+([^\s]+)/g, '∫₁²'],
+    [/تكامل/g, '∫'],
+    
+    // Summation
+    [/مجموع\s+من\s+([^\s]+)\s+إلى\s+([^\s]+)/g, 'Σ₁²'],
+    [/مجموع/g, 'Σ'],
+    
+    // Square root
+    [/جذر\s+تربيعي\s+([^\s,،.؟!]+)/g, '√($1)'],
+    [/جذر\s+([^\s,،.؟!]+)/g, '√($1)'],
+    [/جذر\s+من\s+([^\s,،.؟!]+)/g, '√($1)'],
+    
+    // Powers
+    [/([a-zA-Z0-9\u0600-\u06FF]+)\s+تربيع/g, '$1²'],
+    [/([a-zA-Z0-9\u0600-\u06FF]+)\s+مربع/g, '$1²'],
+    [/([a-zA-Z0-9\u0600-\u06FF]+)\s+مكعب/g, '$1³'],
+    [/([a-zA-Z0-9\u0600-\u06FF]+)\s+أس\s+([a-zA-Z0-9]+)/g, '$1^$2'],
+    
+    // Fractions
+    [/كسر\s+([^\s]+)\s+على\s+([^\s]+)/g, '$1/$2'],
+    [/(\d+)\s+على\s+(\d+)/g, '$1/$2'],
+    
+    // Trigonometry
+    [/جيب\s+تمام\s+([^\s,،]+)/g, 'cos($1)'],
+    [/جيب\s+([^\s,،]+)/g, 'sin($1)'],
+    [/ظل\s+([^\s,،]+)/g, 'tan($1)'],
+    
+    // Logarithm
+    [/لوغاريتم\s+طبيعي\s+([^\s,،]+)/g, 'ln($1)'],
+    [/لوغاريتم\s+([^\s,،]+)\s+أساس\s+([^\s,،]+)/g, 'log₂($1)'],
+    [/لوغاريتم\s+([^\s,،]+)/g, 'log($1)'],
+    
+    // Limit
+    [/نهاية\s+عندما\s+([^\s]+)\s+(?:تقترب|يقترب)\s+من\s+([^\s]+)/g, 'lim($1→$2)'],
+    [/نهاية/g, 'lim'],
+    
+    // Infinity
+    [/ما\s+لا\s+نهاية/g, '∞'],
+    [/لانهاية/g, '∞'],
+    
+    // Greek letters
+    [/ألفا/g, 'α'],
+    [/بيتا/g, 'β'],
+    [/غاما/g, 'γ'],
+    [/دلتا/g, 'Δ'],
+    [/ثيتا/g, 'θ'],
+    [/باي/g, 'π'],
+    [/لامدا/g, 'λ'],
+    [/سيجما/g, 'σ'],
+    
+    // Operators
+    [/\s+زائد\s+/g, ' + '],
+    [/\s+ناقص\s+/g, ' - '],
+    [/\s+ضرب\s+/g, ' × '],
+    [/\s+في\s+/g, ' × '],
+    [/\s+مقسوم\s+على\s+/g, ' ÷ '],
+    [/\s+يساوي\s+/g, ' = '],
+    [/\s+يعادل\s+/g, ' = '],
+    
+    // Variable letters
+    [/اكس(?!\s*تر)/g, 'x'],
+    [/واي/g, 'y'],
+    [/زد/g, 'z'],
+    [/ان/g, 'n'],
+    
+    // Derivative
+    [/مشتقة\s+([^\s]+)\s+بالنسبة\s+ل([^\s]+)/g, 'd($1)/d$2'],
+    [/مشتقة/g, 'd/dx'],
+  ];
+  
+  for (const [pattern, replacement] of unicodeMap) {
+    result = result.replace(pattern, replacement);
+  }
+  
+  return result;
+}
+
 export function arabicMathToLatex(text: string): string {
   let result = text;
 

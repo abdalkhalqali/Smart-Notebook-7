@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Mic, MicOff, Trash2, Sparkles, Loader2, ChevronDown, ChevronUp,
   ClipboardList, Download, FileText, Check, Save, Copy,
-  Clock, BookOpen, ExternalLink
+  Clock, BookOpen, ExternalLink, RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { arabicMathToLatex } from '../utils/mathUtils';
@@ -289,6 +289,7 @@ export default function SmartDictationPanel({
   const [isExpanded, setIsExpanded] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const isListeningRef = useRef(false);
   const transcriptTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const entriesEndRef = useRef<HTMLDivElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
@@ -400,24 +401,33 @@ export default function SmartDictationPanel({
       }
       setIsListening(false);
     };
-
     recognition.onend = () => {
-      if (isListening) {
-        try { recognition.start(); } catch (e) { /* */ }
+      // u0627u0633u062au062eu062fu0627u0645 ref u0644u062au062cu0646u0628 u0645u0634u0643u0644u0629 stale closure
+      if (isListeningRef.current) {
+        // u0625u0646u0634u0627u0621 u0643u0627u0626u0646 u062cu062fu064au062f u0628u062fu0644u0627u064b u0645u0646 u0625u0639u0627u062fu0629 u0627u0633u062au062eu062fu0627u0645 u0627u0644u0642u062fu064au0645
+        try { recognitionRef.current = null; } catch (_) {}
+        setTimeout(() => {
+          if (isListeningRef.current) {
+            startListening();
+          }
+        }, 100);
       }
     };
+
 
     try {
       recognition.start();
       recognitionRef.current = recognition;
       setIsListening(true);
+      isListeningRef.current = true;
       setLiveTranscript('جاري الاستماع...');
     } catch (e) {
       console.warn('Failed to start recognition:', e);
     }
-  }, [isListening]);
+  }, []);
 
   const stopListening = useCallback(() => {
+    isListeningRef.current = false;
     if (recognitionRef.current) {
       try { recognitionRef.current.stop(); } catch (e) { /* */ }
       recognitionRef.current = null;
@@ -430,6 +440,11 @@ export default function SmartDictationPanel({
       transcriptTimeoutRef.current = null;
     }
   }, []);
+
+  const restartListening = useCallback(() => {
+    stopListening();
+    setTimeout(() => startListening(), 150);
+  }, [stopListening, startListening]);
 
   const toggleListening = () => {
     if (isListening) {
@@ -614,6 +629,17 @@ export default function SmartDictationPanel({
       >
         {/* زر الميكروفون الرئيسي */}
         <MicButton isListening={isListening} onClick={toggleListening} />
+        {/* Restart mic */}
+        <motion.button
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.9 }}
+          onClick={restartListening}
+          className="p-1.5 rounded-lg hover:bg-amber-50 transition"
+          title="u0625u0639u0627u062fu0629 u062au0634u063au064au0644 u0627u0644u0645u064au0643u0631u0648u0641u0648u0646"
+        >
+          <RefreshCw className="w-4 h-4 text-amber-500" />
+        </motion.button>
+
 
         {/* حالة الاستماع + النص الحي */}
         <div className="flex-1 min-w-0">
