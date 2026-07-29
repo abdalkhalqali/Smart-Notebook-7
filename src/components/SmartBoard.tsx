@@ -3,10 +3,13 @@ import {
   Pencil, Eraser, Trash2, Download, Undo, Redo,
   Type, Minus, ArrowRight, Square, Circle,
   Triangle, Palette, Play, Pause, Highlighter, Spline,
-  Mic, MicOff
+  Mic, MicOff, ZoomIn, ZoomOut, Lock, Unlock, Eye, EyeOff,
+  Move, Crosshair, Hand
 } from 'lucide-react';
 import SmartDictationPanel from './SmartDictationPanel';
+import MathCanvasOverlay from './MathCanvasOverlay';
 import { arabicToUnicode } from '../utils/mathUtils';
+import { motion } from 'motion/react';
 
 interface Point { x: number; y: number; }
 
@@ -45,8 +48,10 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
   const overlayRef = useRef<HTMLCanvasElement>(null); // live preview for shapes
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // ضبط حجم Canvas مرة واحدة عند التحميل مع تخزين DPR في ref
-  // لا يتغير canvas.width/height أبداً بعد ذلك — نظام إحداثيات ثابت
+  // Ref ثابت لـ DPR — يُحسب مرة واحدة ولا يتغير
+  const dprRef = useRef(1);
+  
+  // ضبط حجم Canvas مرة واحدة عند التحميل (نظام إحداثيات ثابت)
   useLayoutEffect(() => {
     const container = containerRef.current;
     const canvas = canvasRef.current;
@@ -67,7 +72,6 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
       overlay.height = canvas.height;
     }
     
-    // الرسم الأولي
     redrawCanvas();
   }, []);
 
@@ -90,6 +94,9 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
 
   const [isRecording, setIsRecording] = useState(false);
   const [isDictationMode, setIsDictationMode] = useState(false);
+  const [isToolbarVisible, setIsToolbarVisible] = useState(true);
+  // عداد لتحريك موضع النص الجديد على السبورة
+  const dictationTextCount = useRef(0);
   // Ref لتتبع موقع آخر نص إملاء (لتجنب مشكلة stale closure)
   const dictationTextYRef = useRef(30);
   const fontSizeRef = useRef(fontSize);
@@ -98,6 +105,32 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
   useEffect(() => {
     fontSizeRef.current = fontSize;
   }, [fontSize]);
+  
+  // ── Zoom / Pan / Lock ─────────────────────────────────────────────
+  // zoom حول أي نقطة + pan (offset)
+  const [scale, setScale] = useState(1);
+  const scaleRef = useRef(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const offsetRef = useRef({ x: 0, y: 0 });
+  const [isZoomLocked, setIsZoomLocked] = useState(false);
+  const [isPanMode, setIsPanMode] = useState(false); // وضع اليد للتحريك
+  const isPanning = useRef(false); // هل يجري تحريك الآن
+  const panStart = useRef({ x: 0, y: 0 }); // نقطة بداية التحريك
+  const panStartOffset = useRef({ x: 0, y: 0 });
+  const isPinching = useRef(false);
+  const pinchStartDist = useRef(0);
+  const pinchStartScale = useRef(1);
+  const pinchStartOffset = useRef({ x: 0, y: 0 });
+
+  const updateScale = (newScale: number) => {
+    setScale(newScale);
+    scaleRef.current = newScale;
+  };
+
+  const updateOffset = (newOffset: { x: number; y: number }) => {
+    setOffset(newOffset);
+    offsetRef.current = newOffset;
+  };
   
   // ── حالة تحرير النص ──────────────────────────────────────────────
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
@@ -126,29 +159,51 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
   const isFreehandTool = (t: DrawTool) => ['pen', 'highlighter', 'eraser'].includes(t);
 
   // ─── Canvas helpers ─────────────────────────────────────────────────
-  // Ref ثابت لـ DPR — يُحسب مرة واحدة ولا يتغير
-  const dprRef = useRef(1);
-  
   const getEventPos = (e: React.MouseEvent | React.TouchEvent): Point => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
     // canvas.width = rect.width * dpr (ثابت لا يتغير)
-    // canvas.width / rect.width = dpr دائماً
+    // canvas.width / rect.width = dprRef.current
     const dpr = dprRef.current;
-    const effectiveScaleX = dpr;
-    const effectiveScaleY = dpr;
+    let clientX: number, clientY: number;
     if ('touches' in e) {
-      return {
-        x: (e.touches[0].clientX - rect.left) * effectiveScaleX,
-        y: (e.touches[0].clientY - rect.top) * effectiveScaleY,
-      };
+      if (e.touches.length === 0) return { x: 0, y: 0 };
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    } else {
+      clientX = e.clientX;
+      clientY = e.clientY;
     }
+    const px = (clientX - rect.left) * dpr;
+    const py = (clientY - rect.top) * dpr;
+    const off = offsetRef.current;
+    const s = scaleRef.current;
     return {
-      x: (e.clientX - rect.left) * effectiveScaleX,
-      y: (e.clientY - rect.top) * effectiveScaleY,
+      x: (px - off.x) / s,
+      y: (py - off.y) / s,
     };
   };
+
+  // ── دالة مساعدة للـ Pinch ────────────────────────────────────────
+  const getTouchDist = (touches: React.TouchList) => {
+    if (touches.length < 2) return 0;
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.hypot(dx, dy);
+  };
+
+  // حساب منتصف نقطتي لمس
+  const getTouchMid = (touches: React.TouchList) => {
+    if (touches.length < 2) return { x: 0, y: 0 };
+    return {
+      x: (touches[0].clientX + touches[1].clientX) / 2,
+      y: (touches[0].clientY + touches[1].clientY) / 2,
+    };
+  };
+
+  // دالة مساعدة لحصر القيم
+  const clamp = (val: number, min: number, max: number) => Math.min(max, Math.max(min, val));
 
   // ─── Smooth Bezier path renderer ────────────────────────────────────
   const renderSmoothPath = (ctx: CanvasRenderingContext2D, pts: Point[]) => {
@@ -223,20 +278,49 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
     ctx.stroke();
   };
 
+  // ── دالة مساعدة لتطبيق zoom + pan transform ────────────────────
+  const applyZoomTransform = (ctx: CanvasRenderingContext2D) => {
+    const s = scaleRef.current;
+    const off = offsetRef.current;
+    ctx.setTransform(s, 0, 0, s, off.x, off.y);
+  };
+
+  // ── دالة لمسح overlay بالكامل ─────────────────────────────────
+  const clearOverlay = () => {
+    const overlay = overlayRef.current;
+    if (!overlay) return;
+    const ctx = overlay.getContext('2d');
+    if (!ctx) return;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, overlay.width, overlay.height);
+    ctx.restore();
+  };
+
   // ─── Main canvas redraw ──────────────────────────────────────────────
   const redrawCanvas = useCallback(() => {
     const ctx = canvasRef.current?.getContext('2d');
     const canvas = canvasRef.current;
     if (!ctx || !canvas) return;
 
+    // الخطوة 1: الخلفية — بدون transform عشان تغطي الشاشة كاملة
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0); // reset transform
     ctx.fillStyle = effectiveDark ? '#1e293b' : '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
 
-    // Grid dots for light mode / dictation mode
+    // الخطوة 2: zoom متمركز على منتصف الشاشة
+    ctx.save();
+    applyZoomTransform(ctx);
+
+    // Grid dots for light mode / dictation mode (في المساحة المنطقية)
     if (!effectiveDark) {
+      const logW = canvas.width / devicePixelRatio;
+      const logH = canvas.height / devicePixelRatio;
       ctx.fillStyle = '#e8ecf0';
-      for (let x = 0; x < canvas.width; x += 30) {
-        for (let y = 0; y < canvas.height; y += 30) {
+      for (let x = 0; x < logW; x += 30) {
+        for (let y = 0; y < logH; y += 30) {
           ctx.beginPath();
           ctx.arc(x, y, 1, 0, Math.PI * 2);
           ctx.fill();
@@ -270,28 +354,40 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
       ctx.fillStyle = t.color;
       ctx.font = `${t.fontSize}px 'Tajawal', Arial`;
       ctx.fillText(t.text, t.x, t.y);
-    });    }, [paths, shapes, texts, effectiveDark]);
+    });
 
-  // Redraw on state change
-  useEffect(() => { redrawCanvas(); }, [redrawCanvas]);
+    // إعادة السياق
+    ctx.restore();
+    }, [paths, shapes, texts, effectiveDark]); // scale — نستخدم refs
 
-  // Live preview overlay for shape tools
+  // Redraw on state change — scale ك trigger إضافي
+  useEffect(() => { redrawCanvas(); }, [redrawCanvas, scale]);
+
+  // Live preview overlay للشكل المؤقت مع zoom transform
   useEffect(() => {
     const overlay = overlayRef.current;
     if (!overlay) return;
-    const ctx = overlay.getContext('2d');
-    if (!ctx) return;
-    ctx.clearRect(0, 0, overlay.width, overlay.height);
+    const octx = overlay.getContext('2d');
+    if (!octx) return;
+    // نمسح overlay أولاً
+    octx.save();
+    octx.setTransform(1, 0, 0, 1, 0, 0);
+    octx.clearRect(0, 0, overlay.width, overlay.height);
+    octx.restore();
     if (shapePreview) {
-      ctx.strokeStyle = shapePreview.color;
-      ctx.lineWidth = shapePreview.width;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.globalAlpha = 0.75;
-      ctx.setLineDash([6, 4]);
-      renderShape(ctx, shapePreview);
-      ctx.setLineDash([]);
-      ctx.globalAlpha = 1;
+      // نطبق نفس zoom transform مثل redrawCanvas
+      octx.save();
+      applyZoomTransform(octx);
+      octx.strokeStyle = shapePreview.color;
+      octx.lineWidth = shapePreview.width;
+      octx.lineCap = 'round';
+      octx.lineJoin = 'round';
+      octx.globalAlpha = 0.75;
+      octx.setLineDash([6, 4]);
+      renderShape(octx, shapePreview);
+      octx.setLineDash([]);
+      octx.globalAlpha = 1;
+      octx.restore();
     }
   }, [shapePreview]);
 
@@ -305,8 +401,54 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
     setHistoryIndex(prev => Math.min(prev + 1, 49));
   }, [historyIndex]);
 
-  // ─── Pointer events ──────────────────────────────────────────────────
-  const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
+  // ─── Pan بالفأرة ────────────────────────────────────────────────────
+  const handleMouseDown = (e: React.MouseEvent) => {
+    // الزر الأوسط (button=1) → pan
+    if (e.button === 1) {
+      e.preventDefault();
+      isPanning.current = true;
+      panStart.current = { x: e.clientX, y: e.clientY };
+      panStartOffset.current = { ...offsetRef.current };
+      return;
+    }
+    // وضع اليد (pan mode) → تحريك
+    if (isPanMode && e.button === 0) {
+      e.preventDefault();
+      isPanning.current = true;
+      panStart.current = { x: e.clientX, y: e.clientY };
+      panStartOffset.current = { ...offsetRef.current };
+      return;
+    }
+    // الرسم العادي
+    startDrawing(e);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (isPanning.current) {
+      e.preventDefault();
+      const dx = e.clientX - panStart.current.x;
+      const dy = e.clientY - panStart.current.y;
+      // نعكس الاتجاه: سحب الفأرة لليسار ← canvas يتحرك لليسار (طبيعي)
+      updateOffset({
+        x: panStartOffset.current.x - dx,
+        y: panStartOffset.current.y - dy,
+      });
+      return;
+    }
+    draw(e);
+  };
+
+  const handleMouseUp = (e: React.MouseEvent) => {
+    if (isPanning.current) {
+      isPanning.current = false;
+      e.preventDefault();
+      return;
+    }
+    stopDrawing(e);
+  };
+
+  // ─── Pointer events (Mouse) ──────────────────────────────────────────
+  const startDrawing = (e: React.MouseEvent) => {
     e.preventDefault();
     const pt = getEventPos(e);
     setIsDrawing(true);
@@ -317,7 +459,7 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
     }
   };
 
-  const draw = (e: React.MouseEvent | React.TouchEvent) => {
+  const draw = (e: React.MouseEvent) => {
     if (!isDrawing) return;
     e.preventDefault();
     const pt = getEventPos(e);
@@ -325,23 +467,30 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
     if (isFreehandTool(tool)) {
       setCurrentPath(prev => {
         const next = [...prev, pt];
-        // Live freehand preview directly on main canvas
-        const ctx = canvasRef.current?.getContext('2d');
-        if (ctx && next.length >= 2) {
-          ctx.strokeStyle = tool === 'eraser'
+        // رسم تزايدي على OVERLAY canvas — بدون لمس main canvas أبداً
+        const overlay = overlayRef.current;
+        const octx = overlay?.getContext('2d');
+        if (octx && next.length >= 2) {
+          octx.save();
+          const canvas = canvasRef.current;
+          if (canvas) {
+            applyZoomTransform(octx);
+          }
+          octx.strokeStyle = tool === 'eraser'
             ? (effectiveDark ? '#1e293b' : '#ffffff')
             : color;
-          ctx.lineWidth = tool === 'eraser' ? lineWidth * 3 : lineWidth;
-          ctx.lineCap = 'round';
-          ctx.lineJoin = 'round';
-          ctx.globalAlpha = tool === 'highlighter' ? 0.4 : 1;
+          octx.lineWidth = tool === 'eraser' ? lineWidth * 3 : lineWidth;
+          octx.lineCap = 'round';
+          octx.lineJoin = 'round';
+          octx.globalAlpha = tool === 'highlighter' ? 0.4 : 1;
           // Draw just the last segment incrementally
           const last = next[next.length - 2];
-          ctx.beginPath();
-          ctx.moveTo(last.x, last.y);
-          ctx.lineTo(pt.x, pt.y);
-          ctx.stroke();
-          ctx.globalAlpha = 1;
+          octx.beginPath();
+          octx.moveTo(last.x, last.y);
+          octx.lineTo(pt.x, pt.y);
+          octx.stroke();
+          octx.globalAlpha = 1;
+          octx.restore();
         }
         return next;
       });
@@ -359,9 +508,11 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
     }
   };
 
-  const stopDrawing = (e?: React.MouseEvent | React.TouchEvent) => {
+  const stopDrawing = (e?: React.MouseEvent) => {
     if (!isDrawing) return;
     setIsDrawing(false);
+    // نمسح overlay من الرسم التزايدي
+    clearOverlay();
 
     if (isFreehandTool(tool)) {
       if (currentPath.length > 1) {
@@ -377,8 +528,7 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
         pushHistory(newPaths, shapes);
       }
       setCurrentPath([]);
-      // Trigger full redraw to apply smooth bezier over incremental lines
-      setTimeout(redrawCanvas, 0);
+      // لا نحتاج setTimeout(redrawCanvas) — React يعيد الرسم تلقائياً
     } else if (shapeStart.current && shapePreview) {
       const newShape: DrawnShape = { ...shapePreview, id: Date.now().toString() };
       const newShapes = [...shapes, newShape];
@@ -386,6 +536,134 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
       pushHistory(paths, newShapes);
       setShapePreview(null);
       shapeStart.current = null;
+    }
+  };
+
+  // ─── Touch events (Pinch Zoom + Pan) ───────────────────────────────
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && !isZoomLocked) {
+      e.preventDefault();
+      setIsDrawing(false);
+      setCurrentPath([]);
+      isPinching.current = true;
+      pinchStartDist.current = getTouchDist(e.touches);
+      pinchStartScale.current = scaleRef.current;
+      pinchStartOffset.current = { ...offsetRef.current };
+      return;
+    }
+    if (e.touches.length === 1 && !isPinching.current) {
+      if (isPanMode) {
+        isPanning.current = true;
+        panStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        panStartOffset.current = { ...offsetRef.current };
+      } else {
+        startDrawing(e as unknown as React.MouseEvent);
+      }
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      if (!isPinching.current && !isZoomLocked) {
+        e.preventDefault();
+        setIsDrawing(false);
+        setCurrentPath([]);
+        isPinching.current = true;
+        pinchStartDist.current = getTouchDist(e.touches);
+        pinchStartScale.current = scaleRef.current;
+        pinchStartOffset.current = { ...offsetRef.current };
+        return;
+      }
+      if (isPinching.current) {
+        e.preventDefault();
+        const newDist = getTouchDist(e.touches);
+        const distRatio = pinchStartDist.current > 0 ? newDist / pinchStartDist.current : 1;
+        const newScale = clamp(pinchStartScale.current * distRatio, 0.25, 5);
+        const mid = getTouchMid(e.touches);
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const rect = canvas.getBoundingClientRect();
+          const ratioX = canvas.width / rect.width;
+          const ratioY = canvas.height / rect.height;
+          const mx = (mid.x - rect.left) * ratioX;
+          const my = (mid.y - rect.top) * ratioY;
+          const oldOff = pinchStartOffset.current;
+          const ratio = newScale / pinchStartScale.current;
+          updateOffset({
+            x: mx - (mx - oldOff.x) * ratio,
+            y: my - (my - oldOff.y) * ratio,
+          });
+        }
+        updateScale(newScale);
+        return;
+      }
+    }
+    if (!isPinching.current && e.touches.length === 1) {
+      if (isPanning.current) {
+        const dx = e.touches[0].clientX - panStart.current.x;
+        const dy = e.touches[0].clientY - panStart.current.y;
+        // نعكس الاتجاه: سحب الإصبع لليسار ← canvas يتحرك لليسار (طبيعي)
+        updateOffset({
+          x: panStartOffset.current.x - dx,
+          y: panStartOffset.current.y - dy,
+        });
+      } else if (isDrawing) {
+        draw(e as unknown as React.MouseEvent);
+      }
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (isPinching.current) {
+      if (e.touches.length < 2) {
+        isPinching.current = false;
+      }
+      if (e.touches.length === 0 && isDrawing) {
+        stopDrawing();
+      }
+      return;
+    }
+    if (isPanning.current && e.touches.length === 0) {
+      isPanning.current = false;
+      return;
+    }
+    if (isDrawing && e.touches.length === 0) {
+      stopDrawing();
+    }
+  };
+
+  // ── Zoom بعجلة الفأرة (Ctrl + Scroll) ─── Zoom حول مؤشر الفأرة! ──
+  const handleWheel = (e: React.WheelEvent) => {
+    if (isZoomLocked) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const ratioX = canvas.width / rect.width;
+    const ratioY = canvas.height / rect.height;
+    const mx = (e.clientX - rect.left) * ratioX;
+    const my = (e.clientY - rect.top) * ratioY;
+    
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      const curScale = scaleRef.current;
+      const oldOffset = offsetRef.current;
+      const delta = -e.deltaY * 0.003;
+      const newScale = clamp(curScale * (1 + delta), 0.25, 5);
+      
+      // Zoom حول cursor: نحافظ على نفس النقطة في المكان
+      const ratio = newScale / curScale;
+      const newOffsetX = mx - (mx - oldOffset.x) * ratio;
+      const newOffsetY = my - (my - oldOffset.y) * ratio;
+      
+      updateOffset({ x: newOffsetX, y: newOffsetY });
+      updateScale(newScale);
+    } else {
+      // بدون Ctrl: تمرير عادي (pan) بعجلة الفأرة لمنطقة التكبير
+      const oldOffset = offsetRef.current;
+      updateOffset({
+        x: oldOffset.x - e.deltaX,
+        y: oldOffset.y - e.deltaY,
+      });
     }
   };
 
@@ -488,36 +766,64 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
     setEditingTextValue('');
   };
 
-  // ── إضافة نص من الإملاء إلى السبورة ──────────────────────────
-  // ملاحظة: نقرأ fontSize من ref (fontSizeRef) لتجنب stale closure
+  // ── إضافة نص الإملاء ─── في المنطقة المرئية + RTL/LTR + auto-scroll!
   const addDictatedText = useCallback((enhancedText: string, rawText: string, textColor?: string) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     
-    const currentFontSize = fontSizeRef.current || 18;
+    const off = offsetRef.current;
+    const s = scaleRef.current;
+    const currentFontSize = fontSizeRef.current || fontSize;
+    
+    // المنطقة المرئية حالياً في إحداثيات canvas
+    const visibleLeft = -off.x / s;
+    const visibleTop = -off.y / s;
+    const visibleRight = (canvas.width - off.x) / s;
+    
+    // كشف اتجاه النص: عربي ← يمين، إنجليزي ← يسار
+    const hasArabic = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(rawText);
     const margin = 24;
-    const lineHeight = Math.max(36, currentFontSize * 1.8);
-    const x = margin + 20;
-    const y = dictationTextYRef.current;
+    const lineHeight = 36;
+    
+    // X: حسب اتجاه النص — عربي من اليمين، إنجليزي من اليسار
+    const baseX = hasArabic
+      ? visibleRight - margin
+      : visibleLeft + margin;
+    
+    // Y: نبدأ من حيث توقفنا، أو من أعلى المنطقة المرئية
+    const yStart = Math.max(visibleTop + 10, dictationTextYRef.current);
+    
+    const y = yStart;
     
     const displayText = arabicToUnicode(enhancedText || rawText);
     
     setTexts(prev => [...prev, {
       id: `dict-${Date.now()}`,
-      x,
+      x: baseX,
       y,
       text: displayText,
       color: textColor || '#1e293b',
       fontSize: currentFontSize,
     }]);
     
-    // تحديث ref للموقع التالي (فوري، بدون انتظار React render)
+    // تحديث ref — دائماً تحت آخر نص
     dictationTextYRef.current = y + lineHeight;
-  }, []);
+    
+    // Auto-scroll: إذا النص خارج الشاشة، حرك viewport لرؤيته
+    const visibleBottom = (canvas.height - off.y) / s;
+    const newBottom = y + lineHeight;
+    
+    if (newBottom > visibleBottom || y < visibleTop) {
+      const targetY = y - ((visibleBottom - visibleTop) * 0.35);
+      updateOffset({ x: off.x, y: -targetY * s });
+    }
+  }, [fontSize]);
 
   const saveBoard = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    // تصدير الصورة بالـ zoom الحالي
+    redrawCanvas();
     const dataUrl = canvas.toDataURL('image/png');
     if (onSave) onSave(dataUrl);
     const link = document.createElement('a');
@@ -560,15 +866,16 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
       <canvas
         ref={canvasRef}
         className="absolute inset-0 w-full h-full touch-none"
-        style={{ cursor: isShapeTool(tool) ? 'crosshair' : tool === 'eraser' ? 'cell' : 'default' }}
-        onMouseDown={startDrawing}
-        onMouseMove={draw}
-        onMouseUp={stopDrawing}
-        onMouseLeave={stopDrawing}
+        style={{ cursor: isPanning.current || isPanMode ? 'grab' : isShapeTool(tool) ? 'crosshair' : tool === 'eraser' ? 'cell' : 'default' }}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
         onDoubleClick={handleCanvasDoubleClick}
-        onTouchStart={startDrawing}
-        onTouchMove={draw}
-        onTouchEnd={stopDrawing}
+        onWheel={handleWheel}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
       />
       {/* Overlay canvas للـ shape preview (بدون pointer events) */}
       <canvas
@@ -578,11 +885,11 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
 
       {/* ═══ شريط الأدوات الزجاجي العائم ═══ */}
       <div 
-        className={`absolute top-3 left-3 right-3 z-20 rounded-2xl backdrop-blur-xl border transition-all duration-300 ${
-          effectiveDark 
-            ? 'bg-slate-900/85 border-slate-700/60 shadow-2xl shadow-black/40' 
-            : 'bg-white/90 border-slate-200/80 shadow-xl'
-        }`}
+        className={`absolute top-3 left-3 right-3 z-20 rounded-2xl backdrop-blur-xl border transition-all duration-500 ${
+          !isToolbarVisible 
+            ? 'opacity-0 pointer-events-none translate-y-[-120%]' 
+            : 'opacity-100 translate-y-0'
+        } ${effectiveDark ? 'bg-slate-900/85 border-slate-700/60 shadow-2xl shadow-black/40' : 'bg-white/90 border-slate-200/80 shadow-xl'}`}
       >
         {/* السطر الأول: العنوان والأزرار الرئيسية */}
         <div className="flex items-center justify-between px-3 py-2">
@@ -703,8 +1010,111 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
               {shapeTools.find(s => s.key === tool)?.label}
             </span>
           )}
+
+          <div className={`w-px h-5 ${effectiveDark ? 'bg-slate-600/50' : 'bg-slate-300/50'}`} />
+
+          {/* وضع اليد (Pan Mode) */}
+          <button
+            onClick={() => setIsPanMode(!isPanMode)}
+            title={isPanMode ? 'وضع الرسم (إلغاء اليد)' : 'وضع اليد للتحريك'}
+            className={`p-1.5 rounded-lg transition-all ${
+              isPanMode
+                ? 'bg-gradient-to-r from-teal-500 to-emerald-500 text-white shadow-lg scale-110'
+                : effectiveDark
+                  ? 'bg-slate-700/50 text-slate-300 hover:bg-slate-600/50'
+                  : 'bg-slate-200/50 text-slate-600 hover:bg-slate-300/50'
+            }`}
+          >
+            <Move className="w-3.5 h-3.5" />
+          </button>
+
+          <div className={`w-px h-5 ${effectiveDark ? 'bg-slate-600/50' : 'bg-slate-300/50'}`} />
+
+          {/* أزرار التحكم في التكبير/التصغير والقفل */}
+          <div className="flex items-center gap-0.5">
+            <button onClick={() => { if (!isZoomLocked) updateScale(clamp(scaleRef.current - 0.25, 0.25, 5)); }} title="تصغير"
+              className={`p-1.5 rounded-lg transition ${effectiveDark ? 'bg-slate-700/50 text-slate-300 hover:bg-slate-600/50' : 'bg-slate-200/50 text-slate-600 hover:bg-slate-300/50'}`}>
+              <ZoomOut className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => updateScale(1)}
+              title="إعادة تعيين التكبير"
+              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition ${scaleRef.current === 1 ? (effectiveDark ? 'text-teal-400' : 'text-teal-600') : effectiveDark ? 'bg-slate-700/50 text-slate-300 hover:bg-slate-600/50' : 'bg-slate-200/50 text-slate-600 hover:bg-slate-300/50'}`}
+            >
+              {Math.round(scaleRef.current * 100)}%
+            </button>
+            <button onClick={() => { if (!isZoomLocked) updateScale(clamp(scaleRef.current + 0.25, 0.25, 5)); }} title="تكبير"
+              className={`p-1.5 rounded-lg transition ${effectiveDark ? 'bg-slate-700/50 text-slate-300 hover:bg-slate-600/50' : 'bg-slate-200/50 text-slate-600 hover:bg-slate-300/50'}`}>
+              <ZoomIn className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className={`w-px h-5 ${effectiveDark ? 'bg-slate-600/50' : 'bg-slate-300/50'}`} />
+
+          {/* زر التركيز على آخر نص/رسم */}
+          <button
+            onClick={() => {
+              const lastText = texts.length > 0 ? texts[texts.length - 1] : null;
+              if (lastText) {
+                const canvas = canvasRef.current;
+                if (canvas) {
+                  const s = scaleRef.current;
+                  const targetY = lastText.y;
+                  updateOffset({ x: offsetRef.current.x, y: -(targetY - canvas.height / s / 2) });
+                }
+              }
+            }}
+            title="التركيز على آخر نص"
+            className={`p-1.5 rounded-lg transition-all hover:scale-105 ${effectiveDark ? 'bg-slate-700/50 text-slate-300 hover:bg-slate-600/50' : 'bg-slate-200/50 text-slate-600 hover:bg-slate-300/50'}`}
+          >
+            <Crosshair className="w-3.5 h-3.5" />
+          </button>
+
+          {/* زر القفل */}
+          <button
+            onClick={() => setIsZoomLocked(!isZoomLocked)}
+            title={isZoomLocked ? 'فتح التكبير' : 'قفل التكبير'}
+            className={`p-1.5 rounded-lg transition-all ${
+              isZoomLocked
+                ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg scale-110'
+                : effectiveDark
+                  ? 'bg-slate-700/50 text-slate-300 hover:bg-slate-600/50'
+                  : 'bg-slate-200/50 text-slate-600 hover:bg-slate-300/50'
+            }`}
+          >
+            {isZoomLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+          </button>
+
+          <div className={`w-px h-5 ${effectiveDark ? 'bg-slate-600/50' : 'bg-slate-300/50'}`} />
+
+          {/* Hide toolbar button */}
+          <button
+            onClick={() => setIsToolbarVisible(false)}
+            title="إخفاء شريط الأدوات"
+            className={`p-1.5 rounded-lg transition-all hover:scale-105 ${effectiveDark ? 'bg-slate-700/50 text-slate-300 hover:bg-slate-600/50' : 'bg-slate-200/50 text-slate-600 hover:bg-slate-300/50'}`}
+          >
+            <EyeOff className="w-3.5 h-3.5" />
+          </button>
         </div>
       </div>
+
+      {/* ═══ زر إظهار شريط الأدوات (عند الإخفاء) ═══ */}
+      {!isToolbarVisible && (
+        <motion.button
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+          onClick={() => setIsToolbarVisible(true)}
+          title="إظهار شريط الأدوات"
+          className={`absolute top-3 left-1/2 -translate-x-1/2 z-20 p-2 rounded-full backdrop-blur-xl border shadow-2xl transition-all hover:scale-110 ${
+            effectiveDark 
+              ? 'bg-slate-900/85 border-slate-700/60 shadow-black/40' 
+              : 'bg-white/90 border-slate-200/80 shadow-xl'
+          }`}
+        >
+          <Eye className={`w-5 h-5 ${effectiveDark ? 'text-slate-300' : 'text-slate-600'}`} />
+        </motion.button>
+      )}
 
       {/* ═══ نافذة تعديل النص ═══ */}
       {editingTextId && (
@@ -744,6 +1154,16 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
           </div>
         </div>
       )}
+
+      {/* ═══ طبقة عرض الرياضيات (HTML + KaTeX) فوق Canvas ═══ */}
+      <MathCanvasOverlay
+        texts={texts}
+        scale={scale}
+        offset={offset}
+        canvasWidth={canvasRef.current?.width || 1200}
+        canvasHeight={canvasRef.current?.height || 800}
+        isDark={effectiveDark}
+      />
 
       {/* ═══ لوحة الإملاء الذكي — تظهر في الأسفل عند التفعيل ═══ */}
       <SmartDictationPanel
