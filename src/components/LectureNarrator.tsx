@@ -100,7 +100,7 @@ const DRAW_CMD=/^(ارسم|أرسم|draw|رسم لي|ارسم لي|أرسم لي
 // Detects user asking AI to look at / explain the whiteboard drawing
 const LOOK_DRAWING_CMD=/انظر.*(رسم|سبور)|اشرح.*(رسم|سبور)|ما.*(رسم|السبور)|(رسم|سبور).*(شرح|انظر)|look.*(draw|board)|explain.*(draw|board)|describe.*(draw|board)|what.*(draw|board)/i;
 // Physics/engineering drawing → clever-painter library
-const CLEVER_PAINTER_CMD=/دائرة\s*كهرب|دارة\s*كهرب|دائرة\s*RC|دائرة\s*RL|دائرة\s*LC|ارسم.*مقاوم.*بطار|ارسم.*بطار.*مقاوم|توصيل.*بطارية|بطارية.*مقاوم|مكثف.*كهرب|محث.*كهرب|موجة\s*(جيبية|مربعة|مثلثة|نبضية|سينية|منشارية|كهرومغناطيسية|صوتية|ضوئية)|تمثيل\s*موجة|رسم\s*موجة|مخطط\s*القوى|free\s*body|diagram.*القوى|قوى.*على.*جسم|رسم.*القوى|مجال\s*(كهربائي|مغناطيسي)|خطوط\s*المجال|شحنتا?\s*(موجبة|سالبة|نقطية|كهربائية)|قطبا?\s*(مغناطيس|شمالي|جنوبي)|مغناطيس.*قطب|تروس\s*ميكانيكية|ارسم.*تروس|نابض\s*ميكانيكي|بكرة\s*ميكانيكية|كمرة\s*(هندسية|خرسانية)|عارضة\s*(هندسية|مثبتة)|circuit|sine\s*wave|square\s*wave|electric\s*field|magnetic\s*field|free\s*body\s*diagram/i;
+const CLEVER_PAINTER_CMD=/دائرة\s*كهرب|دارة\s*كهرب|دائرة\s*RC|دائرة\s*RL|دائرة\s*LC|ارسم.*(مقاوم|بطار|مكثف|محث|لمبة|مصباح|مفتاح)|توصيل.*بطارية|بطارية.*مقاوم|مكثف.*كهرب|محث.*كهرب|لمبة.*كهرب|مصباح.*كهرب|موجة\s*(جيبية|مربعة|مثلثة|نبضية|سينية|منشارية|كهرومغناطيسية|صوتية|ضوئية)|ذبذبة|تمثيل\s*موجة|رسم\s*موجة|مخطط\s*القوى|free\s*body|diagram.*القوى|قوى.*على.*جسم|رسم.*القوى|مجال\s*(كهربائي|مغناطيسي)|خطوط\s*المجال|شحنتا?\s*(موجبة|سالبة|نقطية|كهربائية)|قطبا?\s*(مغناطيس|شمالي|جنوبي)|مغناطيس.*قطب|تروس\s*ميكانيكية|ارسم.*تروس|نابض\s*ميكانيكي|بكرة\s*ميكانيكية|ذراع|رافعة|كمرة\s*(هندسية|خرسانية)|عارضة\s*(هندسية|مثبتة)|رسم.*دالة|دالة.*رياضية|منحنى.*دالة|circuit|sine\s*wave|square\s*wave|electric\s*field|magnetic\s*field|free\s*body\s*diagram/i;
 
 // ── Audio helpers ─────────────────────────────────────────────────
 const f32ToI16=(inp:Float32Array)=>{const o=new Int16Array(inp.length);for(let i=0;i<inp.length;i++){const s=Math.max(-1,Math.min(1,inp[i]));o[i]=s<0?s*0x8000:s*0x7fff;}return o;};
@@ -834,8 +834,8 @@ function CleverPainterRenderer({cmd,onResult,onError}:{
         register(engine);
         // wave command uses "waveType" internally but the JSON may say "type"
         const execCmd={...cmd};
-        if(execCmd.type==='wave'&&execCmd.waveType===undefined&&execCmd.waveKind)
-          execCmd.waveType=execCmd.waveKind;
+        if(execCmd.type==='wave'&&execCmd.waveType===undefined)
+          execCmd.waveType=execCmd.waveKind||'sine';
         engine.execute(execCmd);
         if(!cancelled){
           const png=engine.export('image/png',0.95);
@@ -927,9 +927,11 @@ function parseChartLocally(text:string):ChartData{
       datasets:[{name:'البيانات',values:kvs.map(k=>k.val)}]};
   }
 
-  // ── Bare numbers (no labels) → bar with auto labels ───────────────
+  // ── Bare numbers (no labels) → bar/line/pie ONLY when the text clearly
+  //    requests a data chart (لم يعد يُبتلع "ارسم كذا" العشوائي) ──────
   const nums=(t.match(/-?\d+(?:\.\d+)?/g)||[]).map(Number).filter(n=>!isNaN(n));
-  if(nums.length>=2&&nums.length<=12){
+  const dataIntent=/بيان|مخطط|بيانات|نسب|أعمد|جدول|أرقام|chart|data|table|pie|bar|column/i.test(t);
+  if(nums.length>=2&&nums.length<=12&&dataIntent){
     const isLine=/خط|زمن|سنة|شهر|يوم|line|year|month|trend/i.test(t);
     const isPie=/دائر|pie|نسب/i.test(t);
     const labels=nums.map((_,i)=>String.fromCharCode(0x0623+i)); // أ،ب،ج…
@@ -937,14 +939,14 @@ function parseChartLocally(text:string):ChartData{
       labels,datasets:[{name:'البيانات',values:nums}]};
   }
 
-  // ── FALLBACK: command with no data → demo chart ───────────────────
-  // Draws an illustrative sample so the board always shows SOMETHING
-  if(/دائر|pie|نسب\s*مئو/i.test(t))
+  // ── DEMO charts — فقط عندما يطلب المستخدم نوع مخطط صريحاً،
+  //    وليس لأي طلب "ارسم كذا" (تلك تذهب لـ clever-painter/SVG) ──────
+  if(/مخطط.*دائري|مخطط.*نسب|نسب\s*مئوية|دائري|pie/i.test(t))
     return{hasChart:true,chartType:'pie',title:'مخطط دائري — مثال',
       labels:['الفئة أ','الفئة ب','الفئة ج','الفئة د'],
       datasets:[{name:'النسبة',values:[35,28,22,15]}]};
 
-  if(/خطي|line|منحنى|تطور|زمن/i.test(t))
+  if(/مخطط.*خطي|مخطط خط|خط زمني|منحنى.*(بياني|زمن)|line chart|line graph|trend/i.test(t))
     return{hasChart:true,chartType:'line',title:'مخطط خطي — مثال',
       labels:['يناير','فبراير','مارس','أبريل','مايو','يونيو'],
       datasets:[{name:'القيم',values:[30,48,42,65,58,74]}]};
@@ -954,7 +956,7 @@ function parseChartLocally(text:string):ChartData{
       tableHeaders:['العنصر','القيمة','الملاحظة'],
       tableRows:[['البند ١','100','ممتاز'],['البند ٢','80','جيد جداً'],['البند ٣','65','مقبول']]};
 
-  if(/هيكل|مراحل|دورة|خوارزم|تدفق|diagram|flowchart/i.test(t))
+  if(/مخطط.*(انسياب|تدفق)|flowchart|خوارزم/i.test(t))
     return{hasChart:true,chartType:'diagram',title:'مخطط تدفق — مثال',
       diagramNodes:[
         {id:'s',label:'البداية',shape:'circle'},
@@ -964,8 +966,8 @@ function parseChartLocally(text:string):ChartData{
       ],
       diagramEdges:[{from:'s',to:'p',label:''},{from:'p',to:'d',label:''},{from:'d',to:'e',label:'نعم'}]};
 
-  // مخطط عمودي أو أي طلب رسم عام (مربعات عمودية = bar chart)
-  if(/مخطط|عمودي|bar|أعمد|بيان|مقارن|رسم|ارسم|مربع|أعمدة|عمود/i.test(t))
+  // مخطط أعمدة صريح فقط — وليس أي طلب يحتوي كلمة "رسم/ارسم"
+  if(/مخطط.*(أعمدة|عمودي)|أعمدة|أعمد|bar chart|bar graph/i.test(t))
     return{hasChart:true,chartType:'bar',title:'مخطط أعمدة — مثال',
       labels:['أ','ب','ج','د','هـ'],
       datasets:[{name:'البيانات',values:[65,42,78,55,88]}]};
@@ -1149,7 +1151,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   },[]);
 
   // ── handleCleverPaint — calls server to get a clever-painter command, then renders it ──
-  const handleCleverPaint=useCallback(async(text:string)=>{
+  const handleCleverPaint=useCallback(async(text:string):Promise<boolean>=>{
     setIsDrawingChart(true);
     try{
       const res=await fetch(resolveApiUrl('/api/ai/clever-painter-command'),{
@@ -1161,19 +1163,78 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
       if(cmd&&cmd.action==='draw'){
         setCleverPaintCmd({...cmd});
         // CleverPainterRenderer will call onResult → setCleverPaintImg
-      } else {
-        setIsDrawingChart(false);
-        userDrawLockRef.current=false;
-        setChartErrorMsg('لم أتمكن من توليد رسم فيزيائي لهذا الطلب.');
-        setTimeout(()=>setChartErrorMsg(''),5000);
+        return true;
       }
+      setIsDrawingChart(false);
+      if(data.error==='no_api_key'){
+        setChartErrorMsg('🔑 أضف مفتاح API أولاً (الإعدادات ← مفاتيح API) ثم أعد المحاولة');
+        setTimeout(()=>setChartErrorMsg(''),6000);
+      }
+      return false; // ليست رسمة فيزيائية → نتابع باقي المسارات (مخطط/SVG)
     }catch{
       setIsDrawingChart(false);
-      userDrawLockRef.current=false;
       setChartErrorMsg('خطأ في الاتصال بخدمة clever-painter.');
       setTimeout(()=>setChartErrorMsg(''),5000);
+      return false;
     }
   },[]);
+
+  // ── يكمل مسار الرسم: بيانات محلية → API → SVG (للمسار الصوتي/النموذج) ──
+  const finishModelDraw=useCallback((fullDesc:string, gen:number)=>{
+    // Try local parser first (instant, zero API cost)
+    const local=parseChartLocally(fullDesc);
+    if(local.hasChart&&drawGenRef.current===gen){
+      chartCacheRef.current.set(fullDesc,local);
+      setCurrentChart({...local});
+      setIsDrawingChart(false);
+      userDrawLockRef.current=false;
+      // Enrich in background if API available
+      callChartAnalyze(fullDesc).then(c=>{
+        if(drawGenRef.current!==gen||!c.hasChart||c.quotaExceeded) return;
+        chartCacheRef.current.set(fullDesc,c);
+        setCurrentChart({...c});
+      });
+      return;
+    }
+    // Fallback to API
+    callChartAnalyze(fullDesc).then(async(c)=>{
+      if(drawGenRef.current!==gen) return;
+      if(c.hasChart){
+        chartCacheRef.current.set(fullDesc,c);
+        setCurrentChart({...c});
+        setIsDrawingChart(false);
+        userDrawLockRef.current=false;
+        return;
+      }
+      // ── ليست بيانات → توليد رسم SVG حر (تشريح، دورة حياة، مفاهيم…) ──
+      try{
+        const svgRes=await fetch(resolveApiUrl('/api/ai/draw-svg'),{
+          method:'POST',headers:{'Content-Type':'application/json',...getAiHeaders()},
+          body:JSON.stringify({prompt:fullDesc})
+        });
+        if(drawGenRef.current!==gen) return;
+        const svgData=await svgRes.json();
+        if(svgData.svg){
+          setSvgContent(svgData.svg);
+          setCurrentChart(null);
+          setIsDrawingChart(false);
+          userDrawLockRef.current=false;
+        } else {
+          chartCacheRef.current.set(fullDesc,c);
+          setCurrentChart(null);
+          setIsDrawingChart(false);
+          userDrawLockRef.current=false;
+        }
+      }catch{
+        if(drawGenRef.current!==gen) return;
+        setCurrentChart(null);
+        setIsDrawingChart(false);
+        userDrawLockRef.current=false;
+      }
+    });
+  },[]);
+
+  
 
   const triggerChartFromBuffer=useCallback(()=>{
     const fullDesc=modelTransBuf.current.trim();
@@ -1183,38 +1244,17 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     setIsDrawingChart(true);
     chartCacheRef.current.delete(fullDesc);
 
-    // ── Check for physics/engineering diagram first (clever-painter) ─
+    // ── 1) رسمة فيزيائية/هندسية → clever-painter (الخادم يقرر ملاءمتها) ──
     if(CLEVER_PAINTER_CMD.test(fullDesc)){
-      handleCleverPaint(fullDesc);
+      handleCleverPaint(fullDesc).then(drew=>{
+        if(drew) return;
+        if(drawGenRef.current===gen) finishModelDraw(fullDesc, gen);
+      });
       return;
     }
 
-    // ── Try local parser first (instant, zero API cost) ─────────────
-    const local=parseChartLocally(fullDesc);
-    if(local.hasChart){
-      if(drawGenRef.current===gen){
-        chartCacheRef.current.set(fullDesc,local);
-        setCurrentChart({...local});
-        setIsDrawingChart(false);
-        userDrawLockRef.current=false;
-        // Enrich in background if API available
-        callChartAnalyze(fullDesc).then(c=>{
-          if(drawGenRef.current!==gen||!c.hasChart||c.quotaExceeded) return;
-          chartCacheRef.current.set(fullDesc,c);
-          setCurrentChart({...c});
-        });
-      }
-      return;
-    }
-
-    // ── Fallback to API ──────────────────────────────────────────────
-    callChartAnalyze(fullDesc).then(c=>{
-      if(drawGenRef.current!==gen) return;
-      chartCacheRef.current.set(fullDesc,c);
-      setCurrentChart(c.hasChart?{...c}:null);
-      setIsDrawingChart(false);
-      userDrawLockRef.current=false;
-    });
+    // ── 2) مخطط بيانات محلي/API ثم SVG ──
+    finishModelDraw(fullDesc, gen);
   },[handleCleverPaint]);
 
   // Chart analysis — for AUTOMATIC detection from lecture chunks.
@@ -1303,13 +1343,17 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     const text=cmd.replace(DRAW_CMD,'').trim()||cmd;
     setIsDrawingChart(true); setChunkText(cmd); setDirectCmd('');
 
-    // ── Step 0: Physics/engineering diagrams → clever-painter ──────
-    if(CLEVER_PAINTER_CMD.test(text)){
-      handleCleverPaint(text);
-      return;
+    // ── 0) رسمة فيزيائية/هندسية → clever-painter.
+    //    يُجرَّب لأي "ارسم كذا" غير واضح أنه مخطط بيانات — والخادم يقرر ملاءمته ──
+    const isDataRequest=/بيان|مخطط|جدول|نسب|أعمد|دائري|خطي|chart|table|pie|bar/i.test(text);
+    if(CLEVER_PAINTER_CMD.test(text)||(!isDataRequest&&DRAW_CMD.test(cmd))){
+      const drew=await handleCleverPaint(text);
+      if(drew) return;
+      if(userDrawGenRef.current!==myGen) return;
+      // لم تُرسم فيزيائياً → نتابع باقي المسارات بدون رسالة خطأ
     }
 
-    // ── Step 1: Try local parser immediately (zero API cost) ───────
+    // ── 1) بيانات محلية (صفر تكلفة) ──
     const local=parseChartLocally(text);
     if(local.hasChart&&userDrawGenRef.current===myGen){
       setCurrentChart({...local});
@@ -1323,44 +1367,48 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
       return;
     }
 
-    // ── Step 2: No local result → call API ─────────────────────────
+    // ── 2) لا نتيجة محلية → API ──
     const c=await callChartAnalyze(text);
     if(userDrawGenRef.current!==myGen) return;
 
     if(c.hasChart){
       setCurrentChart({...c});
       setIsDrawingChart(false);
-    } else if(c.quotaExceeded){
+      return;
+    }
+    if(c.quotaExceeded){
       setIsDrawingChart(false);
       userDrawLockRef.current=false;
       setChartErrorMsg('⚠️ تجاوزت الحصة المجانية لـ API — أضف مفتاح API خاصاً من الإعدادات (⚙️).');
       setTimeout(()=>setChartErrorMsg(''),6000);
-    } else {
-      // ── Step 3: Not a data chart → try SVG diagram generation ──────
-      try{
-        const svgRes=await fetch(resolveApiUrl('/api/ai/draw-svg'),{
-          method:'POST',headers:{'Content-Type':'application/json',...getAiHeaders()},
-          body:JSON.stringify({prompt:text})
-        });
-        if(userDrawGenRef.current!==myGen) return;
-        const svgData=await svgRes.json();
-        if(svgData.svg){
-          setSvgContent(svgData.svg);
-          setIsDrawingChart(false);
-        } else {
-          setIsDrawingChart(false);
-          userDrawLockRef.current=false;
-          setChartErrorMsg('لم أتمكن من رسم هذا الطلب. جرب وصفاً أوضح مثل: "ارسم دائرة كهربائية بمقاومة ومكثف وبطارية"');
-          setTimeout(()=>setChartErrorMsg(''),7000);
-        }
-      }catch{
+      return;
+    }
+
+    // ── 3) ليست بيانات → رسم SVG حر ──
+    try{
+      const svgRes=await fetch(resolveApiUrl('/api/ai/draw-svg'),{
+        method:'POST',headers:{'Content-Type':'application/json',...getAiHeaders()},
+        body:JSON.stringify({prompt:text})
+      });
+      if(userDrawGenRef.current!==myGen) return;
+      const svgData=await svgRes.json();
+      if(svgData.svg){
+        setSvgContent(svgData.svg);
+        setCurrentChart(null);
+        setIsDrawingChart(false);
+      } else {
         setIsDrawingChart(false);
         userDrawLockRef.current=false;
-        setChartErrorMsg('خطأ في الاتصال بخدمة الرسم. حاول مجدداً.');
-        setTimeout(()=>setChartErrorMsg(''),5000);
+        setChartErrorMsg('لم أتمكن من رسم هذا الطلب. جرب وصفاً أوضح مثل: "ارسم دائرة كهربائية بمقاومة ومكثف وبطارية"');
+        setTimeout(()=>setChartErrorMsg(''),7000);
       }
+    }catch{
+      setIsDrawingChart(false);
+      userDrawLockRef.current=false;
+      setChartErrorMsg('خطأ في الاتصال بخدمة الرسم. حاول مجدداً.');
+      setTimeout(()=>setChartErrorMsg(''),5000);
     }
-  },[clearDrawFallback]);
+  },[clearDrawFallback, handleCleverPaint]);
 
   // Handle user asking AI narrator to "look at the drawing on the whiteboard"
   const handleLookAtWhiteboard=useCallback(async()=>{

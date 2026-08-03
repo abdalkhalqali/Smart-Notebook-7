@@ -111,8 +111,8 @@ export function drawForce(engine, params = {}) {
   drawBody();
 
   // ─── Draw force arrows ───
-  const drawArrow = (fx, fy, label, color, forceLen = arrowLen, customDir = null) => {
-    const len = customDir || forceLen;
+  const drawArrow = (fx, fy, label, color, forceLen = arrowLen, showNum = false, numValue = null) => {
+    const len = forceLen;
     const angle_rad = Math.atan2(fy, fx);
     const endX = cx + fx * len;
     const endY = cy + fy * len;
@@ -152,30 +152,54 @@ export function drawForce(engine, params = {}) {
       const labelOffY = endY + fy * 20;
       ctx.fillText(label, labelOffX, labelOffY + 4);
 
-      // Math-style notation below
-      ctx.font = `${fontSize - 4}px 'Tajawal', Arial, sans-serif`;
-      ctx.fillStyle = color + 'cc';
-      ctx.fillText(`→ ${Math.round(Math.hypot(fx, fy) * 100) / 100} N`, labelOffX, labelOffY + fontSize + 4);
+      // Math-style notation below — فقط عندما نعرف المقدار فعلاً
+      if (showNum) {
+        ctx.font = `${fontSize - 4}px 'Tajawal', Arial, sans-serif`;
+        ctx.fillStyle = color + 'cc';
+        ctx.fillText(`→ ${numValue != null ? numValue : Math.round(Math.hypot(fx, fy) * 100) / 100} N`, labelOffX, labelOffY + fontSize + 4);
+      }
     }
   };
 
-  if (forces.length > 0) {
-    const forceScale = arrowLen;
+  // ── الاتجاه الافتراضي لكل نوع قوة (عندما لا يرسل الخادم x/y/direction) ──
+  // كان الخطأ: القوى بلا إحداثيات تُرسم بطول صفر (لا تظهر إطلاقاً)
+  const defaultDir = {
+    weight:   { x: 0,  y: 1 },   // لأسفل
+    normal:   { x: 0,  y: -1 },  // لأعلى
+    applied:  { x: 1,  y: 0 },   // لليمين
+    friction: { x: -1, y: 0 },   // لليسار
+    tension:  { x: 1,  y: 0 },
+    spring:   { x: 1,  y: 0 },
+    drag:     { x: -1, y: 0 },   // لليسار (مقاومة)
+  };
 
+  if (forces.length > 0) {
     forces.forEach((f) => {
       const color = colors[f.type] || '#6b7280';
       const label = f.label || labels[f.type] || f.type;
-      const fx = f.x || 0;
-      const fy = f.y || 0;
-      const mag = Math.hypot(fx, fy) || 1;
 
-      drawArrow(fx / mag, fy / mag, label, color, f.magnitude ? Math.min(f.magnitude * 3, arrowLen * 1.5) : arrowLen);
-
-      // If magnitude is specified as number instead of x/y
-      if (f.magnitude && !f.x && !f.y) {
-        const dirRad = ((f.direction || 0) * Math.PI) / 180;
-        drawArrow(Math.cos(dirRad), Math.sin(dirRad), label, color, Math.min(f.magnitude * 2, arrowLen * 1.5));
+      // الاتجاه: x/y صريح ← وإلا direction بالدرجات ← وإلا افتراضي حسب النوع
+      let dirX = 0, dirY = 0;
+      if (f.x !== undefined || f.y !== undefined) {
+        dirX = f.x || 0;
+        dirY = f.y || 0;
+      } else if (f.direction !== undefined) {
+        const dirRad = (f.direction * Math.PI) / 180;
+        dirX = Math.cos(dirRad);
+        dirY = Math.sin(dirRad);
+      } else {
+        const def = defaultDir[f.type] || { x: 1, y: 0 };
+        dirX = def.x;
+        dirY = def.y;
       }
+      const mag = Math.hypot(dirX, dirY) || 1;
+
+      // الطول: magnitude إذا وُجد، وإلا الطول الافتراضي
+      const len = f.magnitude
+        ? Math.min(Math.max(f.magnitude * 2, 24), arrowLen * 1.5)
+        : arrowLen;
+
+      drawArrow(dirX / mag, dirY / mag, label, color, len, !!f.magnitude, f.magnitude);
     });
   }
 

@@ -48,10 +48,10 @@ export default function CleverPainterRenderer({
         const engine = new Engine(canvas, { width: 720, height: 460, bgColor: '#ffffff' });
         register(engine);
 
-        // wave command uses "waveType" internally but the JSON may say "type"/"waveKind"
+        // wave command uses "waveType" internally but the JSON may say "waveKind"
         const execCmd: any = { ...cmd };
-        if (execCmd.type === 'wave' && execCmd.waveType === undefined && execCmd.waveKind) {
-          execCmd.waveType = execCmd.waveKind;
+        if (execCmd.type === 'wave' && execCmd.waveType === undefined) {
+          execCmd.waveType = execCmd.waveKind || 'sine';
         }
 
         engine.execute(execCmd);

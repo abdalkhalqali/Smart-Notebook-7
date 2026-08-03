@@ -73,6 +73,14 @@ export function drawCircuit(engine, params = {}) {
     };
   }
 
+  // ── اسم/قيمة المكون المعروض: label ← value ← (بطارية: voltage) ──
+  const compLabel = (comp) => {
+    if (comp.label) return comp.label;
+    if (comp.value) return comp.value;
+    if (comp.type === 'battery' && comp.voltage) return `${comp.voltage}V`;
+    return '';
+  };
+
   // ─── Draw components ───
   if (rawComponents.length > 0) {
     rawComponents.forEach((comp, idx) => {
@@ -112,10 +120,10 @@ export function drawCircuit(engine, params = {}) {
           ctx.fillText('+', pos.x, pos.y - bh / 2 - 14);
           ctx.fillText('−', pos.x, pos.y + bh / 2 + fontSize + 4);
 
-          if (showLabels && comp.value) {
+          if (showLabels && compLabel(comp)) {
             ctx.fillStyle = labelColor;
             ctx.font = `${fontSize - 3}px 'Tajawal', Arial, sans-serif`;
-            ctx.fillText(comp.value, pos.x, pos.y - bh / 2 - 28);
+            ctx.fillText(compLabel(comp), pos.x, pos.y - bh / 2 - 28);
           }
           break;
         }
@@ -148,11 +156,11 @@ export function drawCircuit(engine, params = {}) {
           ctx.lineTo(pos.x + rw / 2 + 15, pos.y);
           ctx.stroke();
 
-          if (showLabels && comp.value) {
+          if (showLabels && compLabel(comp)) {
             ctx.fillStyle = labelColor;
             ctx.font = `${fontSize - 3}px 'Tajawal', Arial, sans-serif`;
             ctx.textAlign = 'center';
-            ctx.fillText(comp.value, pos.x, pos.y - rh / 2 - 8);
+            ctx.fillText(compLabel(comp), pos.x, pos.y - rh / 2 - 8);
           }
           break;
         }
@@ -192,11 +200,11 @@ export function drawCircuit(engine, params = {}) {
             ctx.fill();
           }
 
-          if (showLabels && comp.value) {
+          if (showLabels && compLabel(comp)) {
             ctx.fillStyle = labelColor;
             ctx.font = `${fontSize - 3}px 'Tajawal', Arial, sans-serif`;
             ctx.textAlign = 'center';
-            ctx.fillText(comp.value, pos.x, pos.y + radius + fontSize + 6);
+            ctx.fillText(compLabel(comp), pos.x, pos.y + radius + fontSize + 6);
           }
           break;
         }
@@ -281,11 +289,11 @@ export function drawCircuit(engine, params = {}) {
           ctx.lineTo(pos.x + capW / 2, pos.y + capH / 2);
           ctx.stroke();
 
-          if (showLabels && comp.value) {
+          if (showLabels && compLabel(comp)) {
             ctx.fillStyle = labelColor;
             ctx.font = `${fontSize - 3}px 'Tajawal', Arial, sans-serif`;
             ctx.textAlign = 'center';
-            ctx.fillText(comp.value, pos.x, pos.y + capH / 2 + fontSize + 4);
+            ctx.fillText(compLabel(comp), pos.x, pos.y + capH / 2 + fontSize + 4);
           }
           break;
         }
@@ -318,11 +326,11 @@ export function drawCircuit(engine, params = {}) {
             ctx.stroke();
           }
 
-          if (showLabels && comp.value) {
+          if (showLabels && compLabel(comp)) {
             ctx.fillStyle = labelColor;
             ctx.font = `${fontSize - 3}px 'Tajawal', Arial, sans-serif`;
             ctx.textAlign = 'center';
-            ctx.fillText(comp.value, pos.x, pos.y + fontSize + 8);
+            ctx.fillText(compLabel(comp), pos.x, pos.y + fontSize + 8);
           }
           break;
         }
@@ -338,10 +346,10 @@ export function drawCircuit(engine, params = {}) {
             ctx.font = `${fontSize - 4}px 'Tajawal', Arial, sans-serif`;
             ctx.textAlign = 'center';
             ctx.fillText(comp.type || '?', pos.x, pos.y + 4);
-            if (comp.value) {
+            if (compLabel(comp)) {
               ctx.fillStyle = labelColor;
               ctx.font = `${fontSize - 5}px 'Tajawal', Arial, sans-serif`;
-              ctx.fillText(comp.value, pos.x, pos.y + bh / 2 + fontSize - 2);
+              ctx.fillText(compLabel(comp), pos.x, pos.y + bh / 2 + fontSize - 2);
             }
           }
         }

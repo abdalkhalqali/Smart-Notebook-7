@@ -118,8 +118,8 @@ export function drawField(engine, params = {}) {
   } else {
     // Multiple charges
     charges.forEach((charge, idx) => {
-      const qx = charge.x || (cx + (idx - (charges.length - 1) / 2) * 120);
-      const qy = charge.y || cy;
+      const qx = charge.x !== undefined ? charge.x : (cx + (idx - (charges.length - 1) / 2) * 120);
+      const qy = charge.y !== undefined ? charge.y : cy;
       const qSign = charge.sign || 1; // +1 or -1
       const qMag = charge.magnitude || 1;
 
@@ -130,8 +130,8 @@ export function drawField(engine, params = {}) {
 
         const otherCharges = charges.filter((_, i) => i !== idx);
         otherCharges.forEach((other) => {
-          const ox = other.x || (charges.indexOf(other) - (charges.length - 1) / 2) * 120 + cx;
-          const oy = other.y || cy;
+          const ox = other.x !== undefined ? other.x : (charges.indexOf(other) - (charges.length - 1) / 2) * 120 + cx;
+          const oy = other.y !== undefined ? other.y : cy;
 
           for (let k = 0; k < lineCount; k++) {
             const t = k / (lineCount - 1);

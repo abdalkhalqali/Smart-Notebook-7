@@ -27,7 +27,31 @@ export function drawGraph(engine, params = {}) {
 
   // Scale calculation
   const scaleX = plotW / (xRange[1] - xRange[0]);
-  const autoYRange = yRange || [-plotH / 2 * 0.1, plotH / 2 * 0.1];
+
+  // ── مدى y التلقائي: نقيم الدالة على كامل xRange لنكتشف حدودها الفعلية ──
+  // (كانت القيمة الثابتة ±20 تقصّ أي رسم مثل sin(x/30)*80 ولا يظهر إلا شريط رفيع)
+  let autoYRange = yRange;
+  if (!autoYRange) {
+    try {
+      const fn = new Function('x', `"use strict"; return (${expression})`);
+      let yMin = Infinity;
+      let yMax = -Infinity;
+      const samples = 200;
+      for (let i = 0; i <= samples; i++) {
+        const x = xRange[0] + (i / samples) * (xRange[1] - xRange[0]);
+        const y = fn(x);
+        if (isFinite(y)) {
+          if (y < yMin) yMin = y;
+          if (y > yMax) yMax = y;
+        }
+      }
+      if (isFinite(yMin) && isFinite(yMax) && yMax > yMin) {
+        const pad = (yMax - yMin) * 0.15 + 5;
+        autoYRange = [yMin - pad, yMax + pad];
+      }
+    } catch (_) { /* تجاهل — نستخدم الافتراضي */ }
+  }
+  autoYRange = autoYRange || [-50, 50];
   const scaleY = plotH / (autoYRange[1] - autoYRange[0]);
 
   const toCanvasX = (x) => originX + (x - xRange[0]) * scaleX;

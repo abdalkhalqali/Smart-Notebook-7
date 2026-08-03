@@ -10,7 +10,9 @@ export function drawWave(engine, params = {}) {
   const cy = height / 2;
 
   const {
-    type = 'sine',
+    waveType,
+    waveKind,
+    type,
     amplitude = 60,
     wavelength = 120,
     frequency = 1,
@@ -25,6 +27,10 @@ export function drawWave(engine, params = {}) {
     speed = 0,
     time = 0,
   } = params;
+
+  // ⚠️ مهم: GraphicsEngine.execute() تقتطع حقل "type" من الأمر قبل تمرير params،
+  // لذا لا يمكن الاعتماد على "type" هنا — نقرأ waveType/waveKind أولاً (كما يرسلها الخادم).
+  const waveShape = waveType || waveKind || type || 'sine';
 
   const margin = { top: 40, left: 50, right: 30, bottom: 50 };
   const plotW = width - margin.left - margin.right;
@@ -97,7 +103,7 @@ export function drawWave(engine, params = {}) {
     },
   };
 
-  const waveFn = waveFunctions[type] || waveFunctions.sine;
+  const waveFn = waveFunctions[waveShape] || waveFunctions.sine;
 
   // ─── Draw the wave ───
   ctx.strokeStyle = color;
@@ -197,7 +203,7 @@ export function drawWave(engine, params = {}) {
     ctx.fillStyle = color;
     ctx.font = `bold 11px 'Tajawal', Arial, sans-serif`;
     ctx.textAlign = 'center';
-    ctx.fillText(type.charAt(0).toUpperCase() + type.slice(1), badgeX + badgeW / 2, badgeY + 16);
+    ctx.fillText(waveShape.charAt(0).toUpperCase() + waveShape.slice(1), badgeX + badgeW / 2, badgeY + 16);
   }
 
   ctx.restore();
