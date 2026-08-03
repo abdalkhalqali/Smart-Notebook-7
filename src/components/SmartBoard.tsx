@@ -4,12 +4,18 @@ import {
   Type, Minus, ArrowRight, Square, Circle,
   Triangle, Palette, Play, Pause, Highlighter, Spline,
   Mic, MicOff, ZoomIn, ZoomOut, Lock, Unlock, Eye, EyeOff,
-  Move, Crosshair, Hand
+  Move, Crosshair, Hand, Sparkles
 } from 'lucide-react';
 import SmartDictationPanel from './SmartDictationPanel';
 import MathCanvasOverlay from './MathCanvasOverlay';
+import CleverPainterRenderer, { CpCmd } from './CleverPainterRenderer';
 import { arabicToUnicode } from '../utils/mathUtils';
+import { getActiveRequestHeaders } from '../utils/aiKeys';
+import { resolveApiUrl } from '../utils/apiBase';
 import { motion } from 'motion/react';
+
+// ── كشف أوامر الرسم العلمي/الهندسي في النص (دائرة كهربائية، موجة، قوى، مجال، ترس، كمرة…) ──
+const CLEVER_PAINTER_CMD = /دائرة\s*كهرب|دارة\s*كهرب|دائرة\s*RC|دائرة\s*RL|دائرة\s*LC|ارسم.*مقاوم.*بطار|ارسم.*بطار.*مقاوم|توصيل.*بطارية|بطارية.*مقاوم|مكثف.*كهرب|محث.*كهرب|موجة\s*(جيبية|مربعة|مثلثة|نبضية|سينية|منشارية|كهرومغناطيسية|صوتية|ضوئية)|تمثيل\s*موجة|رسم\s*موجة|مخطط\s*القوى|free\s*body|diagram.*القوى|قوى.*على.*جسم|رسم.*القوى|مجال\s*(كهربائي|مغناطيسي)|خطوط\s*المجال|شحنتا?\s*(موجبة|سالبة|نقطية|كهربائية)|قطبا?\s*(مغناطيس|شمالي|جنوبي)|مغناطيس.*قطب|تروس\s*ميكانيكية|ارسم.*تروس|نابض\s*ميكانيكي|بكرة\s*ميكانيكية|كمرة\s*(هندسية|خرسانية)|عارضة\s*(هندسية|مثبتة)|circuit|sine\s*wave|square\s*wave|electric\s*field|magnetic\s*field|free\s*body\s*diagram/i;
 
 interface Point { x: number; y: number; }
 
@@ -33,9 +39,20 @@ interface TextItem {
   text: string; color: string; fontSize: number;
 }
 
+// رسمة مولّدة عبر clever-painter تُعرض كصورة على السبورة
+interface BoardImage {
+  id: string; x: number; y: number; w: number; h: number;
+  dataUrl: string;
+}
+
 type DrawTool = 'pen' | 'highlighter' | 'eraser' | 'line' | 'rect' | 'circle' | 'triangle' | 'arrow';
 
-interface HistorySnapshot { paths: DrawingPath[]; shapes: DrawnShape[]; }
+interface HistorySnapshot {
+  paths: DrawingPath[];
+  shapes: DrawnShape[];
+  texts: TextItem[];
+  images: BoardImage[];
+}
 
 interface SmartBoardProps {
   isDarkMode?: boolean;
@@ -88,8 +105,20 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
   const [fontSize, setFontSize] = useState(18); // حجم خط النص
   const [texts, setTexts] = useState<TextItem[]>([]);
 
-  // Undo / Redo — snapshots of {paths, shapes}
-  const [history, setHistory] = useState<HistorySnapshot[]>([{ paths: [], shapes: [] }]);
+  // رسومات مولّدة (clever-painter) تُعرض على السبورة كصور قابلة للتحريك مع اللوحة
+  const [images, setImages] = useState<BoardImage[]>([]);
+  const imageElsRef = useRef<Map<string, HTMLImageElement>>(new Map());
+
+  // ── حالة أمر الرسم العلمي ──
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [showCmdInput, setShowCmdInput] = useState(false);
+  const [cmdText, setCmdText] = useState('');
+  const [cpCmd, setCpCmd] = useState<CpCmd | null>(null);
+  const [boardNotice, setBoardNotice] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null);
+  const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Undo / Redo — snapshots of {paths, shapes, texts, images}
+  const [history, setHistory] = useState<HistorySnapshot[]>([{ paths: [], shapes: [], texts: [], images: [] }]);
   const [historyIndex, setHistoryIndex] = useState(0);
 
   const [isRecording, setIsRecording] = useState(false);
@@ -356,9 +385,27 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
       ctx.fillText(t.text, t.x, t.y);
     });
 
+    // Draw generated diagrams (clever-painter PNGs) — بطاقة بيضاء بإطار خفيف
+    images.forEach(im => {
+      const el = imageElsRef.current.get(im.id);
+      if (!el || !el.complete || el.naturalWidth === 0) return;
+      ctx.save();
+      // ظل خفيف تحت البطاقة
+      ctx.shadowColor = 'rgba(0,0,0,0.35)';
+      ctx.shadowBlur = 14;
+      ctx.shadowOffsetY = 6;
+      ctx.drawImage(el, im.x, im.y, im.w, im.h);
+      ctx.shadowColor = 'transparent';
+      // إطار خفيف حول البطاقة
+      ctx.strokeStyle = effectiveDark ? 'rgba(148,163,184,0.5)' : 'rgba(100,116,139,0.35)';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(im.x + 0.75, im.y + 0.75, im.w - 1.5, im.h - 1.5);
+      ctx.restore();
+    });
+
     // إعادة السياق
     ctx.restore();
-    }, [paths, shapes, texts, effectiveDark]); // scale — نستخدم refs
+    }, [paths, shapes, texts, images, effectiveDark]); // scale — نستخدم refs
 
   // Redraw on state change — scale ك trigger إضافي
   useEffect(() => { redrawCanvas(); }, [redrawCanvas, scale]);
@@ -392,10 +439,10 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
   }, [shapePreview]);
 
   // ─── Push history snapshot ───────────────────────────────────────────
-  const pushHistory = useCallback((p: DrawingPath[], s: DrawnShape[]) => {
+  const pushHistory = useCallback((p: DrawingPath[], s: DrawnShape[], t: TextItem[], im: BoardImage[]) => {
     setHistory(prev => {
       const trimmed = prev.slice(0, historyIndex + 1);
-      const next = [...trimmed, { paths: p, shapes: s }];
+      const next = [...trimmed, { paths: p, shapes: s, texts: t, images: im }];
       return next.slice(-50); // max 50 snapshots
     });
     setHistoryIndex(prev => Math.min(prev + 1, 49));
@@ -525,7 +572,7 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
         };
         const newPaths = [...paths, newPath];
         setPaths(newPaths);
-        pushHistory(newPaths, shapes);
+        pushHistory(newPaths, shapes, texts, images);
       }
       setCurrentPath([]);
       // لا نحتاج setTimeout(redrawCanvas) — React يعيد الرسم تلقائياً
@@ -533,7 +580,7 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
       const newShape: DrawnShape = { ...shapePreview, id: Date.now().toString() };
       const newShapes = [...shapes, newShape];
       setShapes(newShapes);
-      pushHistory(paths, newShapes);
+      pushHistory(paths, newShapes, texts, images);
       setShapePreview(null);
       shapeStart.current = null;
     }
@@ -675,6 +722,8 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
     const snap = history[newIdx];
     setPaths(snap.paths);
     setShapes(snap.shapes);
+    setTexts(snap.texts || []);
+    setImages(snap.images || []);
   };
 
   const redo = () => {
@@ -684,14 +733,18 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
     const snap = history[newIdx];
     setPaths(snap.paths);
     setShapes(snap.shapes);
+    setTexts(snap.texts || []);
+    setImages(snap.images || []);
   };
 
   const clearBoard = () => {
     setPaths([]);
     setShapes([]);
     setTexts([]);
+    setImages([]);
+    imageElsRef.current.clear(); // تفريغ الصور المحمّلة
     dictationTextYRef.current = 30; // إعادة تعيين موقع الإملاء
-    const snap: HistorySnapshot = { paths: [], shapes: [] };
+    const snap: HistorySnapshot = { paths: [], shapes: [], texts: [], images: [] };
     setHistory([snap]);
     setHistoryIndex(0);
   };
@@ -699,14 +752,16 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
   const addText = () => {
     const text = prompt('اكتب النص:');
     if (!text) return;
-    setTexts(prev => [...prev, {
+    const newTexts = [...texts, {
       id: Date.now().toString(),
       x: 100 + Math.random() * 200,
       y: 100 + Math.random() * 200,
       text,
       color,
       fontSize,
-    }]);
+    }];
+    setTexts(newTexts);
+    pushHistory(paths, shapes, newTexts, images);
   };
 
   // ── العثور على النص الذي تم الضغط عليه ───────────────────────────
@@ -733,6 +788,18 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
   // ── الضغط المزدوج لتحرير النص ──────────────────────────────────
   const handleCanvasDoubleClick = useCallback((e: React.MouseEvent) => {
     const pt = getEventPos(e);
+    // الضغط المزدوج على رسمة مولّدة → حذفها
+    for (let i = images.length - 1; i >= 0; i--) {
+      const im = images[i];
+      if (pt.x >= im.x && pt.x <= im.x + im.w && pt.y >= im.y && pt.y <= im.y + im.h) {
+        const newImages = images.filter(x => x.id !== im.id);
+        imageElsRef.current.delete(im.id);
+        setImages(newImages);
+        pushHistory(paths, shapes, texts, newImages);
+        showNotice('ok', '🗑️ تم حذف الرسمة');
+        return;
+      }
+    }
     const found = findTextAtPosition(pt.x, pt.y);
     if (found) {
       const ctx = canvasRef.current?.getContext('2d');
@@ -747,14 +814,16 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
         h: Math.max(th + 16, 40),
       });
     }
-  }, [findTextAtPosition]);
+  }, [findTextAtPosition, images, paths, shapes, texts, pushHistory]);
 
   // ── حفظ تعديل النص ──────────────────────────────────────────────
   const saveTextEdit = () => {
     if (editingTextId && editingTextValue.trim()) {
-      setTexts(prev => prev.map(t =>
+      const newTexts = texts.map(t =>
         t.id === editingTextId ? { ...t, text: editingTextValue.trim() } : t
-      ));
+      );
+      setTexts(newTexts);
+      pushHistory(paths, shapes, newTexts, images);
     }
     setEditingTextId(null);
     setEditingTextValue('');
@@ -765,6 +834,68 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
     setEditingTextId(null);
     setEditingTextValue('');
   };
+
+  // ── إشعار سريع (نجاح / خطأ) ──────────────────────────────────────
+  const showNotice = (type: 'ok' | 'err', msg: string) => {
+    setBoardNotice({ type, msg });
+    if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+    noticeTimerRef.current = setTimeout(() => setBoardNotice(null), 5000);
+  };
+
+  // ── توليد أمر الرسم عبر الخادم ثم رسمه على السبورة ────────────────
+  const handleGenerate = useCallback(async (text: string) => {
+    const clean = text.trim();
+    if (!clean) return;
+    setIsGenerating(true);
+    setShowCmdInput(false);
+    try {
+      const res = await fetch(resolveApiUrl('/api/ai/clever-painter-command'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getActiveRequestHeaders() },
+        body: JSON.stringify({ text: clean }),
+      });
+      const data = await res.json();
+      const cmd = data.cmd || data.command;
+      if (data.error === 'no_api_key') {
+        showNotice('err', '🔑 أضف مفتاح API أولاً (الإعدادات ← مفاتيح API) ثم أعد المحاولة');
+      } else if (cmd && cmd.action === 'draw') {
+        setCpCmd({ ...cmd });
+        setCmdText('');
+      } else {
+        showNotice('err', '🤔 لم يتم التعرف على رسمة علمية — جرّب: "ارسم دائرة كهربائية ببطارية 12V"');
+      }
+    } catch {
+      showNotice('err', 'خطأ في الاتصال بخدمة الرسم');
+    } finally {
+      setIsGenerating(false);
+    }
+  }, []);
+
+  // ── إضافة الرسمة المولّدة إلى السبورة (في المنطقة المرئية) ────────
+  const addGeneratedImage = useCallback((png: string) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const off = offsetRef.current;
+    const s = scaleRef.current;
+    const visibleLeft = -off.x / s;
+    const visibleTop = -off.y / s;
+    // حجم البطاقة: 380×243 تقريباً (بنسبة 720×460 الأصلية)
+    const w = 380;
+    const h = Math.round((w * 460) / 720);
+    const id = `img-${Date.now()}`;
+    const item: BoardImage = { id, x: visibleLeft + 40, y: visibleTop + 40, w, h, dataUrl: png };
+    const newImages = [...images, item];
+    setImages(newImages);
+    pushHistory(paths, shapes, texts, newImages);
+    // تحميل الصورة مسبقاً حتى تُرسم فوراً عند إعادة الرسم
+    const imgEl = new Image();
+    imgEl.onload = () => {
+      imageElsRef.current.set(id, imgEl);
+      redrawCanvas();
+    };
+    imgEl.src = png;
+    showNotice('ok', '🎨 تم رسم الشكل على السبورة — اضغط مرتين على الرسمة لحذفها');
+  }, [images, paths, shapes, texts, pushHistory, redrawCanvas]);
 
   // ── إضافة نص الإملاء ─── في المنطقة المرئية + RTL/LTR + auto-scroll!
   const addDictatedText = useCallback((enhancedText: string, rawText: string, textColor?: string) => {
@@ -797,14 +928,17 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
     
     const displayText = arabicToUnicode(enhancedText || rawText);
     
-    setTexts(prev => [...prev, {
+    const newItem: TextItem = {
       id: `dict-${Date.now()}`,
       x: baseX,
       y,
       text: displayText,
       color: textColor || '#1e293b',
       fontSize: currentFontSize,
-    }]);
+    };
+    const newTexts = [...texts, newItem];
+    setTexts(newTexts);
+    pushHistory(paths, shapes, newTexts, images);
     
     // تحديث ref — دائماً تحت آخر نص
     dictationTextYRef.current = y + lineHeight;
@@ -817,7 +951,12 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
       const targetY = y - ((visibleBottom - visibleTop) * 0.35);
       updateOffset({ x: off.x, y: -targetY * s });
     }
-  }, [fontSize]);
+
+    // 🎨 إذا كان النص المملى طلباً لرسمة علمية → توليدها تلقائياً!
+    if (CLEVER_PAINTER_CMD.test(rawText || '')) {
+      handleGenerate(rawText);
+    }
+  }, [fontSize, texts, paths, shapes, images, pushHistory, handleGenerate]);
 
   const saveBoard = () => {
     const canvas = canvasRef.current;
@@ -964,6 +1103,23 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
 
           <div className={`w-px h-5 ${effectiveDark ? 'bg-slate-600/50' : 'bg-slate-300/50'}`} />
 
+          {/* 🧪 رسم تلقائي — توليد مخطط علمي عبر clever-painter */}
+          <button
+            onClick={() => setShowCmdInput(v => !v)}
+            title="ارسم شكلًا علميًا — دائرة كهربائية، موجة، مخطط قوى، مجال…"
+            className={`p-1.5 rounded-lg transition-all ${
+              showCmdInput || isGenerating
+                ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg scale-110'
+                : effectiveDark
+                  ? 'bg-slate-700/50 text-slate-300 hover:bg-slate-600/50'
+                  : 'bg-slate-200/50 text-slate-600 hover:bg-slate-300/50'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+          </button>
+
+          <div className={`w-px h-5 ${effectiveDark ? 'bg-slate-600/50' : 'bg-slate-300/50'}`} />
+
           {/* الألوان */}
           <div className="flex items-center gap-0.5 flex-wrap">
             {colors.map(c => (
@@ -1098,6 +1254,53 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
         </div>
       </div>
 
+      {/* ═══ حقل أمر الرسم العلمي ═══ */}
+      {showCmdInput && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.2 }}
+          className="absolute top-20 left-1/2 -translate-x-1/2 z-30 w-[min(580px,92vw)] rounded-2xl backdrop-blur-xl border shadow-2xl p-3"
+          style={{
+            background: effectiveDark ? 'rgba(15,23,42,0.94)' : 'rgba(255,255,255,0.96)',
+            borderColor: effectiveDark ? 'rgba(148,163,184,0.3)' : 'rgba(226,232,240,0.9)',
+          }}
+        >
+          <div className="flex items-center gap-2">
+            <Sparkles className={`w-4 h-4 shrink-0 ${effectiveDark ? 'text-amber-400' : 'text-amber-600'}`} />
+            <input
+              autoFocus
+              value={cmdText}
+              onChange={(e) => setCmdText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleGenerate(cmdText);
+                if (e.key === 'Escape') setShowCmdInput(false);
+              }}
+              placeholder="اكتب الأمر: ارسم دائرة كهربائية ببطارية 12V ومقاومة 100Ω…"
+              className="flex-1 bg-transparent outline-none text-sm placeholder:text-slate-400"
+              style={{ color: effectiveDark ? '#fff' : '#1e293b' }}
+            />
+            <button
+              onClick={() => handleGenerate(cmdText)}
+              disabled={isGenerating || !cmdText.trim()}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white text-xs font-bold disabled:opacity-40 hover:shadow-lg transition"
+            >
+              {isGenerating
+                ? <><span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> جارٍ الرسم…</>
+                : <>🎨 ارسم</>}
+            </button>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1">
+            {['دائرة كهربائية', 'موجة جيبية', 'مخطط القوى', 'مجال كهربائي', 'رسم بياني y=sin(x)', 'تروس'].map(sug => (
+              <button key={sug} onClick={() => setCmdText(sug)}
+                className={`text-[10px] px-2 py-0.5 rounded-full border transition hover:scale-105 ${effectiveDark ? 'text-slate-300 border-slate-600 hover:border-amber-400 hover:text-amber-300' : 'text-slate-500 border-slate-300 hover:border-amber-500 hover:text-amber-600'}`}>
+                {sug}
+              </button>
+            ))}
+          </div>
+        </motion.div>
+      )}
+
       {/* ═══ زر إظهار شريط الأدوات (عند الإخفاء) ═══ */}
       {!isToolbarVisible && (
         <motion.button
@@ -1170,6 +1373,26 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
         isActive={isDictationMode}
         onClose={() => setIsDictationMode(false)}
         onEntryEnhanced={addDictatedText}
+      />
+
+      {/* ═══ إشعار الحالة ═══ */}
+      {boardNotice && (
+        <div className={`absolute bottom-24 left-1/2 -translate-x-1/2 z-40 px-4 py-2 rounded-xl text-xs font-bold shadow-2xl backdrop-blur-xl border ${boardNotice.type === 'ok' ? 'text-emerald-300 bg-emerald-950/85 border-emerald-700/40' : 'text-red-300 bg-red-950/85 border-red-700/40'}`}>
+          {boardNotice.msg}
+        </div>
+      )}
+
+      {/* ═══ محرك الرسومات (clever-painter) — canvas مخفي، يُحمَّل ديناميكياً ═══ */}
+      <CleverPainterRenderer
+        cmd={cpCmd}
+        onResult={(png) => {
+          addGeneratedImage(png);
+          setCpCmd(null);
+        }}
+        onError={(msg) => {
+          showNotice('err', `خطأ في الرسم: ${msg}`);
+          setCpCmd(null);
+        }}
       />
     </div>
   );

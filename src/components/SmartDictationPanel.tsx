@@ -290,9 +290,15 @@ export default function SmartDictationPanel({
   const [showExport, setShowExport] = useState(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const transcriptTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const restartTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isListeningRef = useRef(false);
+  const lastProcessedIndexRef = useRef(0);
+  const pendingTextRef = useRef('');
   const entriesEndRef = useRef<HTMLDivElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
+  // ── refs للـ callback لتجنب stale closure ──
+  const onEntryEnhancedRef = useRef(onEntryEnhanced);
+  onEntryEnhancedRef.current = onEntryEnhanced;
 
   // ── استرجاع المحفوظ من localStorage ──────────────────────────
   useEffect(() => {
@@ -335,6 +341,109 @@ export default function SmartDictationPanel({
     return () => document.removeEventListener('mousedown', handleClick);
   }, [showExport]);
 
+  // ── دالة إنشاء التعرف الصوتي ────────────────────────────────
+  // يتم إنشاء كائن SpeechRecognition جديد في كل مرة + تأخير 500ms
+  // هذا يمنع النغمة المتكررة من المتصفح (نغمة واحدة فقط عند البداية)
+  const createRecognition = useCallback(() => {
+    if (!isListeningRef.current) return;
+
+    const SpeechRecognitionAPI =
+      (window as any).SpeechRecognition ||
+      (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognitionAPI) return;
+
+    const recognition = new SpeechRecognitionAPI();
+    recognition.lang = 'ar-SA';
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      let interim = '';
+      let newFinal = '';
+
+      for (let i = lastProcessedIndexRef.current; i < event.results.length; i++) {
+        const result = event.results[i];
+        if (result.isFinal) {
+          newFinal += result[0].transcript;
+        } else {
+          interim += result[0].transcript;
+        }
+      }
+
+      if (event.results.length > lastProcessedIndexRef.current) {
+        lastProcessedIndexRef.current = event.results.length;
+      }
+
+      const displayText = newFinal || interim;
+      if (displayText.trim()) {
+        setLiveTranscript(displayText);
+      }
+
+      if (newFinal.trim()) {
+        pendingTextRef.current = newFinal.trim();
+
+        if (transcriptTimeoutRef.current) {
+          clearTimeout(transcriptTimeoutRef.current);
+        }
+
+        transcriptTimeoutRef.current = setTimeout(() => {
+          if (pendingTextRef.current) {
+            addEntry(pendingTextRef.current);
+            pendingTextRef.current = '';
+            setLiveTranscript('');
+          }
+        }, 800);
+      }
+    };
+
+    recognition.onerror = (event: any) => {
+      console.warn('Speech recognition error:', event.error);
+      if (event.error === 'not-allowed') {
+        alert('يرجى السماح بالوصول إلى الميكروفون.');
+        isListeningRef.current = false;
+        setIsListening(false);
+      }
+      // للأخطاء الأخرى (no-speech, aborted): نترك isListening مستمر
+      // حتى يحاول onend إعادة التشغيل
+    };
+
+    recognition.onend = () => {
+      if (isListeningRef.current) {
+        // 🚀 الحل السحري: لا نعيد استخدام نفس الكائن!
+        // بدلاً من: recognition.start() ← يسبب نغمة متصفح مزعجة
+        // ننتظر 500ms ثم ننشئ كائن SpeechRecognition جديد بالكامل
+        // هذه هي الطريقة الوحيدة لتجنب النغمة المتكررة
+        if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+        restartTimerRef.current = setTimeout(() => {
+          if (isListeningRef.current) {
+            createRecognition(); // ← إنشاء جديد تماماً
+          } else {
+            setIsListening(false);
+          }
+        }, 500);
+      } else {
+        setIsListening(false);
+      }
+    };
+
+    try {
+      recognition.start();
+      recognitionRef.current = recognition;
+      setIsListening(true);
+      setLiveTranscript('جاري الاستماع...');
+    } catch (e) {
+      console.warn('Failed to start recognition:', e);
+      // إذا فشل (مثلاً بسبب عدم إذن الميكروفون)، نحاول مرة أخرى بعد 1 ثانية
+      if (isListeningRef.current) {
+        restartTimerRef.current = setTimeout(() => {
+          if (isListeningRef.current) createRecognition();
+        }, 1000);
+      }
+    }
+  }, []); // ← refs فقط، لا stale closure!
+
   // ── Web Speech API ────────────────────────────────────────────
   const startListening = useCallback(() => {
     const SpeechRecognitionAPI =
@@ -346,84 +455,25 @@ export default function SmartDictationPanel({
       return;
     }
 
-    const recognition = new SpeechRecognitionAPI();
-    recognition.lang = 'ar-SA';
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.maxAlternatives = 1;
+    // تهيئة refs لبداية جديدة
+    isListeningRef.current = true;
+    lastProcessedIndexRef.current = 0;
+    pendingTextRef.current = '';
+    setLiveTranscript('جاري الاستماع...');
 
-    let lastProcessedIndex = 0;
-    let pendingFinalText = '';
-
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
-      let interim = '';
-      let newFinal = '';
-
-      for (let i = lastProcessedIndex; i < event.results.length; i++) {
-        const result = event.results[i];
-        if (result.isFinal) {
-          newFinal += result[0].transcript;
-        } else {
-          interim += result[0].transcript;
-        }
-      }
-
-      if (event.results.length > lastProcessedIndex) {
-        lastProcessedIndex = event.results.length;
-      }
-
-      const displayText = newFinal || interim;
-      if (displayText.trim()) {
-        setLiveTranscript(displayText);
-      }
-
-      if (newFinal.trim()) {
-        pendingFinalText = newFinal.trim();
-
-        if (transcriptTimeoutRef.current) {
-          clearTimeout(transcriptTimeoutRef.current);
-        }
-
-        transcriptTimeoutRef.current = setTimeout(() => {
-          if (pendingFinalText) {
-            addEntry(pendingFinalText);
-            pendingFinalText = '';
-            setLiveTranscript('');
-          }
-        }, 800);
-      }
-    };
-
-    recognition.onerror = (event: any) => {
-      console.warn('Speech recognition error:', event.error);
-      if (event.error === 'not-allowed') {
-        alert('يرجى السماح بالوصول إلى الميكروفون.');
-      }
-      setIsListening(false);
-      isListeningRef.current = false;
-    };
-
-    // نستخدم ref بدلاً من state لتجنب stale closure
-    // isListening في الـ closure يكون false دائماً
-    recognition.onend = () => {
-      if (isListeningRef.current) {
-        try { recognition.start(); } catch (e) { /* */ }
-      }
-    };
-
-    try {
-      recognition.start();
-      recognitionRef.current = recognition;
-      isListeningRef.current = true;
-      setIsListening(true);
-      setLiveTranscript('جاري الاستماع...');
-    } catch (e) {
-      console.warn('Failed to start recognition:', e);
-    }
-  }, []); // ← dependency array أصبح [] لأننا نستخدم ref
+    // إنشاء أول recognition ← يصدر نغمة واحدة فقط!
+    createRecognition();
+  }, [createRecognition]);
 
   const stopListening = useCallback(() => {
     isListeningRef.current = false;
+
+    // إلغاء أي إعادة تشغيل مجدولة
+    if (restartTimerRef.current) {
+      clearTimeout(restartTimerRef.current);
+      restartTimerRef.current = null;
+    }
+
     if (recognitionRef.current) {
       try { recognitionRef.current.stop(); } catch (e) { /* */ }
       recognitionRef.current = null;
@@ -461,7 +511,8 @@ export default function SmartDictationPanel({
     }]);
     setLiveTranscript('');
     // إعلام السبورة بإضافة النص الجديد مع اللون المحدد
-    onEntryEnhanced?.(cleanText, text, textColor);
+    // استخدام ref لتجنب stale closure مع createRecognition
+    onEntryEnhancedRef.current?.(cleanText, text, textColor);
   };
 
   const clearAll = () => {
