@@ -23,6 +23,10 @@
  * ```
  */
 
+// ─── Direct imports (browser-safe) — used by createEngine below ───
+import { GraphicsEngine } from './core/GraphicsEngine.js';
+import { registerBuiltinCommands } from './commands/builtin.js';
+
 // ─── Core ───
 export { GraphicsEngine } from './core/GraphicsEngine.js';
 
@@ -61,8 +65,10 @@ export const ENGINE_NAME = 'Clever Painter';
  * engine.execute({ action: 'draw', type: 'wave', amplitude: 80, wavelength: 150 });
  */
 export function createEngine(canvas, options = {}) {
-  const { GraphicsEngine: Engine } = require ? { GraphicsEngine } : { GraphicsEngine };
-  const engine = new Engine(canvas, options);
+  // Browser-safe: GraphicsEngine & registerBuiltinCommands are statically
+  // imported above. The previous code referenced `require`, which does not
+  // exist in ESM/browser environments → ReferenceError when called.
+  const engine = new GraphicsEngine(canvas, options);
   registerBuiltinCommands(engine);
   return engine;
 }

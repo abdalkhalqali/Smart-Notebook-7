@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import MathText from './MathText';
+import CleverPainterRenderer, { CpCmd } from './CleverPainterRenderer';
 import { resolveApiUrl } from '../utils/apiBase';
 import { loadKeys, getActiveKey } from '../utils/aiKeys';
 
@@ -71,8 +72,6 @@ interface DiagNode { id:string; label:string; shape:'box'|'circle'|'diamond'; }
 interface DiagEdge { from:string; to:string; label:string; }
 interface CoordPoint { x:number; y:number; label?:string; }
 interface CoordLine  { x1:number; y1:number; x2:number; y2:number; label?:string; }
-// Clever Painter command (physics/engineering diagrams)
-interface CpCmd { action:string; type:string; [key:string]:any; }
 interface ChartData {
   hasChart:boolean; chartType:'bar'|'line'|'pie'|'table'|'diagram'|'coordinate'|'none';
   title?:string; labels?:string[]; datasets?:Dataset[];
@@ -799,59 +798,6 @@ function DrawPad({onClose,onEnhance,isEnhancing}:{
         </button>
       </div>
     </div>
-  );
-}
-
-// ══════════════════════════════════════════════════════════════════
-// CLEVER PAINTER RENDERER — renders physics/engineering diagrams
-// Uses the clever-painter canvas library (loaded dynamically to avoid SSR issues)
-// Renders on a hidden off-screen canvas, exports PNG, calls onResult.
-// ══════════════════════════════════════════════════════════════════
-function CleverPainterRenderer({cmd,onResult,onError}:{
-  cmd:CpCmd|null;
-  onResult:(pngDataUrl:string)=>void;
-  onError?:(msg:string)=>void;
-}){
-  const canvasRef=useRef<HTMLCanvasElement>(null);
-  const onResultRef=useRef(onResult);
-  const onErrorRef=useRef(onError);
-  useEffect(()=>{onResultRef.current=onResult;},[onResult]);
-  useEffect(()=>{onErrorRef.current=onError;},[onError]);
-
-  useEffect(()=>{
-    if(!cmd||!canvasRef.current) return;
-    let cancelled=false;
-    const canvas=canvasRef.current;
-    (async()=>{
-      try{
-        // Dynamic import keeps the library out of the initial bundle
-        const cpMod=await import('../../clever-painter/index.js' as any);
-        if(cancelled) return;
-        const Engine=cpMod.GraphicsEngine??cpMod.default?.GraphicsEngine;
-        const register=cpMod.registerBuiltinCommands??cpMod.default?.registerBuiltinCommands;
-        if(!Engine||!register) throw new Error('clever-painter: missing exports');
-        const engine=new Engine(canvas,{width:720,height:460,bgColor:'#ffffff'});
-        register(engine);
-        // wave command uses "waveType" internally but the JSON may say "type"
-        const execCmd={...cmd};
-        if(execCmd.type==='wave'&&execCmd.waveType===undefined)
-          execCmd.waveType=execCmd.waveKind||'sine';
-        engine.execute(execCmd);
-        if(!cancelled){
-          const png=engine.export('image/png',0.95);
-          onResultRef.current(png);
-        }
-      }catch(e:any){
-        if(!cancelled) onErrorRef.current?.(e?.message||'خطأ في رسم clever-painter');
-      }
-    })();
-    return()=>{cancelled=true;};
-  },[cmd]);
-
-  // Off-screen canvas — never visible, only used for rendering + export
-  return(
-    <canvas ref={canvasRef}
-      style={{position:'fixed',top:-9999,left:-9999,opacity:0,pointerEvents:'none',width:720,height:460}}/>
   );
 }
 

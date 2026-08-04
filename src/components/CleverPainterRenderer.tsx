@@ -38,11 +38,18 @@ export default function CleverPainterRenderer({
 
     (async () => {
       try {
-        // Dynamic import keeps the library out of the initial bundle
-        const cpMod = await import('../../clever-painter/index.js' as any);
+        // Dynamic import keeps the library out of the initial bundle.
+        // Import ONLY the two modules we need (engine core + built-in commands)
+        // instead of the barrel (index.js) — the barrel also pulls in
+        // io/WebSocketClient.js & utils/math.js, so one failing module there
+        // used to break the whole import chain and no diagram would render.
+        const [cpCore, cpCmds] = await Promise.all([
+          import('../../clever-painter/core/GraphicsEngine.js' as any),
+          import('../../clever-painter/commands/builtin.js' as any),
+        ]);
         if (cancelled) return;
-        const Engine = cpMod.GraphicsEngine ?? cpMod.default?.GraphicsEngine;
-        const register = cpMod.registerBuiltinCommands ?? cpMod.default?.registerBuiltinCommands;
+        const Engine = cpCore.GraphicsEngine ?? cpCore.default?.GraphicsEngine;
+        const register = cpCmds.registerBuiltinCommands ?? cpCmds.default?.registerBuiltinCommands;
         if (!Engine || !register) throw new Error('clever-painter: missing exports');
 
         const engine = new Engine(canvas, { width: 720, height: 460, bgColor: '#ffffff' });
@@ -60,6 +67,9 @@ export default function CleverPainterRenderer({
           onResultRef.current(png);
         }
       } catch (e: any) {
+        // Diagnostic log — shows the full error in the browser console when a
+        // diagram fails to render (helps distinguish import failures from draw errors)
+        console.error('clever-painter: render failed', e);
         if (!cancelled) onErrorRef.current?.(e?.message || 'خطأ في رسم clever-painter');
       }
     })();
