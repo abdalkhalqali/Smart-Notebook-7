@@ -609,6 +609,88 @@ async function generateContentWithRetryAndFallback(
   throw primaryError;
 }
 
+// ── Drawing AI executor — Phase 1: honor ANY provider key; Phase 2: cost-efficient free/cheap models ──
+async function executeDrawingRequest(
+  req: express.Request,
+  opts: { systemPrompt: string; userPrompt: string; jsonMode: boolean }
+): Promise<string> {
+  const provider = ((req.headers["x-custom-provider"] as string) || "gemini").trim();
+  const customKey = ((req.headers["x-custom-api-key"] as string) || "").trim();
+  const customModel = ((req.headers["x-custom-model"] as string) || "").trim();
+  const endpointUrl = ((req.headers["x-custom-endpoint-url"] as string) || "").trim();
+
+  // Server key fallback per provider (KeyPools rotate automatically on quota exhaustion)
+  const serverKey =
+    provider === "gemini" ? geminiPool.current()
+    : provider === "openrouter" ? openrouterPool.current()
+    : provider === "huggingface" ? hfPool.current()
+    : provider === "openai" ? openaiPool.current()
+    : provider === "groq" ? groqPool.current()
+    : provider === "deepseek" ? deepseekPool.current()
+    : "";
+  const key = customKey || serverKey;
+  if (!key) throw new Error("API_KEY_MISSING");
+
+  // Cost-efficient defaults (free tier / pennies) per provider — override via x-custom-model
+  const defaultModel =
+    provider === "gemini" ? "gemini-2.5-flash"
+    : provider === "openrouter" ? "openai/gpt-oss-20b:free"
+    : provider === "huggingface" ? "Qwen/Qwen2.5-72B-Instruct"
+    : provider === "openai" ? "gpt-4o-mini"
+    : provider === "groq" ? "llama-3.3-70b-versatile"
+    : provider === "deepseek" ? "deepseek-chat"
+    : "gpt-4o-mini";
+  const model = customModel || defaultModel;
+
+  const strict = opts.jsonMode
+    ? `${opts.userPrompt}\n\nSTRICT INSTRUCTION: Output ONLY raw JSON with NO preamble, NO conversational text, and NO markdown ticks or code blocks.`
+    : opts.userPrompt;
+
+  if (provider === "gemini") {
+    const ai = new GoogleGenAI({ apiKey: key, httpOptions: { headers: { "User-Agent": "aistudio-build" } } });
+    const config: any = { thinkingConfig: { thinkingBudget: 0 } };
+    if (opts.jsonMode) config.responseMimeType = "application/json";
+    const response = await generateContentWithRetryAndFallback(ai, {
+      model,
+      contents: `${opts.systemPrompt}\n\n${strict}`,
+      config,
+    });
+    return response.text || "";
+  }
+
+  const compatUrl =
+    provider === "openrouter" ? "https://openrouter.ai/api/v1/chat/completions"
+    : provider === "openai" ? "https://api.openai.com/v1/chat/completions"
+    : provider === "groq" ? "https://api.groq.com/openai/v1/chat/completions"
+    : provider === "deepseek" ? "https://api.deepseek.com/v1/chat/completions"
+    : provider === "huggingface" ? "https://api-inference.huggingface.co/v1/chat/completions"
+    : endpointUrl;
+  if (!compatUrl) throw new Error("CUSTOM_ENDPOINT_MISSING");
+
+  const payload: any = {
+    model,
+    messages: [
+      { role: "system", content: opts.systemPrompt },
+      { role: "user", content: strict },
+    ],
+    max_tokens: opts.jsonMode ? 800 : 1500,
+    temperature: opts.jsonMode ? 0 : 0.4,
+  };
+  if (opts.jsonMode) payload.response_format = { type: "json_object" };
+
+  const resp = await fetch(compatUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${key}` },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`${provider} ${resp.status}: ${errText.slice(0, 200)}`);
+  }
+  const data: any = await resp.json();
+  return (data.choices?.[0]?.message?.content || "").trim();
+}
+
 // Memory caches for PDF.js scripts
 let pdfjsCache: string | null = null;
 let pdfWorkerCache: string | null = null;
@@ -2366,12 +2448,6 @@ app.post("/api/ai/clever-painter-command", async (req, res) => {
     const { text } = req.body || {};
     if (!text?.trim()) return res.json({ command: null });
 
-    const customKey = (req.headers["x-custom-api-key"] as string || "").trim();
-    const apiKey = customKey || getServerGeminiKey();
-    if (!apiKey) return res.json({ command: null, error: "no_api_key" });
-
-    const ai = new GoogleGenAI({ apiKey, httpOptions: { headers: { "User-Agent": "aistudio-build" } } });
-
     const prompt = `أنت محلل نصوص علمية ومولّد أوامر رسوميات. لديك مكتبة رسومات (clever-painter) تدعم الأنواع التالية:
 
 1. circuit — دوائر كهربائية
@@ -2403,9 +2479,6 @@ app.post("/api/ai/clever-painter-command", async (req, res) => {
    أنواع المساند: pinned|roller|fixed  ، أنواع الأحمال: point|distributed|moment
    {"action":"draw","type":"beam","beamLength":400,"title":"كمرة بمساند","supports":[{"position":0,"type":"pinned"},{"position":1,"type":"roller"}],"loads":[{"position":0.5,"type":"point","magnitude":15,"label":"F=15kN"},{"position":0,"type":"distributed","magnitude":8,"label":"8kN/m"}]}
 
-النص المراد تحليله:
-"${text.replace(/"/g, "'").slice(0, 800)}"
-
 القواعد:
 - إذا كان النص يتحدث عن أو يطلب رسم أي مما سبق → أرجع JSON الأمر المناسب مع قيم واقعية ومنطقية
 - اخترع قيماً معقولة إن لم تُذكر بالنص (مثل: battery voltage=12, resistor=100Ω, amplitude=70...)
@@ -2414,27 +2487,28 @@ app.post("/api/ai/clever-painter-command", async (req, res) => {
 - إذا لم يكن النص ذا صلة برسم فيزيائي/هندسي محدد → أرجع {"command":null}
 - أرجع JSON صحيح فقط`;
 
-    const result: any = await generateContentWithRetryAndFallback(ai, {
-      model: "gemini-2.5-flash",
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      config: {
-        thinkingConfig: { thinkingBudget: 0 },
-        responseMimeType: "application/json",
-      },
+    const responseText = await executeDrawingRequest(req, {
+      systemPrompt: prompt,
+      userPrompt: `النص المراد تحليله:\n"${text.replace(/"/g, "'").slice(0, 800)}"`,
+      jsonMode: true,
     });
 
     let parsed: any = null;
-    try { parsed = JSON.parse(result?.text || "{}"); } catch (_) {}
+    const clean = responseText.replace(/```json\s*/gi, "").replace(/```/g, "").trim();
+    try { parsed = JSON.parse(clean || "{}"); } catch (_) {}
 
     // Support both {"action":"draw",...} and {"command":{...}} wrapper
     const cmd = parsed?.action ? parsed : (parsed?.command || null);
 
-    console.log(`[clever-painter] type=${cmd?.type ?? "none"} text="${text.slice(0, 60)}…"`);
+    console.log(`[clever-painter] provider=${((req.headers["x-custom-provider"] as string) || "gemini")} type=${cmd?.type ?? "none"} text="${text.slice(0, 60)}…"`);
     // Return both "cmd" (client expects) and "command" (legacy) for compatibility
     return res.json({ cmd, command: cmd });
   } catch (err: any) {
     console.error("[clever-painter-command] error:", err?.message);
-    return res.json({ cmd: null, command: null, error: "فشل توليد الأمر" });
+    const msg = err?.message || "";
+    if (msg.includes("API_KEY_MISSING")) return res.json({ cmd: null, command: null, error: "no_api_key" });
+    if (isQuotaError(err) || msg.includes("429")) return res.json({ cmd: null, command: null, error: "quota" });
+    return res.json({ cmd: null, command: null, error: "server_error", message: msg });
   }
 });
 
@@ -2933,30 +3007,28 @@ Drawing rules — very important:
       const { prompt } = req.body as { prompt?: string };
       if (!prompt?.trim()) return res.json({ error: "no_prompt" });
 
-      const ai = getAI(req);
-      const response = await generateContentWithRetryAndFallback(ai, {
-        model: "gemini-2.5-flash",
-        contents: `أنت رسام SVG متخصص في الرسوم العلمية والهندسية والتقنية.
-المستخدم يريد رسم: "${prompt.trim()}"
+      let raw = "";
+      let attempt = 0;
+      while (attempt < 2) {
+        attempt++;
+        const responseText = await executeDrawingRequest(req, {
+          systemPrompt: attempt === 1
+            ? `أنت رسام SVG متخصص في الرسوم العلمية والهندسية والتقنية.\nالمستخدم يريد رسم: "${prompt.trim()}"\n\nأنشئ SVG دقيق ومفصل يمثل هذا الطلب تماماً. اتبع هذه القواعد بدقة:\n- الناتج يجب أن يكون SVG نظيف 100% يبدأ بـ <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600">\n- استخدم ألوان احترافية: خلفية بيضاء أو فاتحة، خطوط وأشكال بألوان واضحة\n- للدوائر الكهربائية: ارسم المكونات بالرموز القياسية (بطارية ╫, مقاومة zig-zag, مكثف ||, مصباح ⊗, مفتاح /, diode ▷|)\n- للمخططات العلمية والرياضية: دقة هندسية مع تسميات وأرقام\n- للتشريح والأحياء: رسوم تفصيلية مع مؤشرات (lines pointing to parts)\n- للهندسة المعمارية والميكانيكية: قياسات وتفاصيل دقيقة\n- أضف نصوص توضيحية مناسبة بالعربية أو الإنجليزية حسب السياق\n- لا تُضف أي نص أو شرح خارج SVG — فقط SVG نقي من أول حرف لآخر حرف`
+            : `أرجع فقط SVG نقياً يبدأ بـ <svg وينتهي بـ </svg> بلا أي markdown أو أسوار كود أو نص أو شرح.`,
+          userPrompt: attempt === 1 ? `ارسم: "${prompt.trim()}"` : `أرجع SVG نقياً فقط لهذا الطلب: "${prompt.trim()}"`,
+          jsonMode: false,
+        });
 
-أنشئ SVG دقيق ومفصل يمثل هذا الطلب تماماً. اتبع هذه القواعد بدقة:
-- الناتج يجب أن يكون SVG نظيف 100% يبدأ بـ <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 350">
-- استخدم ألوان احترافية: خلفية بيضاء أو فاتحة، خطوط وأشكال بألوان واضحة
-- للدوائر الكهربائية: ارسم المكونات بالرموز القياسية (بطارية ╫, مقاومة zig-zag, مكثف ||, مصباح ⊗, مفتاح /, diode ▷|)
-- للمخططات العلمية والرياضية: دقة هندسية مع تسميات وأرقام
-- للتشريح والأحياء: رسوم تفصيلية مع مؤشرات (lines pointing to parts)
-- للهندسة المعمارية والميكانيكية: قياسات وتفاصيل دقيقة
-- أضف نصوص توضيحية مناسبة بالعربية أو الإنجليزية حسب السياق
-- لا تُضف أي نص أو شرح خارج SVG — فقط SVG نقي من أول حرف لآخر حرف`,
-        config: { thinkingConfig: { thinkingBudget: 0 } }
-      });
+        raw = responseText.replace(/```(?:svg|xml)?\s*/gi, "").replace(/```/g, "").trim();
+        const m = raw.match(/<svg[\s\S]*?<\/svg>/i);
+        if (m) return res.json({ svg: m[0] });
+      }
 
-      const raw = response.text || "";
-      const match = raw.match(/<svg[\s\S]*?<\/svg>/i);
-      if (!match) return res.json({ error: "no_svg", raw: raw.slice(0, 300) });
-
-      res.json({ svg: match[0] });
+      return res.json({ error: "no_svg", raw: raw.slice(0, 300) });
     } catch (err: any) {
+      const msg = err?.message || "";
+      if (msg.includes("API_KEY_MISSING")) return res.json({ error: "no_api_key" });
+      if (isQuotaError(err) || msg.includes("429")) return res.json({ error: "quota" });
       console.error("[draw-svg] error:", err?.message);
       res.status(500).json({ error: "server_error", message: err?.message });
     }
