@@ -2394,9 +2394,10 @@ app.post("/api/ai/clever-painter-command", async (req, res) => {
    أمثلة: "0.5*x+10", "x*x/100", "Math.cos(x/25)*70", "Math.exp(-x*x/8000)*80"
 
 6. mechanical — عناصر ميكانيكية
-   أنواع: gear|lever|pulley|spring
+   أنواع: gear|lever|pulley|spring|pendulum
    {"action":"draw","type":"mechanical","title":"تروس","parts":[{"type":"gear","radius":50,"teeth":16},{"type":"gear","radius":30,"teeth":10}]}
    {"action":"draw","type":"mechanical","title":"نابض","parts":[{"type":"spring","x":200,"y":230},{"type":"pulley","radius":40,"x":500,"y":230}]}
+   {"action":"draw","type":"mechanical","title":"البندول البسيط","parts":[{"type":"pendulum","length":160,"angle":25,"label":"L"}]}
 
 7. beam — كمرات هندسية
    أنواع المساند: pinned|roller|fixed  ، أنواع الأحمال: point|distributed|moment
@@ -2408,6 +2409,7 @@ app.post("/api/ai/clever-painter-command", async (req, res) => {
 القواعد:
 - إذا كان النص يتحدث عن أو يطلب رسم أي مما سبق → أرجع JSON الأمر المناسب مع قيم واقعية ومنطقية
 - اخترع قيماً معقولة إن لم تُذكر بالنص (مثل: battery voltage=12, resistor=100Ω, amplitude=70...)
+- أي ذكر لـ بندول/نواس/pendulum → ارسم mechanical مع parts:[{"type":"pendulum","length":160,"angle":25,"label":"L"}] (length بطول الخيط، angle بزاوية الميل، واستخرج القيم من النص إن ذُكرت)
 - استخرج أي قيم رقمية أو مكونات مذكورة من النص وضمّنها في الأمر
 - إذا لم يكن النص ذا صلة برسم فيزيائي/هندسي محدد → أرجع {"command":null}
 - أرجع JSON صحيح فقط`;

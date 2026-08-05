@@ -260,6 +260,125 @@ export function drawMechanical(engine, params = {}) {
         break;
       }
 
+      case 'pendulum': {
+        // Pendulum — fixed pivot, string at an angle, bob (mass)
+        const angleDeg = part.angle !== undefined ? part.angle : 25;
+        const theta = (angleDeg * Math.PI) / 180;
+        const bobRadius = (part.bobRadius || 16) * scale;
+        const color = part.color || '#7c3aed';
+        const maxLen = Math.max(40, pos.y - 70 * scale); // keep whole pendulum on canvas
+        const pendLen = Math.min((part.length || 160) * scale, maxLen);
+        const pivotX = pos.x;
+        const pivotY = pos.y - pendLen;
+        const bobX = pivotX + pendLen * Math.sin(theta);
+        const bobY = pivotY + pendLen * Math.cos(theta);
+
+        // Ceiling support bar + pivot pin
+        ctx.fillStyle = '#64748b';
+        ctx.fillRect(pivotX - 32 * scale, pivotY - 9 * scale, 64 * scale, 6 * scale);
+        ctx.fillStyle = '#1e293b';
+        ctx.beginPath();
+        ctx.arc(pivotX, pivotY, 4 * scale, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Dashed vertical equilibrium line
+        ctx.strokeStyle = '#94a3b8';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 4]);
+        ctx.beginPath();
+        ctx.moveTo(pivotX, pivotY);
+        ctx.lineTo(pivotX, pivotY + pendLen + bobRadius + 16 * scale);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // String
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2.5 * scale;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(pivotX, pivotY);
+        ctx.lineTo(bobX, bobY);
+        ctx.stroke();
+
+        // Bob (mass)
+        ctx.fillStyle = part.fill || '#8b5cf6';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(bobX, bobY, bobRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Angle arc θ (between string and vertical) with label
+        if (showLabels && part.showAngle !== false) {
+          const arcR = Math.min(pendLen * 0.4, 60 * scale);
+          ctx.strokeStyle = '#f59e0b';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.arc(pivotX, pivotY, arcR, Math.PI / 2 - theta, Math.PI / 2);
+          ctx.stroke();
+          const am = Math.PI / 2 - theta / 2;
+          ctx.fillStyle = '#d97706';
+          ctx.font = `${fontSize}px 'Tajawal', Arial, sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.fillText('θ', pivotX + (arcR + 14 * scale) * Math.cos(am), pivotY + (arcR + 14 * scale) * Math.sin(am));
+        }
+
+        // Oscillation double-arrow beside the bob
+        if (part.oscillate !== false) {
+          const oscR = bobRadius + 12 * scale;
+          ctx.strokeStyle = '#ef4444';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(bobX, bobY, oscR, -0.55, 0.55);
+          ctx.stroke();
+          for (const dir of [-1, 1]) {
+            const a = dir * 0.55;
+            const ax = bobX + oscR * Math.cos(a);
+            const ay = bobY + oscR * Math.sin(a);
+            ctx.fillStyle = '#ef4444';
+            ctx.beginPath();
+            ctx.moveTo(ax, ay);
+            ctx.lineTo(ax - 7 * scale * Math.cos(a - dir * 0.55), ay - 7 * scale * Math.sin(a - dir * 0.55));
+            ctx.lineTo(ax - 7 * scale * Math.cos(a + dir * 0.55), ay - 7 * scale * Math.sin(a + dir * 0.55));
+            ctx.closePath();
+            ctx.fill();
+          }
+        }
+
+        // Weight arrow (mg) downward beside the bob
+        if (showLabels && part.showWeight !== false) {
+          const wLen = 34 * scale;
+          const wX = bobX + bobRadius + 12 * scale;
+          const wTop = bobY - wLen / 2;
+          const wBot = bobY + wLen / 2;
+          ctx.strokeStyle = '#16a34a';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(wX, wTop);
+          ctx.lineTo(wX, wBot);
+          ctx.stroke();
+          ctx.fillStyle = '#16a34a';
+          ctx.beginPath();
+          ctx.moveTo(wX, wBot + 4 * scale);
+          ctx.lineTo(wX - 5 * scale, wBot - 2 * scale);
+          ctx.lineTo(wX + 5 * scale, wBot - 2 * scale);
+          ctx.closePath();
+          ctx.fill();
+          ctx.font = `bold ${fontSize - 2}px 'Tajawal', Arial, sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.fillText('mg', wX, wTop - 6 * scale);
+        }
+
+        // Part label near bob
+        if (showLabels && part.label) {
+          ctx.fillStyle = '#1e293b';
+          ctx.font = `${fontSize - 2}px 'Tajawal', Arial, sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.fillText(part.label, bobX, bobY - bobRadius - 8 * scale);
+        }
+        break;
+      }
+
       default: {
         // Unknown part — draw a box with label
         ctx.strokeStyle = part.color || '#6b7280';
