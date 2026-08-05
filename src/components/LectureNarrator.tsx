@@ -1115,6 +1115,9 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
       if(data.error==='no_api_key'){
         setChartErrorMsg('🔑 أضف مفتاح API أولاً (الإعدادات ← مفاتيح API) ثم أعد المحاولة');
         setTimeout(()=>setChartErrorMsg(''),6000);
+      } else if(data.error==='quota'||data.error==='rate_limit'){
+        setChartErrorMsg('⚠️ نفدت الحصة المجانية للمفتاح اليوم — أضف مفتاحك الخاص من الإعدادات (⚙️) أو جرّب غداً');
+        setTimeout(()=>setChartErrorMsg(''),8000);
       }
       return false; // ليست رسمة فيزيائية → نتابع باقي المسارات (مخطط/SVG)
     }catch{
@@ -1342,6 +1345,11 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
         setSvgContent(svgData.svg);
         setCurrentChart(null);
         setIsDrawingChart(false);
+      } else if(svgData.error==='quota'||svgData.error==='rate_limit'){
+        setIsDrawingChart(false);
+        userDrawLockRef.current=false;
+        setChartErrorMsg('⚠️ نفدت الحصة المجانية للمفتاح اليوم — أضف مفتاحك الخاص من الإعدادات (⚙️) أو جرّب غداً');
+        setTimeout(()=>setChartErrorMsg(''),8000);
       } else {
         setIsDrawingChart(false);
         userDrawLockRef.current=false;
