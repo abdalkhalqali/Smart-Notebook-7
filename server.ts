@@ -5,6 +5,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Modality, Type } from "@google/genai";
 import "dotenv/config";
+import { matchTemplate, renderTemplate, templateParamPrompt, templates } from "./drawingTemplates";
 
 // ── Multi-Key Pool: rotates automatically when a key hits quota ───────────────
 // Reads GEMINI_API_KEY, GEMINI_API_KEY_2, GEMINI_API_KEY_3 … from env.
@@ -543,7 +544,7 @@ function makeGeminiClient(apiKey: string) {
 
 // 🌐 Seamless Fallback + Key Rotation:
 //   1. Retry on temporary 503/429 (backoff).
-//   2. If the primary model is still failing → switch gemini-2.5-flash → gemini-2.0-flash.
+//   2. If the primary model is still failing → switch gemini-2.5-flash → gemini-2.5-flash-lite.
 //   3. If it's a true quota exhaustion AND we have more server keys → rotate to the next key.
 //   4. After rotating, retry both model variants with the new key.
 // Rotation is attempted for any quota error when the pool has >1 key available.
@@ -581,9 +582,9 @@ async function generateContentWithRetryAndFallback(
 
   // ── Fallback 1: switch gemini-2.5-flash → gemini-2.0-flash ────
   if (p.model === "gemini-2.5-flash") {
-    console.warn("[Gemini Fallback] gemini-2.5-flash busy/quota. Trying gemini-2.0-flash…");
+    console.warn("[Gemini Fallback] gemini-2.5-flash busy/quota. Trying gemini-2.5-flash-lite…");
     try {
-      return await callWithRetry(() => ai.models.generateContent({ ...p, model: "gemini-2.0-flash" }));
+      return await callWithRetry(() => ai.models.generateContent({ ...p, model: "gemini-2.5-flash-lite" }));
     } catch (_) { /* continue to key rotation */ }
   }
 
@@ -599,7 +600,7 @@ async function generateContentWithRetryAndFallback(
         // Also try the model fallback on the new key
         if (p.model === "gemini-2.5-flash") {
           try {
-            return await callWithRetry(() => newAi.models.generateContent({ ...p, model: "gemini-2.0-flash" }));
+            return await callWithRetry(() => newAi.models.generateContent({ ...p, model: "gemini-2.5-flash-lite" }));
           } catch (_) {}
         }
       }
@@ -608,6 +609,85 @@ async function generateContentWithRetryAndFallback(
 
   throw primaryError;
 }
+
+// ══════════════════════════════════════════════════════════════════
+// Template Drawing — قوالب الرسم الجاهزة (20 قالباً، مجانية وفورية)
+// يُستخرج من مكتبة drawingTemplates (مطابقة محلية بدون استهلاك حصة)
+// ثم يستخرج النموذج المعاملات عبر نموذج اقتصادي ويرتد للافتراضي عند الفشل
+// ══════════════════════════════════════════════════════════════════
+async function extractTemplateParams(tpl: any, text: string, req: express.Request): Promise<Record<string, any>> {
+  try {
+    const ai = getAI(req);
+    const resp = await generateContentWithRetryAndFallback(ai, {
+      model: "gemini-2.5-flash-lite",
+      contents: [{ role: "user", parts: [{ text: templateParamPrompt(tpl, text) }] }],
+      config: { thinkingConfig: { thinkingBudget: 0 }, responseMimeType: "application/json" },
+    });
+    const parsed = JSON.parse((resp?.text || "{}").replace(/```json|```/g, "").trim());
+    return typeof parsed === "object" && parsed ? parsed : {};
+  } catch (e: any) {
+    console.warn("[draw-template] param extraction skipped (defaults used):", e?.message?.slice(0, 90));
+    return {};
+  }
+}
+
+// استدعاء مباشر لنقطة القالب — بالنص (مطابقة ذكية) أو بالمعرّف (id) من معرض القوالب
+app.post("/api/ai/draw-template", async (req, res) => {
+  try {
+    const { text, id } = req.body || {};
+    let tpl: (typeof templates)[number] | null = null;
+    let extractText = "";
+    if (id) {
+      tpl = templates.find((t) => t.id === id) ?? null;
+      extractText = tpl ? `${tpl.nameAr} ${text || ""}`.trim() : "";
+    } else if (text?.trim()) {
+      tpl = matchTemplate(text);
+      extractText = text;
+    }
+    if (!tpl) return res.json({ matched: false });
+    const params = await extractTemplateParams(tpl, extractText, req);
+    return res.json({
+      svg: renderTemplate(tpl, params),
+      matched: true,
+      template: tpl.id,
+      nameAr: tpl.nameAr,
+      params,
+    });
+  } catch (err: any) {
+    console.error("[draw-template] error:", err?.message);
+    res.status(500).json({ error: "server_error", message: err?.message });
+  }
+});
+
+// كتالوج القوالب العشرين — يعرضها معرض السبورة بنقرة واحدة (بدون استهلاك حصة)
+app.get("/api/ai/templates", (_req, res) => {
+  res.json({
+    templates: templates.map((t) => ({
+      id: t.id,
+      nameAr: t.nameAr,
+      keywords: t.keywords.slice(0, 8),
+    })),
+  });
+});
+
+// وسيط يسبق مسار draw-svg الأصلي: يجرب القوالب الجاهزة أولاً (مجانية وفورية)،
+// وإن لم يُطابق أي قالب يمرر الطلب للمسار الأصلي (الرسم الحر بالنموذج)
+app.use(async (req, res, next) => {
+  if (req.method !== "POST" || req.path !== "/api/ai/draw-svg") return next();
+  try {
+    const prompt = (req.body || {}).prompt;
+    if (!prompt?.trim()) return next();
+    const tpl = matchTemplate(prompt);
+    if (!tpl) return next();
+    const params = await extractTemplateParams(tpl, prompt, req);
+    if (!res.headersSent) {
+      return res.json({ svg: renderTemplate(tpl, params), template: tpl.id, source: "template" });
+    }
+  } catch (e: any) {
+    console.warn("[draw-svg] template render failed, falling back to free SVG:", e?.message?.slice(0, 90));
+  }
+  next();
+});
 
 // Memory caches for PDF.js scripts
 let pdfjsCache: string | null = null;

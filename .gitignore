@@ -7,6 +7,9 @@ coverage/
 .env*
 !.env.example
 
+# TypeScript build info
+*.tsbuildinfo
+
 # Capacitor generated build artifacts (not source files)
 android/app/src/main/assets/public/
 ios/App/App/public/

@@ -13,52 +13,7 @@ import { arabicToUnicode } from '../utils/mathUtils';
 import { getActiveRequestHeaders } from '../utils/aiKeys';
 import { resolveApiUrl } from '../utils/apiBase';
 import { motion } from 'motion/react';
-
-// ── كشف أوامر الرسم العلمي/الهندسي في النص (دائرة كهربائية، موجة، قوى، مجال، ترس، كمرة…) ──
-const CLEVER_PAINTER_CMD = /دائرة\s*كهرب|دارة\s*كهرب|دائرة\s*RC|دائرة\s*RL|دائرة\s*LC|ارسم.*مقاوم.*بطار|ارسم.*بطار.*مقاوم|توصيل.*بطارية|بطارية.*مقاوم|مكثف.*كهرب|محث.*كهرب|موجة\s*(جيبية|مربعة|مثلثة|نبضية|سينية|منشارية|كهرومغناطيسية|صوتية|ضوئية)|تمثيل\s*موجة|رسم\s*موجة|مخطط\s*القوى|free\s*body|diagram.*القوى|قوى.*على.*جسم|رسم.*القوى|مجال\s*(كهربائي|مغناطيسي)|خطوط\s*المجال|شحنتا?\s*(موجبة|سالبة|نقطية|كهربائية)|قطبا?\s*(مغناطيس|شمالي|جنوبي)|مغناطيس.*قطب|تروس\s*ميكانيكية|ارسم.*تروس|نابض\s*ميكانيكي|بكرة\s*ميكانيكية|بندول|نواس|pendulum|كمرة\s*(هندسية|خرسانية)|عارضة\s*(هندسية|مثبتة)|circuit|sine\s*wave|square\s*wave|electric\s*field|magnetic\s*field|free\s*body\s*diagram/i;
-
-interface Point { x: number; y: number; }
-
-interface DrawingPath {
-  id: string;
-  points: Point[];
-  color: string;
-  width: number;
-  tool: 'pen' | 'highlighter' | 'eraser';
-}
-
-interface DrawnShape {
-  id: string;
-  type: 'line' | 'rect' | 'circle' | 'triangle' | 'arrow';
-  x1: number; y1: number; x2: number; y2: number;
-  color: string; width: number;
-}
-
-interface TextItem {
-  id: string; x: number; y: number;
-  text: string; color: string; fontSize: number;
-}
-
-// رسمة مولّدة عبر clever-painter تُعرض كصورة على السبورة
-interface BoardImage {
-  id: string; x: number; y: number; w: number; h: number;
-  dataUrl: string;
-}
-
-type DrawTool = 'pen' | 'highlighter' | 'eraser' | 'line' | 'rect' | 'circle' | 'triangle' | 'arrow';
-
-interface HistorySnapshot {
-  paths: DrawingPath[];
-  shapes: DrawnShape[];
-  texts: TextItem[];
-  images: BoardImage[];
-}
-
-interface SmartBoardProps {
-  isDarkMode?: boolean;
-  onSave?: (dataUrl: string) => void;
-  lectureTitle?: string;
-}
+import { CLEVER_PAINTER_CMD, svgToPng, getTouchDist, getTouchMid, clamp, renderSmoothPath, renderShape, Point, DrawingPath, DrawnShape, TextItem, BoardImage, DrawTool, HistorySnapshot, SmartBoardProps } from './smartBoardShared';
 
 export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = 'السبورة الذكية' }: SmartBoardProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -114,6 +69,18 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
   const [showCmdInput, setShowCmdInput] = useState(false);
   const [cmdText, setCmdText] = useState('');
   const [cpCmd, setCpCmd] = useState<CpCmd | null>(null);
+  // قائمة القوالب العشرين (معرض القوالب) — تُحمَّل من الخادم عند فتح اللوحة
+  const [tplList, setTplList] = useState<{ id: string; nameAr: string; keywords?: string[] }[]>([]);
+
+  useEffect(() => {
+    if (!showCmdInput) return;
+    let alive = true;
+    fetch(resolveApiUrl('/api/ai/templates'))
+      .then(r => r.json())
+      .then(d => { if (alive && Array.isArray(d.templates)) setTplList(d.templates); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [showCmdInput]);
   const [boardNotice, setBoardNotice] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null);
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -215,97 +182,6 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
   };
 
   // ── دالة مساعدة للـ Pinch ────────────────────────────────────────
-  const getTouchDist = (touches: React.TouchList) => {
-    if (touches.length < 2) return 0;
-    const dx = touches[0].clientX - touches[1].clientX;
-    const dy = touches[0].clientY - touches[1].clientY;
-    return Math.hypot(dx, dy);
-  };
-
-  // حساب منتصف نقطتي لمس
-  const getTouchMid = (touches: React.TouchList) => {
-    if (touches.length < 2) return { x: 0, y: 0 };
-    return {
-      x: (touches[0].clientX + touches[1].clientX) / 2,
-      y: (touches[0].clientY + touches[1].clientY) / 2,
-    };
-  };
-
-  // دالة مساعدة لحصر القيم
-  const clamp = (val: number, min: number, max: number) => Math.min(max, Math.max(min, val));
-
-  // ─── Smooth Bezier path renderer ────────────────────────────────────
-  const renderSmoothPath = (ctx: CanvasRenderingContext2D, pts: Point[]) => {
-    if (pts.length < 2) return;
-    ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y);
-    if (pts.length === 2) {
-      ctx.lineTo(pts[1].x, pts[1].y);
-    } else {
-      for (let i = 1; i < pts.length - 1; i++) {
-        const midX = (pts[i].x + pts[i + 1].x) / 2;
-        const midY = (pts[i].y + pts[i + 1].y) / 2;
-        ctx.quadraticCurveTo(pts[i].x, pts[i].y, midX, midY);
-      }
-      ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
-    }
-    ctx.stroke();
-  };
-
-  // ─── Shape drawing on ctx ───────────────────────────────────────────
-  const renderShape = (ctx: CanvasRenderingContext2D, s: DrawnShape) => {
-    ctx.beginPath();
-    ctx.strokeStyle = s.color;
-    ctx.lineWidth = s.width;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    const { x1, y1, x2, y2 } = s;
-    const w = x2 - x1;
-    const h = y2 - y1;
-
-    switch (s.type) {
-      case 'line':
-        ctx.moveTo(x1, y1);
-        ctx.lineTo(x2, y2);
-        break;
-      case 'rect':
-        ctx.strokeRect(x1, y1, w, h);
-        break;
-      case 'circle': {
-        const rx = Math.abs(w) / 2;
-        const ry = Math.abs(h) / 2;
-        const cx = x1 + w / 2;
-        const cy = y1 + h / 2;
-        ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-        ctx.stroke();
-        return;
-      }
-      case 'triangle':
-        ctx.moveTo(x1 + w / 2, y1);
-        ctx.lineTo(x2, y2);
-        ctx.lineTo(x1, y2);
-        ctx.closePath();
-        break;
-      case 'arrow': {
-        const angle = Math.atan2(y2 - y1, x2 - x1);
-        const headLen = Math.min(20, Math.hypot(w, h) * 0.3);
-        ctx.moveTo(x1, y1);
-        ctx.lineTo(x2, y2);
-        ctx.moveTo(x2, y2);
-        ctx.lineTo(
-          x2 - headLen * Math.cos(angle - Math.PI / 6),
-          y2 - headLen * Math.sin(angle - Math.PI / 6)
-        );
-        ctx.moveTo(x2, y2);
-        ctx.lineTo(
-          x2 - headLen * Math.cos(angle + Math.PI / 6),
-          y2 - headLen * Math.sin(angle + Math.PI / 6)
-        );
-        break;
-      }
-    }
-    ctx.stroke();
-  };
 
   // ── دالة مساعدة لتطبيق zoom + pan transform ────────────────────
   const applyZoomTransform = (ctx: CanvasRenderingContext2D) => {
@@ -843,34 +719,6 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
   };
 
   // ── توليد أمر الرسم عبر الخادم ثم رسمه على السبورة ────────────────
-  const handleGenerate = useCallback(async (text: string) => {
-    const clean = text.trim();
-    if (!clean) return;
-    setIsGenerating(true);
-    setShowCmdInput(false);
-    try {
-      const res = await fetch(resolveApiUrl('/api/ai/clever-painter-command'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getActiveRequestHeaders() },
-        body: JSON.stringify({ text: clean }),
-      });
-      const data = await res.json();
-      const cmd = data.cmd || data.command;
-      if (data.error === 'no_api_key') {
-        showNotice('err', '🔑 أضف مفتاح API أولاً (الإعدادات ← مفاتيح API) ثم أعد المحاولة');
-      } else if (cmd && cmd.action === 'draw') {
-        setCpCmd({ ...cmd });
-        setCmdText('');
-      } else {
-        showNotice('err', '🤔 لم يتم التعرف على رسمة علمية — جرّب: "ارسم دائرة كهربائية ببطارية 12V"');
-      }
-    } catch {
-      showNotice('err', 'خطأ في الاتصال بخدمة الرسم');
-    } finally {
-      setIsGenerating(false);
-    }
-  }, []);
-
   // ── إضافة الرسمة المولّدة إلى السبورة (في المنطقة المرئية) ────────
   const addGeneratedImage = useCallback((png: string) => {
     const canvas = canvasRef.current;
@@ -879,9 +727,9 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
     const s = scaleRef.current;
     const visibleLeft = -off.x / s;
     const visibleTop = -off.y / s;
-    // حجم البطاقة: 380×243 تقريباً (بنسبة 720×460 الأصلية)
+    // حجم البطاقة: 380×271 تقريباً (بنسبة القوالب 560×400)
     const w = 380;
-    const h = Math.round((w * 460) / 720);
+    const h = Math.round((w * 400) / 560);
     const id = `img-${Date.now()}`;
     const item: BoardImage = { id, x: visibleLeft + 40, y: visibleTop + 40, w, h, dataUrl: png };
     const newImages = [...images, item];
@@ -896,6 +744,96 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
     imgEl.src = png;
     showNotice('ok', '🎨 تم رسم الشكل على السبورة — اضغط مرتين على الرسمة لحذفها');
   }, [images, paths, shapes, texts, pushHistory, redrawCanvas]);
+
+  // ── رسم قالب جاهز مباشرة بالمعرّف (من معرض القوالب — مجاني وفوري) ──
+  const drawTemplateById = useCallback(async (id: string, nameAr: string) => {
+    setIsGenerating(true);
+    setShowCmdInput(false);
+    try {
+      const res = await fetch(resolveApiUrl('/api/ai/draw-template'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getActiveRequestHeaders() },
+        body: JSON.stringify({ id }),
+      });
+      const data = await res.json();
+      if (data.matched && data.svg) {
+        const png = await svgToPng(data.svg);
+        addGeneratedImage(png);
+        showNotice('ok', `🎨 تم رسم: ${nameAr}`);
+      } else {
+        showNotice('err', '🤔 تعذّر رسم هذا القالب — جرّب قالباً آخر');
+      }
+    } catch {
+      showNotice('err', 'خطأ في الاتصال بخدمة الرسم');
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [addGeneratedImage, showNotice]);
+
+  const handleGenerate = useCallback(async (text: string) => {
+    const clean = text.trim();
+    if (!clean) return;
+    setIsGenerating(true);
+    setShowCmdInput(false);
+    try {
+      // ── 1) القوالب الجاهزة أولاً: مجانية وفورية وأسلاك توصيل مضمونة ──
+      //    (دائرة، بندول، عدسة، قوى، موجة… تُطابق محلياً بدون استهلاك الحصة)
+      try {
+        const tplRes = await fetch(resolveApiUrl('/api/ai/draw-template'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...getActiveRequestHeaders() },
+          body: JSON.stringify({ text: clean }),
+        });
+        const tplData = await tplRes.json();
+        if (tplData.matched && tplData.svg) {
+          const png = await svgToPng(tplData.svg);
+          addGeneratedImage(png);
+          setCmdText('');
+          return;
+        }
+      } catch { /* ننتقل للمسار الذكي */ }
+
+      // ── 2) ثم المسار الذكي: clever-painter (أمر JSON) ──
+      const res = await fetch(resolveApiUrl('/api/ai/clever-painter-command'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getActiveRequestHeaders() },
+        body: JSON.stringify({ text: clean }),
+      });
+      const data = await res.json();
+      const cmd = data.cmd || data.command;
+      if (data.error === 'no_api_key') {
+        showNotice('err', '🔑 أضف مفتاح API أولاً (الإعدادات ← مفاتيح API) ثم أعد المحاولة');
+      } else if (cmd && cmd.action === 'draw') {
+        setCpCmd({ ...cmd });
+        setCmdText('');
+      } else {
+        // ── 3) أخيراً: رسم حر عبر draw-svg (يرسم أي شيء) ──
+        try {
+          const svgRes = await fetch(resolveApiUrl('/api/ai/draw-svg'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...getActiveRequestHeaders() },
+            body: JSON.stringify({ prompt: clean }),
+          });
+          const svgData = await svgRes.json();
+          if (svgData.svg) {
+            const png = await svgToPng(svgData.svg);
+            addGeneratedImage(png);
+            setCmdText('');
+          } else {
+            showNotice('err', '🤔 لم يتم التعرف على رسمة علمية — جرّب: "ارسم دائرة كهربائية ببطارية 12V"');
+          }
+        } catch {
+          showNotice('err', '🤔 لم يتم التعرف على رسمة علمية — جرّب: "ارسم دائرة كهربائية ببطارية 12V"');
+        }
+      }
+    } catch {
+      showNotice('err', 'خطأ في الاتصال بخدمة الرسم');
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [addGeneratedImage, showNotice]);
+
+
 
   // ── إضافة نص الإملاء ─── في المنطقة المرئية + RTL/LTR + auto-scroll!
   const addDictatedText = useCallback((enhancedText: string, rawText: string, textColor?: string) => {
@@ -1290,6 +1228,26 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
                 : <>🎨 ارسم</>}
             </button>
           </div>
+          {tplList.length > 0 && (
+            <>
+              <div className={`mb-1.5 flex items-center gap-1 text-[10px] font-bold ${effectiveDark ? 'text-amber-300' : 'text-amber-600'}`}>
+                🗂️ معرض القوالب — مجانية وفورية (أسلاك التوصيل مضمونة)
+              </div>
+              <div className="mb-2 grid max-h-40 grid-cols-2 gap-1 overflow-y-auto pe-1">
+                {tplList.map(t => (
+                  <button
+                    key={t.id}
+                    onClick={() => handleGenerate(t.nameAr)}
+                    disabled={isGenerating}
+                    title={t.nameAr}
+                    className={`truncate rounded-lg border px-2 py-1 text-right text-[10px] transition-all hover:scale-[1.03] active:scale-95 ${effectiveDark ? 'border-slate-700 bg-slate-800/60 text-slate-200 hover:border-amber-400 hover:bg-slate-800' : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-amber-500 hover:bg-white'}`}
+                  >
+                    {t.nameAr}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
           <div className="mt-2 flex flex-wrap gap-1">
             {['دائرة كهربائية', 'موجة جيبية', 'مخطط القوى', 'مجال كهربائي', 'رسم بياني y=sin(x)', 'تروس'].map(sug => (
               <button key={sug} onClick={() => setCmdText(sug)}
