@@ -543,7 +543,7 @@ function makeGeminiClient(apiKey: string) {
 
 // 🌐 Seamless Fallback + Key Rotation:
 //   1. Retry on temporary 503/429 (backoff).
-//   2. If the primary model is still failing → switch gemini-2.5-flash → gemini-2.0-flash.
+//   2. If the primary model is still failing → switch gemini-2.5-flash → gemini-2.5-flash-lite.
 //   3. If it's a true quota exhaustion AND we have more server keys → rotate to the next key.
 //   4. After rotating, retry both model variants with the new key.
 // Rotation is attempted for any quota error when the pool has >1 key available.
@@ -579,11 +579,11 @@ async function generateContentWithRetryAndFallback(
     if (!isDemandOrQuota(error)) throw error; // auth / unknown → rethrow immediately
   }
 
-  // ── Fallback 1: switch gemini-2.5-flash → gemini-2.0-flash ────
+  // ── Fallback 1: switch gemini-2.5-flash → gemini-2.5-flash-lite ────
   if (p.model === "gemini-2.5-flash") {
-    console.warn("[Gemini Fallback] gemini-2.5-flash busy/quota. Trying gemini-2.0-flash…");
+    console.warn("[Gemini Fallback] gemini-2.5-flash busy/quota. Trying gemini-2.5-flash-lite…");
     try {
-      return await callWithRetry(() => ai.models.generateContent({ ...p, model: "gemini-2.0-flash" }));
+      return await callWithRetry(() => ai.models.generateContent({ ...p, model: "gemini-2.5-flash-lite" }));
     } catch (_) { /* continue to key rotation */ }
   }
 
@@ -599,7 +599,7 @@ async function generateContentWithRetryAndFallback(
         // Also try the model fallback on the new key
         if (p.model === "gemini-2.5-flash") {
           try {
-            return await callWithRetry(() => newAi.models.generateContent({ ...p, model: "gemini-2.0-flash" }));
+            return await callWithRetry(() => newAi.models.generateContent({ ...p, model: "gemini-2.5-flash-lite" }));
           } catch (_) {}
         }
       }
