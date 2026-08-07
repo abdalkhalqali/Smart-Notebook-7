@@ -1,4 +1,4 @@
-import { University, AcademicYear, SubjectItem, Lecture, StudyStats, SecurityConfig, BackupRestoreConfig } from "./types";
+import { University, AcademicYear, SubjectItem, Lecture, StudyStats, SecurityConfig, BackupRestoreConfig, UserDrawing } from "./types";
 
 // Seed data to give user a premium loaded notebook immediately
 export const initialUniversities: University[] = [
@@ -246,6 +246,7 @@ const STORAGE_KEYS = {
   YEARS: "unnoted_academic_years",
   SUBJECTS: "unnoted_subjects",
   LECTURES: "unnoted_lectures",
+  PUBLIC_DRAWINGS: "unnoted_public_drawings",
   STATS: "unnoted_stats",
   SECURITY: "unnoted_security",
   BACKUP: "unnoted_backup"
@@ -256,6 +257,7 @@ export function loadAppState() {
   let years = initialYears;
   let subjects = initialSubjects;
   let lectures = initialLectures;
+  let publicDrawings: UserDrawing[] = [];
   let stats = initialStats;
   let security = initialSecurity;
   let backup = initialBackup;
@@ -289,6 +291,13 @@ export function loadAppState() {
   }
 
   try {
+    const rawPublicDrawings = localStorage.getItem(STORAGE_KEYS.PUBLIC_DRAWINGS);
+    if (rawPublicDrawings) publicDrawings = JSON.parse(rawPublicDrawings);
+  } catch (e) {
+    console.error("Failed to parse public drawings state", e);
+  }
+
+  try {
     const rawStats = localStorage.getItem(STORAGE_KEYS.STATS);
     if (rawStats) stats = JSON.parse(rawStats);
   } catch (e) {
@@ -314,6 +323,7 @@ export function loadAppState() {
     years,
     subjects,
     lectures,
+    publicDrawings,
     stats,
     security,
     backup
@@ -325,6 +335,7 @@ export function saveAppState(state: {
   years: AcademicYear[];
   subjects: SubjectItem[];
   lectures: Lecture[];
+  publicDrawings?: UserDrawing[];
   stats: StudyStats;
   security: SecurityConfig;
   backup: BackupRestoreConfig;
@@ -351,6 +362,7 @@ export function saveAppState(state: {
   trySet(STORAGE_KEYS.YEARS, JSON.stringify(state.years));
   trySet(STORAGE_KEYS.SUBJECTS, JSON.stringify(state.subjects));
   trySet(STORAGE_KEYS.LECTURES, JSON.stringify(state.lectures));
+  trySet(STORAGE_KEYS.PUBLIC_DRAWINGS, JSON.stringify(state.publicDrawings || []));
   trySet(STORAGE_KEYS.STATS, JSON.stringify(state.stats));
   trySet(STORAGE_KEYS.SECURITY, JSON.stringify(state.security));
   trySet(STORAGE_KEYS.BACKUP, JSON.stringify(state.backup));

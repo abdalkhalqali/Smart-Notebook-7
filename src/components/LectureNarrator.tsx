@@ -3,6 +3,9 @@ import MathText from './MathText';
 import CleverPainterRenderer, { CpCmd } from './CleverPainterRenderer';
 import { resolveApiUrl } from '../utils/apiBase';
 import { loadKeys, getActiveKey } from '../utils/aiKeys';
+import UserDrawingsBar, { AddDrawingDialog } from './UserDrawingPanel';
+import type { UserDrawing, QaMessage } from '../types';
+import { loadPublicDrawings, persistPublicDrawings, loadSavedNarrations, persistSavedNarrations, mergeUnique, findByName, extractDrawingSummary, formatNiceDate, todayInputDate, uid, SavedNarration } from '../utils/lectureLibrary';
 
 // ══════════════════════════════════════════════════════════════════
 // شارح المحاضرات التفاعلي — سبورة بيضاء تملأ الشاشة
@@ -492,15 +495,16 @@ function ChartPanel({chart}:{chart:ChartData}){
 // ══════════════════════════════════════════════════════════════════
 // WHITEBOARD — realistic white board, fills all available space
 // ══════════════════════════════════════════════════════════════════
-function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMsg,drawImg,isAnalyzingDraw,onClearDraw,svgContent,onClearSvg,cleverPaintImg,onClearCleverPaint}:{
+function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMsg,drawImg,isAnalyzingDraw,onClearDraw,svgContent,onClearSvg,cleverPaintImg,onClearCleverPaint,userSvg,userSvgName,onClearUserSvg}:{
   text:string; chart:ChartData|null; chunkIdx:number; totalChunks:number; isDrawingChart:boolean; chartErrorMsg?:string;
   drawImg?:string|null; isAnalyzingDraw?:boolean; onClearDraw?:()=>void;
   svgContent?:string|null; onClearSvg?:()=>void;
   cleverPaintImg?:string|null; onClearCleverPaint?:()=>void;
+  userSvg?:string|null; userSvgName?:string; onClearUserSvg?:()=>void;
 }){
   const {disp,done}=useTypewriter(text,5,11);
   const boardScrollRef=useRef<HTMLDivElement>(null);
-  const hasContent=disp.trim().length>0||chart?.hasChart||!!drawImg||!!svgContent||!!cleverPaintImg;
+  const hasContent=disp.trim().length>0||chart?.hasChart||!!drawImg||!!svgContent||!!cleverPaintImg||!!userSvg;
 
   // Auto-scroll to bottom as text is typed so board always shows latest content
   useEffect(()=>{
@@ -666,6 +670,23 @@ function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMs
                 <img src={cleverPaintImg} alt="رسم فيزيائي"
                   className="w-full object-contain bg-white"
                   style={{maxHeight:460}}/>
+              </div>
+            )}
+
+            {/* User code drawing — from "رسوماتي" bar (manual code drawing library) */}
+            {userSvg&&(
+              <div className="relative mt-3 rounded-2xl overflow-hidden border-2 border-amber-400/60 shadow-lg bg-white">
+                {onClearUserSvg&&(
+                  <button onClick={onClearUserSvg}
+                    className="absolute top-2 left-2 z-10 w-7 h-7 flex items-center justify-center rounded-full bg-black/50 hover:bg-black/80 text-white text-xs font-black transition shadow-lg"
+                    title="إزالة الرسمة من السبورة">✕</button>
+                )}
+                <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5 bg-amber-500 text-white text-[10px] font-black px-2.5 py-0.5 rounded-full shadow">
+                  <span>🖼️</span><span>رسمة من مكتبتي{userSvgName?` — ${userSvgName}`:''}</span>
+                </div>
+                <div className="w-full flex items-center justify-center p-2"
+                  dangerouslySetInnerHTML={{__html:userSvg}}
+                  style={{minHeight:120}}/>
               </div>
             )}
           </div>
@@ -996,6 +1017,24 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   const currentChartRef=useRef<ChartData|null>(null);
   // Stores the last AI-generated explanation for the manual drawing (survives chart replacement)
   const lastDrawDescriptionRef=useRef<string>('');
+  // ── Library drawings (رسوماتي) — code drawings shown in the top bar ──
+  const [privateDrawings,setPrivateDrawings]=useState<UserDrawing[]>([]); // خاصة بهذه المحاضرة
+  const [libraryDrawings,setLibraryDrawings]=useState<UserDrawing[]>([]); // عامة (كل المحاضرات)
+  const [libDraw,setLibDraw]=useState<UserDrawing|null>(null); // الرسمة المختارة من الشريط
+  const libDrawRef=useRef<UserDrawing|null>(null);
+  const [libPublicOpen,setLibPublicOpen]=useState(false);
+  const [showAddDialog,setShowAddDialog]=useState(false);
+  // ── Saving lectures ──
+  const [showSaveModal,setShowSaveModal]=useState(false);
+  const [saveName,setSaveName]=useState('');
+  const [saveDate,setSaveDate]=useState(todayInputDate());
+  const [saveScope,setSaveScope]=useState<'public'|'private'>('private');
+  const [saveWithDiscussion,setSaveWithDiscussion]=useState(true);
+  const [saveMerge,setSaveMerge]=useState<'new'|'merge'>('new');
+  const [saveMsg,setSaveMsg]=useState('');
+  // ── Opening saved lectures ──
+  const [showOpenModal,setShowOpenModal]=useState(false);
+  const [savedNarrations,setSavedNarrations]=useState<SavedNarration[]>([]);
 
   // Refs
   const wsRef=useRef<WebSocket|null>(null);
@@ -1025,6 +1064,12 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   // Keep refs in sync with state for use inside stale callbacks
   useEffect(()=>{manualDrawImgRef.current=manualDrawImg;},[manualDrawImg]);
   useEffect(()=>{currentChartRef.current=currentChart;},[currentChart]);
+  useEffect(()=>{libDrawRef.current=libDraw;},[libDraw]);
+  // Load the public drawings library + saved narrations once
+  useEffect(()=>{
+    setLibraryDrawings(loadPublicDrawings());
+    setSavedNarrations(loadSavedNarrations());
+  },[]);
 
   // Inject styles once
   useEffect(()=>{
@@ -1368,6 +1413,36 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
       return;
     }
 
+    // ①.5 The board shows a library drawing (added via code) → AI reads its SVG code
+    const lib=libDrawRef.current;
+    if(lib&&lib.svg){
+      const thinkId=Date.now().toString();
+      setQa(q=>[...q,{id:thinkId,role:'model',text:`🔍 أقرأ كود الرسمة "${lib.name}"…`}]);
+      try{
+        const r=await fetch(resolveApiUrl('/api/ai/chat'),{
+          method:'POST',
+          headers:{'Content-Type':'application/json',...getAiHeaders()},
+          body:JSON.stringify({
+            message:`الرسمة التالية تُعرض الآن على السبورة في محاضرة (اسمها: "${lib.name}"). اشرحها كأنك مدرّس: ما الذي تصوّره؟ ما مكوناتها وكيف تُقرأ خطوة بخطوة؟ أسلوب تعليمي عربي واضح مرتب في نقاط.\n\nكود SVG للرسمة:\n\`\`\`svg\n${lib.svg.slice(0,5000)}\n\`\`\``,
+            lang:'ar'
+          })
+        });
+        const data=await r.json();
+        const aiMsg=(data.reply||data.response||'').trim();
+        const msg=aiMsg
+          ||(data.error==='no_api_key'?`💡 أضف مفتاح Gemini API لتحليل الكود. تحليل محلي: ${extractDrawingSummary(lib.svg)}`
+            :data.error==='quota'?'⚠️ نفدت حصة Gemini API اليومية — جرّب مفتاحاً آخر أو انتظر حتى الغد.'
+            :data.error==='rate_limit'?'⏱️ تجاوزت الحد المسموح في الدقيقة — جرّب مرة ثانية بعد لحظة.'
+            :`📋 ${extractDrawingSummary(lib.svg)}`);
+        lastDrawDescriptionRef.current=msg;
+        setQa(q=>q.map(item=>item.id===thinkId?{...item,text:`🖼️ ${msg}`}:item));
+      }catch{
+        const fallback=`📋 ${extractDrawingSummary(lib.svg)}`;
+        setQa(q=>q.map(item=>item.id===thinkId?{...item,text:fallback}:item));
+      }
+      return;
+    }
+
     // ② If only a structured chart is on the board (no raw drawing) → describe it textually
     if(!img&&chart?.hasChart){
       const typeMap:Record<string,string>={bar:'مخطط أعمدة',line:'مخطط خطي',pie:'مخطط دائري',
@@ -1625,6 +1700,82 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     }catch(e:any){setErrorMsg(`فشل توليد الشرح: ${e.message}`);setUploadStep('ask_topic');}
   };
 
+  // ── Library drawing actions ──────────────────────────────────
+  const pickLibraryDrawing=(d:UserDrawing)=>{
+    libDrawRef.current=d;
+    setLibDraw(d);
+    lastDrawDescriptionRef.current='';
+    userDrawLockRef.current=true;
+  };
+  const addLibraryDrawing=(d:UserDrawing)=>{
+    if(d.scope==='public'){
+      const next=mergeUnique(loadPublicDrawings(),[d]);
+      persistPublicDrawings(next);
+      setLibraryDrawings(next);
+    }else{
+      setPrivateDrawings(p=>mergeUnique(p,[d]));
+    }
+    setShowAddDialog(false);
+  };
+  const deleteLibraryDrawing=(id:string,scope:'private'|'public')=>{
+    if(scope==='private'){setPrivateDrawings(p=>p.filter(x=>x.id!==id));}
+    else{
+      const next=libraryDrawings.filter(x=>x.id!==id);
+      persistPublicDrawings(next);
+      setLibraryDrawings(next);
+    }
+  };
+
+  // ── Save lecture ─────────────────────────────────────────
+  const doSaveLecture=()=>{
+    const name=saveName.trim();
+    if(!name){setSaveMsg('⚠️ يرجى إدخال اسم المحاضرة.');return;}
+    const existing=findByName(savedNarrations,name);
+    const drawingsToSave:UserDrawing[]=[...privateDrawings];
+    const now=new Date().toISOString();
+    const qaToSave:QaMessage[]=qa.map(q=>({id:q.id,role:q.role,text:q.text}));
+    let next:SavedNarration[];
+    if(saveMerge==='merge'&&existing){
+      next=savedNarrations.map(n=>n.id===existing.id?{
+        ...n,
+        lectureText:lectureText.trim()?lectureText:n.lectureText,
+        drawings:mergeUnique(n.drawings,drawingsToSave),
+        hasDiscussion:saveWithDiscussion||n.hasDiscussion,
+        qaHistory:saveWithDiscussion?mergeUnique(n.qaHistory,qaToSave):n.qaHistory,
+        updatedAt:now,
+      }:n);
+    }else{
+      next=[...savedNarrations,{
+        id:uid('lec'),name,date:saveDate,scope:saveScope,
+        hasDiscussion:saveWithDiscussion,lectureText,
+        drawings:drawingsToSave,
+        qaHistory:saveWithDiscussion?qaToSave:[],
+        createdAt:now,updatedAt:now,
+      }];
+    }
+    persistSavedNarrations(next);
+    setSavedNarrations(next);
+    if(saveScope==='public'&&drawingsToSave.length){
+      const merged=mergeUnique(loadPublicDrawings(),drawingsToSave.map(d=>({...d,scope:'public' as const})));
+      persistPublicDrawings(merged);
+      setLibraryDrawings(merged);
+    }
+    setSaveMsg(`✅ تم حفظ "${name}"${saveScope==='public'?' وتم نقل رسوماتها للمكتبة العامة':''}${saveWithDiscussion?' مع سجل المناقشة':''}.`);
+    setTimeout(()=>{setShowSaveModal(false);setSaveMsg('');},1600);
+  };
+
+  // ── Open saved lecture ───────────────────────────────────
+  const openSavedLecture=(n:SavedNarration)=>{
+    stop();
+    setLectureText(n.lectureText||'');
+    setPrivateDrawings(n.drawings||[]);
+    setSaveName(n.name);setSaveDate(n.date);setSaveScope(n.scope);
+    setShowOpenModal(false);
+    setQa([]);
+    const first=n.drawings&&n.drawings[0];
+    if(first){pickLibraryDrawing(first);}
+  };
+
   const inSession=!['idle','error'].includes(status);
 
   const statusLabel:Record<Status,string>={
@@ -1640,9 +1791,22 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     paused:'bg-slate-400',done:'bg-emerald-400',error:'bg-red-400',
   };
 
+  // SVG code → data URL (يعرض كود الرسمة كصورة على السبورة)
+  const svgToDataUrl=(svg:string)=>`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+
   // ── SETUP PANEL (shown when not in session) ───────────────────
   const renderSetupPanel=()=>(
     <div className="flex flex-col h-full overflow-hidden">
+      {/* Saved lectures quick access */}
+      {savedNarrations.length>0&&(
+        <div className="shrink-0 mx-4 mt-3">
+          <button onClick={()=>{setShowOpenModal(true);}}
+            className="w-full py-2.5 rounded-xl bg-sky-600/20 border border-sky-500/40 text-sky-300 hover:bg-sky-600/35 text-xs font-extrabold transition">
+            📂 فتح محاضرة محفوظة ({savedNarrations.length})
+          </button>
+        </div>
+      )}
+
       {/* Mode toggle */}
       <div className="shrink-0 flex gap-1 bg-white/5 rounded-xl p-1 mx-4 mt-3">
         <button onClick={()=>{setInputMode('paste');setErrorMsg('');}}
@@ -1775,6 +1939,18 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   const renderSession=()=>(
     <div className="relative flex flex-col h-full min-h-0">
 
+      {/* 🖼️ Library drawings bar — click a drawing to show it on the board */}
+      <div className="shrink-0 px-4 pt-2.5 pb-1.5 bg-black/30 border-b border-white/5">
+        <UserDrawingsBar
+          drawings={privateDrawings}
+          publicDrawings={libraryDrawings}
+          publicOpen={libPublicOpen}
+          onTogglePublic={()=>setLibPublicOpen(s=>!s)}
+          onPick={pickLibraryDrawing}
+          onAdd={()=>setShowAddDialog(true)}
+          onDelete={deleteLibraryDrawing}/>
+      </div>
+
       {/* ⭐ WHITEBOARD — fills 100% of the space ⭐ */}
       <Whiteboard
         text={chunkText}
@@ -1785,11 +1961,14 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
         chartErrorMsg={chartErrorMsg}
         drawImg={manualDrawImg}
         isAnalyzingDraw={isEnhancing}
-        onClearDraw={()=>{setManualDrawImg(null);lastDrawDescriptionRef.current='';userDrawLockRef.current=false;}}
+        onClearDraw={()=>{setManualDrawImg(null);libDrawRef.current=null;setLibDraw(null);lastDrawDescriptionRef.current='';userDrawLockRef.current=false;}}
         svgContent={svgContent}
         onClearSvg={()=>{setSvgContent(null);userDrawLockRef.current=false;}}
         cleverPaintImg={cleverPaintImg}
-        onClearCleverPaint={()=>{setCleverPaintImg(null);cleverPaintImgRef.current=null;setCleverPaintCmd(null);userDrawLockRef.current=false;}}/>
+        onClearCleverPaint={()=>{setCleverPaintImg(null);cleverPaintImgRef.current=null;setCleverPaintCmd(null);userDrawLockRef.current=false;}}
+        userSvg={libDraw?.svg||null}
+        userSvgName={libDraw?.name}
+        onClearUserSvg={()=>{libDrawRef.current=null;setLibDraw(null);lastDrawDescriptionRef.current='';userDrawLockRef.current=false;}}/>
 
       {/* Clever Painter hidden renderer — draws to off-screen canvas and calls back with PNG */}
       <CleverPainterRenderer
@@ -1881,7 +2060,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
               className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-extrabold border border-amber-500/40 bg-amber-600/20 text-amber-300 hover:bg-amber-600/35 transition">
               ✏️ ارسم يدوياً
             </button>
-            {manualDrawImg&&(
+            {(manualDrawImg||libDraw)&&(
               <button onClick={handleLookAtWhiteboard}
                 className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-extrabold border border-emerald-500/40 bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/35 transition">
                 🔍 اشرح الرسم
@@ -1890,6 +2069,10 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
             <button onClick={togglePause} disabled={status==='listening'||status==='answering'||status==='done'}
               className="px-3 py-1.5 rounded-xl bg-white/5 border border-white/15 text-slate-200 hover:bg-white/15 text-xs font-extrabold disabled:opacity-40 transition">
               {status==='paused'?'▶ استكمال':'⏸ توقف'}
+            </button>
+            <button onClick={()=>{setSaveName('');setSaveMsg('');setShowSaveModal(true);}}
+              className="px-3 py-1.5 rounded-xl bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-600/50 text-xs font-extrabold transition">
+              💾 حفظ
             </button>
             <button onClick={stop}
               className="px-3 py-1.5 rounded-xl bg-red-600/30 border border-red-500/40 text-red-300 hover:bg-red-600/50 text-xs font-extrabold transition">
@@ -1979,6 +2162,115 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
             )}
           </div>
         </div>
+      )}
+
+      {/* ── Save Lecture Modal ─────────────────────────────────── */}
+      {showSaveModal&&(
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" dir="rtl">
+          <div className="bg-[#0f0f1e] border border-white/10 rounded-3xl p-5 w-[420px] max-w-[94vw] max-h-[92vh] overflow-y-auto shadow-2xl space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-black text-white">💾 حفظ المحاضرة</p>
+              <button onClick={()=>{setShowSaveModal(false);setSaveMsg('');}} className="text-slate-500 hover:text-white transition text-sm font-black">✕</button>
+            </div>
+
+            <div>
+              <label className="text-[11px] text-slate-300 font-bold block mb-1">اسم المحاضرة</label>
+              <input value={saveName} onChange={e=>setSaveName(e.target.value)}
+                placeholder="مثال: الفيزياء الكهربائية — المحاضرة 3"
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-slate-200 placeholder-slate-600 outline-none focus:ring-1 focus:ring-emerald-500"/>
+            </div>
+
+            <div>
+              <label className="text-[11px] text-slate-300 font-bold block mb-1">التاريخ</label>
+              <input type="date" value={saveDate} onChange={e=>setSaveDate(e.target.value)} dir="ltr"
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-slate-200 outline-none focus:ring-1 focus:ring-emerald-500"/>
+            </div>
+
+            <div>
+              <label className="text-[11px] text-slate-300 font-bold block mb-1">نوع الحفظ</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={()=>setSaveScope('private')}
+                  className={`py-2 rounded-xl text-[11px] font-bold border transition ${saveScope==='private'?'bg-amber-600 border-amber-500 text-white':'bg-white/5 border-white/10 text-slate-400 hover:text-slate-200'}`}>
+                  🔒 خاصة
+                </button>
+                <button onClick={()=>setSaveScope('public')}
+                  className={`py-2 rounded-xl text-[11px] font-bold border transition ${saveScope==='public'?'bg-violet-600 border-violet-500 text-white':'bg-white/5 border-white/10 text-slate-400 hover:text-slate-200'}`}>
+                  🌐 عامة
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-500 mt-1">العامة: تُحفظ الرسومات الخاصة أيضاً في المكتبة العامة المشتركة.</p>
+            </div>
+
+            <label className="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer">
+              <input type="checkbox" checked={saveWithDiscussion} onChange={e=>setSaveWithDiscussion(e.target.checked)}
+                className="w-4 h-4 accent-emerald-500"/>
+              💬 حفظ مع سجل المناقشة (أسئلة وأجوبة الجلسة)
+            </label>
+
+            <div>
+              <label className="text-[11px] text-slate-300 font-bold block mb-1">إذا وُجدت محاضرة بنفس الاسم</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={()=>setSaveMerge('new')}
+                  className={`py-2 rounded-xl text-[11px] font-bold border transition ${saveMerge==='new'?'bg-sky-600 border-sky-500 text-white':'bg-white/5 border-white/10 text-slate-400 hover:text-slate-200'}`}>
+                  🆕 محاضرة جديدة
+                </button>
+                <button onClick={()=>setSaveMerge('merge')}
+                  className={`py-2 rounded-xl text-[11px] font-bold border transition ${saveMerge==='merge'?'bg-sky-600 border-sky-500 text-white':'bg-white/5 border-white/10 text-slate-400 hover:text-slate-200'}`}>
+                  🔗 دمج مع السابقة
+                </button>
+              </div>
+            </div>
+
+            {saveMsg&&<p className="text-[11px] font-bold text-emerald-300">{saveMsg}</p>}
+
+            <button onClick={doSaveLecture}
+              className="w-full py-3 rounded-2xl font-black text-sm bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white transition">
+              💾 حفظ المحاضرة
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Open Saved Lecture Modal ───────────────────────────── */}
+      {showOpenModal&&(
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" dir="rtl">
+          <div className="bg-[#0f0f1e] border border-white/10 rounded-3xl p-5 w-[460px] max-w-[94vw] max-h-[88vh] overflow-y-auto shadow-2xl space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-black text-white">📂 المحاضرات المحفوظة</p>
+              <button onClick={()=>setShowOpenModal(false)} className="text-slate-500 hover:text-white transition text-sm font-black">✕</button>
+            </div>
+            {savedNarrations.length===0?(
+              <p className="text-xs text-slate-500 py-6 text-center">لا توجد محاضرات محفوظة بعد — أضف محاضرة وابدأ الشرح ثم احفظها بزر 💾.</p>
+            ):(
+              <div className="space-y-2">
+                {[...savedNarrations].sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)).map(n=>(
+                  <button key={n.id} onClick={()=>openSavedLecture(n)}
+                    className="w-full text-right bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl px-3 py-2.5 transition group">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold text-slate-200 group-hover:text-white">{n.name}</span>
+                      <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${n.scope==='public'?'bg-violet-600 text-white':'bg-amber-600 text-white'}`}>
+                        {n.scope==='public'?'عامة':'خاصة'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-500">
+                      <span>🗓️ {formatNiceDate(n.date)}</span>
+                      <span>🖼️ {n.drawings?.length||0} رسمة</span>
+                      <span>💬 {n.qaHistory?.length||0} رسالة</span>
+                      {n.hasDiscussion&&<span>📜 مع المناقشة</span>}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Add Drawing Code Dialog ─────────────────────────────── */}
+      {showAddDialog&&(
+        <AddDrawingDialog
+          onClose={()=>setShowAddDialog(false)}
+          onSave={addLibraryDrawing}/>
       )}
     </div>
   );

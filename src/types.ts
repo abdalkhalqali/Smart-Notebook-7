@@ -162,6 +162,23 @@ export interface LectureDocument {
   folderId?: string; // ID of the folder it belongs to
 }
 
+// رسمة كود محفوظة — مكتبة رسومات الإظهار اليدوي (خاصة بمحاضرة أو عامة)
+export interface UserDrawing {
+  id: string;
+  name: string;
+  keywords: string[];
+  svg: string;
+  createdAt: string;
+  scope: 'private' | 'public';
+}
+
+// سجل مناقشة جلسة قارئ المحاضرات
+export interface QaMessage {
+  id: string;
+  role: 'user' | 'model';
+  text: string;
+}
+
 // Lecture Object
 export interface Lecture {
   id: string;
@@ -179,6 +196,8 @@ export interface Lecture {
   quiz?: QuizQuestion[];
   flashcards?: Flashcard[];
   lectureText?: string;
+  drawings?: UserDrawing[]; // رسومات كود خاصة بالمحاضرة (الإظهار اليدوي)
+  qaHistory?: QaMessage[]; // سجل المناقشة (اختياري عند الحفظ)
   changelog: ChangelogEntry[];
   studyPlanAdvice?: {
     plan: string;

@@ -7,6 +7,9 @@ import {
   Move, Crosshair, Hand, Sparkles
 } from 'lucide-react';
 import SmartDictationPanel from './SmartDictationPanel';
+import UserDrawingsBar, { AddDrawingDialog } from './UserDrawingPanel';
+import type { UserDrawing } from '../types';
+import { loadPublicDrawings, persistPublicDrawings, mergeUnique } from '../utils/lectureLibrary';
 import MathCanvasOverlay from './MathCanvasOverlay';
 import CleverPainterRenderer, { CpCmd } from './CleverPainterRenderer';
 import { arabicToUnicode } from '../utils/mathUtils';
@@ -71,6 +74,13 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
   const [cpCmd, setCpCmd] = useState<CpCmd | null>(null);
   // قائمة القوالب العشرين (معرض القوالب) — تُحمَّل من الخادم عند فتح اللوحة
   const [tplList, setTplList] = useState<{ id: string; nameAr: string; keywords?: string[] }[]>([]);
+  // رسوماتي — مكتبة الرسومات الكودية (تُحفظ في المكتبة العامة) + نافذة الإضافة
+  const [myDrawings, setMyDrawings] = useState<UserDrawing[]>([]);
+  const [myDrawOpen, setMyDrawOpen] = useState(false);
+  const [showAddDrawDialog, setShowAddDrawDialog] = useState(false);
+  useEffect(() => {
+    setMyDrawings(loadPublicDrawings());
+  }, []);
 
   useEffect(() => {
     if (!showCmdInput) return;
@@ -745,6 +755,26 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
     showNotice('ok', '🎨 تم رسم الشكل على السبورة — اضغط مرتين على الرسمة لحذفها');
   }, [images, paths, shapes, texts, pushHistory, redrawCanvas]);
 
+  // ── رسوماتي: عرض رسمة من المكتبة مباشرة على السبورة (بدون ذكاء اصطناعي) ──
+  const pickMyDrawing = (d: UserDrawing) => {
+    const dataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(d.svg);
+    addGeneratedImage(dataUrl);
+    showNotice('ok', '🖼️ تم عرض "' + d.name + '" — اضغط مرتين على الرسمة لحذفها');
+  };
+  const saveMyDrawing = (d: UserDrawing) => {
+    const next = mergeUnique(loadPublicDrawings(), [d]);
+    persistPublicDrawings(next);
+    setMyDrawings(next);
+    setShowAddDrawDialog(false);
+    showNotice('ok', '✅ تم حفظ الرسمة في المكتبة العامة');
+  };
+  const deleteMyDrawing = (id: string) => {
+    const next = myDrawings.filter(x => x.id !== id);
+    persistPublicDrawings(next);
+    setMyDrawings(next);
+    showNotice('ok', '🗑️ تم حذف الرسمة من المكتبة');
+  };
+
   // ── رسم قالب جاهز مباشرة بالمعرّف (من معرض القوالب — مجاني وفوري) ──
   const drawTemplateById = useCallback(async (id: string, nameAr: string) => {
     setIsGenerating(true);
@@ -1228,6 +1258,17 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
                 : <>🎨 ارسم</>}
             </button>
           </div>
+          <div className={`mb-2 rounded-xl border p-2 ${effectiveDark ? 'border-slate-700 bg-slate-900/60' : 'border-slate-200 bg-slate-50'}`}>
+            <UserDrawingsBar
+              drawings={[]}
+              publicDrawings={myDrawings}
+              publicOpen={myDrawOpen}
+              onTogglePublic={() => setMyDrawOpen(o => !o)}
+              onPick={pickMyDrawing}
+              onAdd={() => setShowAddDrawDialog(true)}
+              onDelete={(id) => deleteMyDrawing(id)}
+            />
+          </div>
           {tplList.length > 0 && (
             <>
               <div className={`mb-1.5 flex items-center gap-1 text-[10px] font-bold ${effectiveDark ? 'text-amber-300' : 'text-amber-600'}`}>
@@ -1257,6 +1298,15 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
             ))}
           </div>
         </motion.div>
+      )}
+
+      {/* ── نافذة إضافة رسمة كود ─────────────────────────────────── */}
+      {showAddDrawDialog && (
+        <AddDrawingDialog
+          onClose={() => setShowAddDrawDialog(false)}
+          onSave={saveMyDrawing}
+          allowPrivate={false}
+        />
       )}
 
       {/* ═══ زر إظهار شريط الأدوات (عند الإخفاء) ═══ */}
