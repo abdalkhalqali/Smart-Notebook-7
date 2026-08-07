@@ -1519,11 +1519,23 @@ app.post("/api/ai/chat", async (req, res) => {
     });
   } catch (error: any) {
     console.error("AI Chatbot endpoint error:", error);
-    const errFallbackMsg = `أهلاً بك! رائد الفضاء الدراسي يواجه تذبذباً صغيراً بالإنترنت حالياً 🌐. 
-يمكنك حفظ الملاحظة وإعادتها، وسأحلل موضوع درسك فور عودة خط الاتصال! دمت متفوقاً.`;
+    // Map real Gemini failures to precise reasons instead of a misleading generic message
+    let errorCode = "network";
+    if (isAuthError(error)) errorCode = "invalid_key";
+    else if (isQuotaError(error)) errorCode = "quota";
+    else if (isRateLimitError(error)) errorCode = "rate_limit";
+    const errFallbackMsg =
+      errorCode === "invalid_key"
+        ? "🔑 مفتاح Gemini API غير صالح أو محظور — افتح الإعدادات ← مفاتيح API وتأكد من صحة المفتاح."
+        : errorCode === "quota"
+          ? "⚠️ نفدت حصة Gemini API اليومية — جرّب مفتاحاً آخر أو انتظر تجدد الحصة غداً."
+          : errorCode === "rate_limit"
+            ? "⏱️ تجاوزت الحد المسموح في الدقيقة — انتظر دقيقة وأعد المحاولة."
+            : "🌐 تعذّر الاتصال بخدمة الذكاء الاصطناعي من الخادم — تحقق من اتصال الخادم بالإنترنت وأعد المحاولة.";
     res.json({
       response: errFallbackMsg,
       reply: errFallbackMsg,
+      error: errorCode,
       isFallback: true
     });
   }

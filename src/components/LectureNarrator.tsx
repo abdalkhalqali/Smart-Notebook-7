@@ -1431,6 +1431,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
         const aiMsg=(data.reply||data.response||'').trim();
         const msg=aiMsg
           ||(data.error==='no_api_key'?`💡 أضف مفتاح Gemini API لتحليل الكود. تحليل محلي: ${extractDrawingSummary(lib.svg)}`
+            :data.error==='invalid_key'?'🔑 مفتاح Gemini API غير صالح أو محظور — افتح الإعدادات ← مفاتيح API وصحّحه.'
             :data.error==='quota'?'⚠️ نفدت حصة Gemini API اليومية — جرّب مفتاحاً آخر أو انتظر حتى الغد.'
             :data.error==='rate_limit'?'⏱️ تجاوزت الحد المسموح في الدقيقة — جرّب مرة ثانية بعد لحظة.'
             :`📋 ${extractDrawingSummary(lib.svg)}`);
