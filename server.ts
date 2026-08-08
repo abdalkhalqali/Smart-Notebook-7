@@ -1521,11 +1521,15 @@ app.post("/api/ai/chat", async (req, res) => {
     console.error("AI Chatbot endpoint error:", error);
     // Map real Gemini failures to precise reasons instead of a misleading generic message
     let errorCode = "network";
-    if (isAuthError(error)) errorCode = "invalid_key";
+    if ((error?.message || "").includes("API_KEY_MISSING")) errorCode = "no_api_key";
+    else if ((error?.message || "").includes("CUSTOM_ENDPOINT_MISSING")) errorCode = "invalid_key";
+    else if (isAuthError(error)) errorCode = "invalid_key";
     else if (isQuotaError(error)) errorCode = "quota";
     else if (isRateLimitError(error)) errorCode = "rate_limit";
     const errFallbackMsg =
-      errorCode === "invalid_key"
+      errorCode === "no_api_key"
+        ? "💡 لم يتم العثور على مفتاح API للذكاء الاصطناعي — افتح الإعدادات ← مفاتيح API وأضف مفتاحاً ثم أعد المحاولة."
+        : errorCode === "invalid_key"
         ? "🔑 مفتاح Gemini API غير صالح أو محظور — افتح الإعدادات ← مفاتيح API وتأكد من صحة المفتاح."
         : errorCode === "quota"
           ? "⚠️ نفدت حصة Gemini API اليومية — جرّب مفتاحاً آخر أو انتظر تجدد الحصة غداً."

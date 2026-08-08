@@ -1022,6 +1022,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   const [libraryDrawings,setLibraryDrawings]=useState<UserDrawing[]>([]); // عامة (كل المحاضرات)
   const [libDraw,setLibDraw]=useState<UserDrawing|null>(null); // الرسمة المختارة من الشريط
   const libDrawRef=useRef<UserDrawing|null>(null);
+  const svgContentRef=useRef<string|null>(null);
   const [libPublicOpen,setLibPublicOpen]=useState(false);
   const [showAddDialog,setShowAddDialog]=useState(false);
   // ── Saving lectures ──
@@ -1065,6 +1066,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   useEffect(()=>{manualDrawImgRef.current=manualDrawImg;},[manualDrawImg]);
   useEffect(()=>{currentChartRef.current=currentChart;},[currentChart]);
   useEffect(()=>{libDrawRef.current=libDraw;},[libDraw]);
+  useEffect(()=>{svgContentRef.current=svgContent;},[svgContent]);
   // Load the public drawings library + saved narrations once
   useEffect(()=>{
     setLibraryDrawings(loadPublicDrawings());
@@ -1403,7 +1405,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
 
   // Handle user asking AI narrator to "look at the drawing on the whiteboard"
   const handleLookAtWhiteboard=useCallback(async()=>{
-    const img=manualDrawImgRef.current;
+    const img=manualDrawImgRef.current||cleverPaintImgRef.current;
     const chart=currentChartRef.current;
     const savedDesc=lastDrawDescriptionRef.current;
 
@@ -1429,16 +1431,46 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
         });
         const data=await r.json();
         const aiMsg=(data.reply||data.response||'').trim();
-        const msg=aiMsg
-          ||(data.error==='no_api_key'?`💡 أضف مفتاح Gemini API لتحليل الكود. تحليل محلي: ${extractDrawingSummary(lib.svg)}`
-            :data.error==='invalid_key'?'🔑 مفتاح Gemini API غير صالح أو محظور — افتح الإعدادات ← مفاتيح API وصحّحه.'
-            :data.error==='quota'?'⚠️ نفدت حصة Gemini API اليومية — جرّب مفتاحاً آخر أو انتظر حتى الغد.'
-            :data.error==='rate_limit'?'⏱️ تجاوزت الحد المسموح في الدقيقة — جرّب مرة ثانية بعد لحظة.'
-            :`📋 ${extractDrawingSummary(lib.svg)}`);
+        const msg=!data.error&&aiMsg?aiMsg
+          :data.error==='no_api_key'?`💡 أضف مفتاح Gemini API لتحليل الكود. تحليل محلي: ${extractDrawingSummary(lib.svg)}`
+          :data.error==='invalid_key'?'🔑 مفتاح Gemini API غير صالح أو محظور — افتح الإعدادات ← مفاتيح API وصحّحه.'
+          :data.error==='quota'?'⚠️ نفدت حصة Gemini API اليومية — جرّب مفتاحاً آخر أو انتظر حتى الغد.'
+          :data.error==='rate_limit'?'⏱️ تجاوزت الحد المسموح في الدقيقة — جرّب مرة ثانية بعد لحظة.'
+          :`📋 ${extractDrawingSummary(lib.svg)}`;
         lastDrawDescriptionRef.current=msg;
         setQa(q=>q.map(item=>item.id===thinkId?{...item,text:`🖼️ ${msg}`}:item));
       }catch{
         const fallback=`📋 ${extractDrawingSummary(lib.svg)}`;
+        setQa(q=>q.map(item=>item.id===thinkId?{...item,text:fallback}:item));
+      }
+      return;
+    }
+
+    // ①.6 The board shows an AI-generated SVG drawing → AI reads its SVG code
+    const svgCode=svgContentRef.current;
+    if(svgCode){
+      const thinkId=Date.now().toString();
+      setQa(q=>[...q,{id:thinkId,role:'model',text:'🔍 أقرأ كود الرسمة المولّدة…'}]);
+      try{
+        const r=await fetch(resolveApiUrl('/api/ai/chat'),{
+          method:'POST',headers:{'Content-Type':'application/json',...getAiHeaders()},
+          body:JSON.stringify({
+            message:`الرسمة التالية تُعرض الآن على السبورة (رسمة مولّدة بالذكاء الاصطناعي). اشرحها كأنك مدرّس: ما الذي تصوّره؟ ما مكوناتها وكيف تُقرأ خطوة بخطوة؟ أسلوب تعليمي عربي واضح مرتب في نقاط.\n\nكود SVG للرسمة:\n\`\`\`svg\n${svgCode.slice(0,5000)}\n\`\`\``,
+            lang:'ar'
+          })
+        });
+        const data=await r.json();
+        const aiMsg=(data.reply||data.response||'').trim();
+        const msg=!data.error&&aiMsg?aiMsg
+          :data.error==='no_api_key'?`💡 أضف مفتاح Gemini API لتحليل الكود. تحليل محلي: ${extractDrawingSummary(svgCode)}`
+          :data.error==='invalid_key'?'🔑 مفتاح Gemini API غير صالح أو محظور — افتح الإعدادات ← مفاتيح API وصحّحه.'
+          :data.error==='quota'?'⚠️ نفدت حصة Gemini API اليومية — جرّب مفتاحاً آخر أو انتظر حتى الغد.'
+          :data.error==='rate_limit'?'⏱️ تجاوزت الحد المسموح في الدقيقة — جرّب مرة ثانية بعد لحظة.'
+          :`📋 ${extractDrawingSummary(svgCode)}`;
+        lastDrawDescriptionRef.current=msg;
+        setQa(q=>q.map(item=>item.id===thinkId?{...item,text:`🖼️ ${msg}`}:item));
+      }catch{
+        const fallback=`📋 ${extractDrawingSummary(svgCode)}`;
         setQa(q=>q.map(item=>item.id===thinkId?{...item,text:fallback}:item));
       }
       return;
@@ -1465,10 +1497,23 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     const thinkId=Date.now().toString();
     setQa(q=>[...q,{id:thinkId,role:'model',text:'🔍 أتفحص الرسم على السبورة…'}]);
     try{
+      // CleverPainter PNGs arrive as full data-URLs (data:image/png;base64,…) —
+      // strip the prefix and send the real mime type so the vision call works
+      let imgB64=img;
+      let mimeType='image/jpeg';
+      if(img.startsWith('data:')){
+        const comma=img.indexOf(',');
+        if(comma>0){
+          const meta=img.slice(0,comma);
+          const m=meta.match(/data:([^;]+)/);
+          if(m)mimeType=m[1];
+          imgB64=img.slice(comma+1);
+        }
+      }
       const r=await fetch(resolveApiUrl('/api/ai/explain-drawing'),{
         method:'POST',
         headers:{'Content-Type':'application/json',...getAiHeaders()},
-        body:JSON.stringify({imageBase64:img,mimeType:'image/jpeg'})
+        body:JSON.stringify({imageBase64:imgB64,mimeType:mimeType})
       });
       const data=await r.json();
       const msg=data.explanation
@@ -2061,7 +2106,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
               className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-extrabold border border-amber-500/40 bg-amber-600/20 text-amber-300 hover:bg-amber-600/35 transition">
               ✏️ ارسم يدوياً
             </button>
-            {(manualDrawImg||libDraw)&&(
+            {(manualDrawImg||libDraw||svgContent||cleverPaintImg)&&(
               <button onClick={handleLookAtWhiteboard}
                 className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-extrabold border border-emerald-500/40 bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/35 transition">
                 🔍 اشرح الرسم
