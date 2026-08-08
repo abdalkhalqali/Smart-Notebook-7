@@ -1404,6 +1404,19 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   },[clearDrawFallback, handleCleverPaint]);
 
   // Handle user asking AI narrator to "look at the drawing on the whiteboard"
+  // ── Voice-narrate board explanations through the live session ──────────
+  // Sends text to the live voice session so the teacher SPEAKS it aloud,
+  // interrupting any current narration first (server resumes the same chunk after).
+  const speakOnBoard=useCallback((text:string):boolean=>{
+    const ws=wsRef.current;
+    if(!ws||ws.readyState!==WebSocket.OPEN) return false;
+    hardStop();
+    ws.send(JSON.stringify({type:'interrupt'}));
+    ws.send(JSON.stringify({type:'text', text}));
+    setStatus('answering');
+    return true;
+  },[hardStop]);
+
   const handleLookAtWhiteboard=useCallback(async()=>{
     const img=manualDrawImgRef.current||cleverPaintImgRef.current;
     const chart=currentChartRef.current;
@@ -1419,6 +1432,13 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     const lib=libDrawRef.current;
     if(lib&&lib.svg){
       const thinkId=Date.now().toString();
+      const livePrompt=`الرسمة التالية تُعرض الآن على السبورة في محاضرة (اسمها: "${lib.name}"). اشرحها بصوتك كأنك مدرّس: ما الذي تصوّره؟ ما مكوناتها وكيف تُقرأ خطوة بخطوة؟ أسلوب تعليمي عربي واضح مرتب في نقاط.\n\nكود SVG للرسمة:\n\`\`\`svg\n${lib.svg.slice(0,5000)}\n\`\`\``;
+      // Live voice session open → the teacher explains ALOUD from the code (saves a REST call)
+      if(speakOnBoard(livePrompt)){
+        setQa(q=>[...q,{id:thinkId,role:'model',text:`🎙️ أشرح الآن الرسمة "${lib.name}" بصوت المعلّم من كودها…`}]);
+        lastDrawDescriptionRef.current='';
+        return;
+      }
       setQa(q=>[...q,{id:thinkId,role:'model',text:`🔍 أقرأ كود الرسمة "${lib.name}"…`}]);
       try{
         const r=await fetch(resolveApiUrl('/api/ai/chat'),{
@@ -1450,6 +1470,13 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     const svgCode=svgContentRef.current;
     if(svgCode){
       const thinkId=Date.now().toString();
+      const livePrompt=`الرسمة التالية تُعرض الآن على السبورة (رسمة مولّدة بالذكاء الاصطناعي). اشرحها بصوتك كأنك مدرّس: ما الذي تصوّره؟ ما مكوناتها وكيف تُقرأ خطوة بخطوة؟ أسلوب تعليمي عربي واضح مرتب في نقاط.\n\nكود SVG للرسمة:\n\`\`\`svg\n${svgCode.slice(0,5000)}\n\`\`\``;
+      // Live voice session open → the teacher explains ALOUD from the code (saves a REST call)
+      if(speakOnBoard(livePrompt)){
+        setQa(q=>[...q,{id:thinkId,role:'model',text:'🎙️ أشرح الآن الرسمة المولّدة بصوت المعلّم من كودها…'}]);
+        lastDrawDescriptionRef.current='';
+        return;
+      }
       setQa(q=>[...q,{id:thinkId,role:'model',text:'🔍 أقرأ كود الرسمة المولّدة…'}]);
       try{
         const r=await fetch(resolveApiUrl('/api/ai/chat'),{
@@ -1522,11 +1549,12 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
           :data.error==='rate_limit'?'⏱️ تجاوزت الحد المسموح في الدقيقة — جرّب مرة ثانية بعد لحظة.'
           :'⚠️ تعذّر تحليل الرسم — تأكد من ضبط مفتاح Gemini API في الإعدادات.');
       if(data.explanation) lastDrawDescriptionRef.current=data.explanation; // cache for next time
+      if(data.explanation&&!data.error) speakOnBoard(data.explanation); // narrator speaks the vision result too
       setQa(q=>q.map(item=>item.id===thinkId?{...item,text:`🖼️ ${msg}`}:item));
     }catch{
       setQa(q=>q.map(item=>item.id===thinkId?{...item,text:'⚠️ تعذّر الاتصال بالخادم.'}:item));
     }
-  },[]);
+  },[speakOnBoard]);
 
   // Handle AI enhancement of a manual sketch
   const handleExplainDrawing=useCallback(async(imgB64:string, mimeType:string='image/jpeg')=>{
