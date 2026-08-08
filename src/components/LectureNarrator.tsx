@@ -1017,6 +1017,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   const currentChartRef=useRef<ChartData|null>(null);
   // Stores the last AI-generated explanation for the manual drawing (survives chart replacement)
   const lastDrawDescriptionRef=useRef<string>('');
+  const autoExplainRef=useRef<{id:string;at:number}|null>(null); // dedup guard for auto-explain on drawing open
   // ── Library drawings (رسوماتي) — code drawings shown in the top bar ──
   const [privateDrawings,setPrivateDrawings]=useState<UserDrawing[]>([]); // خاصة بهذه المحاضرة
   const [libraryDrawings,setLibraryDrawings]=useState<UserDrawing[]>([]); // عامة (كل المحاضرات)
@@ -1424,6 +1425,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
 
     // ① If we already have a saved description from when the drawing was submitted → reuse it instantly
     if(savedDesc){
+      speakOnBoard(savedDesc); // narrator speaks the cached explanation too when the session is open
       setQa(q=>[...q,{id:Date.now().toString(),role:'model',text:`🖼️ ${savedDesc}`}]);
       return;
     }
@@ -1780,6 +1782,16 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     setLibDraw(d);
     lastDrawDescriptionRef.current='';
     userDrawLockRef.current=true;
+    // Auto-explain: as soon as the drawing opens on the board, the reader
+    // reads its code and explains it (voiced when the live session is open).
+    if(d&&d.svg){
+      const now=Date.now();
+      const last=autoExplainRef.current;
+      if(!(last&&last.id===d.id&&now-last.at<4000)){
+        autoExplainRef.current={id:d.id,at:now};
+        handleLookAtWhiteboard();
+      }
+    }
   };
   const addLibraryDrawing=(d:UserDrawing)=>{
     if(d.scope==='public'){
