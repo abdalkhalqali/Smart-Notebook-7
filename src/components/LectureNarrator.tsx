@@ -1419,6 +1419,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     return true;
   },[hardStop]);
 
+  // ── Build state: post-Phase-2 (Phase 3 + key-fallback reverted 2026-08-12) ──
   const handleLookAtWhiteboard=useCallback(async()=>{
     const img=manualDrawImgRef.current||cleverPaintImgRef.current;
     const chart=currentChartRef.current;
