@@ -330,7 +330,7 @@ async function executeGeminiOrOpenRouterCall(req: express.Request, systemPrompt:
       model: "gemini-2.5-flash",
       contents: fullContents,
       config
-    }, { fallbackToPool: hasCustomKey, currentKey: hasCustomKey ? trimmedKey : getServerGeminiKey() });
+    });
 
     return response.text || "";
   }
@@ -552,8 +552,7 @@ function makeGeminiClient(apiKey: string) {
 // a server pool key is the right thing to do (better than a hard failure).
 async function generateContentWithRetryAndFallback(
   ai: any,
-  p: { model: string; contents: any; config?: any },
-  opts: { fallbackToPool?: boolean; currentKey?: string } = {}
+  p: { model: string; contents: any; config?: any }
 ): Promise<any> {
   const isDemandOrQuota = (error: any) =>
     error?.status === "UNAVAILABLE" ||
@@ -572,59 +571,39 @@ async function generateContentWithRetryAndFallback(
       error.message.includes("busy")
     ));
 
-  const models = p.model === "gemini-2.5-flash" ? ["gemini-2.5-flash", "gemini-2.5-flash-lite"] : [p.model];
-
   // ── Attempt with the primary model ────────────────────────────
   let primaryError: any = null;
   try {
     return await callWithRetry(() => ai.models.generateContent(p));
   } catch (error: any) {
     primaryError = error;
-    // When a PERSONAL key was used (fallbackToPool) we do NOT give up on
-    // auth/unknown errors — the server key pool can still complete the request.
-    if (!isDemandOrQuota(error) && !opts.fallbackToPool) throw error;
+    if (!isDemandOrQuota(error)) throw error; // auth / unknown → rethrow immediately
   }
 
-  // ── Fallback 1: switch gemini-2.5-flash → gemini-2.5-flash-lite (same key) ──
-  for (const m of models.slice(1)) {
-    console.warn(`[Gemini Fallback] ${p.model} busy/quota. Trying ${m}…`);
+  // ── Fallback 1: switch gemini-2.5-flash → gemini-2.0-flash ────
+  if (p.model === "gemini-2.5-flash") {
+    console.warn("[Gemini Fallback] gemini-2.5-flash busy/quota. Trying gemini-2.5-flash-lite…");
     try {
-      return await callWithRetry(() => ai.models.generateContent({ ...p, model: m }));
-    } catch (_) { /* continue */ }
+      return await callWithRetry(() => ai.models.generateContent({ ...p, model: "gemini-2.5-flash-lite" }));
+    } catch (_) { /* continue to key rotation */ }
   }
 
-  // ── Fallback 2: quota exhausted on the active (server) key → rotate pool ──
-  if (!opts.fallbackToPool && isQuotaError(primaryError) && geminiPool.size > 1) {
+  // ── Fallback 2: quota exhausted → rotate server key ────────────
+  if (isQuotaError(primaryError) && geminiPool.size > 1) {
     const nextKey = geminiPool.rotate();
     if (nextKey) {
       console.warn("[Key Rotation] Retrying with next Gemini server key…");
       const newAi = makeGeminiClient(nextKey);
-      for (const m of models) {
-        try { return await callWithRetry(() => newAi.models.generateContent({ ...p, model: m })); }
-        catch (_) {}
+      try {
+        return await callWithRetry(() => newAi.models.generateContent(p));
+      } catch (err2: any) {
+        // Also try the model fallback on the new key
+        if (p.model === "gemini-2.5-flash") {
+          try {
+            return await callWithRetry(() => newAi.models.generateContent({ ...p, model: "gemini-2.5-flash-lite" }));
+          } catch (_) {}
+        }
       }
-    }
-  }
-
-  // ── Fallback 3: a PERSONAL/custom key failed for ANY reason (auth, quota,
-  //    network, unknown) → complete the request with the server key pool so a
-  //    dead personal key never breaks explanations. A pool key is rotated only
-  //    when it itself is quota-exhausted; other failures stop the loop. ──
-  if (opts.fallbackToPool && geminiPool.size > 0) {
-    const tried = new Set<string>(opts.currentKey ? [opts.currentKey] : []);
-    let n = geminiPool.size;
-    while (n-- > 0) {
-      const poolKey = geminiPool.current();
-      if (!poolKey || tried.has(poolKey)) break;
-      tried.add(poolKey);
-      const poolAi = makeGeminiClient(poolKey);
-      let poolErr: any = null;
-      for (const m of models) {
-        try { return await callWithRetry(() => poolAi.models.generateContent({ ...p, model: m })); }
-        catch (e) { poolErr = e; }
-      }
-      if (isQuotaError(poolErr)) { geminiPool.rotate(); continue; } // exhausted → next key
-      break; // auth/network on a healthy server key → don't burn the rest of the pool
     }
   }
 
