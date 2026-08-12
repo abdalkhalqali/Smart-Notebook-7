@@ -101,22 +101,6 @@ const COORD_CMD=/نظام\s*(ال)?[إا]حداث|[إا]حداث.*نظام|ار�
 const DRAW_CMD=/^(ارسم|أرسم|draw|رسم لي|ارسم لي|أرسم لي)\s+/i;
 // Detects user asking AI to look at / explain the whiteboard drawing
 const LOOK_DRAWING_CMD=/انظر.*(رسم|سبور)|اشرح.*(رسم|سبور)|ما.*(رسم|السبور)|(رسم|سبور).*(شرح|انظر)|look.*(draw|board)|explain.*(draw|board)|describe.*(draw|board)|what.*(draw|board)/i;
-
-// Local textual summary of a clever-painter builder command — used as the fallback
-// when the AI is unavailable, so the drawing is described from its JSON (no vision).
-function cpLocalSummary(cmd:CpCmd):string{
-  if(!cmd) return '';
-  const parts:string[]=[];
-  if(cmd.title) parts.push(String(cmd.title));
-  const typeNames:Record<string,string>={circuit:'دائرة كهربائية',wave:'موجة',force:'مخطط القوى',field:'مجال كهربائي/مغناطيسي',function:'دالة رياضية',gears:'تروس ميكانيكية',spring:'نابض ميكانيكي',pulley:'بكرة ميكانيكية',pendulum:'بندول',beam:'كمرة هندسية',lever:'رافعة'};
-  const tname=cmd.type?typeNames[cmd.type]:'';
-  if(tname&&!parts.includes(tname)) parts.push(tname);
-  if(cmd.waveType) parts.push(`موجة ${String(cmd.waveType)}`);
-  if(Array.isArray(cmd.components)&&cmd.components.length) parts.push(`${cmd.components.length} مكونات`);
-  if(Array.isArray(cmd.forces)&&cmd.forces.length) parts.push(`${cmd.forces.length} قوى`);
-  if(Array.isArray(cmd.charges)&&cmd.charges.length) parts.push(`${cmd.charges.length} شحنات`);
-  return parts.filter(Boolean).join(' — ')||'رسمة فيزيائية/هندسية';
-}
 // Physics/engineering drawing → clever-painter library
 const CLEVER_PAINTER_CMD=/دائرة\s*كهرب|دارة\s*كهرب|دائرة\s*RC|دائرة\s*RL|دائرة\s*LC|ارسم.*(مقاوم|بطار|مكثف|محث|لمبة|مصباح|مفتاح)|توصيل.*بطارية|بطارية.*مقاوم|مكثف.*كهرب|محث.*كهرب|لمبة.*كهرب|مصباح.*كهرب|موجة\s*(جيبية|مربعة|مثلثة|نبضية|سينية|منشارية|كهرومغناطيسية|صوتية|ضوئية)|ذبذبة|تمثيل\s*موجة|رسم\s*موجة|مخطط\s*القوى|free\s*body|diagram.*القوى|قوى.*على.*جسم|رسم.*القوى|مجال\s*(كهربائي|مغناطيسي)|خطوط\s*المجال|شحنتا?\s*(موجبة|سالبة|نقطية|كهربائية)|قطبا?\s*(مغناطيس|شمالي|جنوبي)|مغناطيس.*قطب|تروس\s*ميكانيكية|ارسم.*تروس|نابض\s*ميكانيكي|بكرة\s*ميكانيكية|بندول|نواس|pendulum|ذراع|رافعة|كمرة\s*(هندسية|خرسانية)|عارضة\s*(هندسية|مثبتة)|رسم.*دالة|دالة.*رياضية|منحنى.*دالة|circuit|sine\s*wave|square\s*wave|electric\s*field|magnetic\s*field|free\s*body\s*diagram/i;
 
@@ -1028,7 +1012,6 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   const [cleverPaintCmd,setCleverPaintCmd]=useState<CpCmd|null>(null);
   const [cleverPaintImg,setCleverPaintImg]=useState<string|null>(null);
   const cleverPaintImgRef=useRef<string|null>(null);
-  const cleverPaintCmdRef=useRef<CpCmd|null>(null); // builder JSON of the current clever-painter PNG — lets the narrator explain from the command instead of vision
   // Refs to current drawing/chart so async callbacks can read latest values
   const manualDrawImgRef=useRef<string|null>(null);
   const currentChartRef=useRef<ChartData|null>(null);
@@ -1537,44 +1520,6 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     if(!img){
       setQa(q=>[...q,{id:Date.now().toString(),role:'model',
         text:'📋 لا يوجد رسم على السبورة حالياً. استخدم ✏️ لرسم شيء أو قل "ارسم مخطط..."'}]);
-      return;
-    }
-
-    // ③.5 CleverPainter physics drawing → explain from its builder JSON (saves vision quota)
-    if(cleverPaintImgRef.current&&cleverPaintCmdRef.current){
-      const cpCmd=cleverPaintCmdRef.current;
-      const thinkId=Date.now().toString();
-      const cmdJson=JSON.stringify(cpCmd);
-      const livePrompt=`الرسمة التالية تُعرض الآن على السبورة (رسمة فيزيائية/هندسية مبنية بمحرك clever-painter). اشرحها بصوتك كأنك مدرّس: ما الذي تصوّره؟ ما مكوناتها وكيف تُقرأ خطوة بخطوة؟ أسلوب تعليمي عربي واضح مرتب في نقاط.\n\nأمر البناء JSON للرسمة:\n\`\`\`json\n${cmdJson.slice(0,5000)}\n\`\`\``;
-      // Live voice session open → the teacher explains ALOUD from the builder JSON (no REST, no vision)
-      if(speakOnBoard(livePrompt)){
-        setQa(q=>[...q,{id:thinkId,role:'model',text:'🎙️ أشرح الآن الرسمة الفيزيائية بصوت المعلّم من أمر بنائها…'}]);
-        lastDrawDescriptionRef.current='';
-        return;
-      }
-      setQa(q=>[...q,{id:thinkId,role:'model',text:'🔍 أقرأ أمر بناء الرسمة الفيزيائية…'}]);
-      try{
-        const r=await fetch(resolveApiUrl('/api/ai/chat'),{
-          method:'POST',headers:{'Content-Type':'application/json',...getAiHeaders()},
-          body:JSON.stringify({
-            message:`الرسمة التالية تُعرض الآن على السبورة (رسمة فيزيائية/هندسية مبنية بمحرك clever-painter). اشرحها كأنك مدرّس: ما الذي تصوّره؟ ما مكوناتها وكيف تُقرأ خطوة بخطوة؟ أسلوب تعليمي عربي واضح مرتب في نقاط.\n\nأمر البناء JSON للرسمة:\n\`\`\`json\n${cmdJson.slice(0,5000)}\n\`\`\``,
-            lang:'ar'
-          })
-        });
-        const data=await r.json();
-        const aiMsg=(data.reply||data.response||'').trim();
-        const msg=!data.error&&aiMsg?aiMsg
-          :data.error==='no_api_key'?`💡 أضف مفتاح Gemini API لتحليل الكود. تحليل محلي: ${cpLocalSummary(cpCmd)}`
-          :data.error==='invalid_key'?'🔑 مفتاح Gemini API غير صالح أو محظور — افتح الإعدادات ← مفاتيح API وصحّحه.'
-          :data.error==='quota'?'⚠️ نفدت حصة Gemini API اليومية — جرّب مفتاحاً آخر أو انتظر حتى الغد.'
-          :data.error==='rate_limit'?'⏱️ تجاوزت الحد المسموح في الدقيقة — جرّب مرة ثانية بعد لحظة.'
-          :`📋 ${cpLocalSummary(cpCmd)}`;
-        lastDrawDescriptionRef.current=msg;
-        setQa(q=>q.map(item=>item.id===thinkId?{...item,text:`🖼️ ${msg}`}:item));
-      }catch{
-        const fallback=`📋 ${cpLocalSummary(cpCmd)}`;
-        setQa(q=>q.map(item=>item.id===thinkId?{...item,text:fallback}:item));
-      }
       return;
     }
 
@@ -2119,7 +2064,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
         svgContent={svgContent}
         onClearSvg={()=>{setSvgContent(null);userDrawLockRef.current=false;}}
         cleverPaintImg={cleverPaintImg}
-        onClearCleverPaint={()=>{setCleverPaintImg(null);cleverPaintImgRef.current=null;setCleverPaintCmd(null);cleverPaintCmdRef.current=null;userDrawLockRef.current=false;}}
+        onClearCleverPaint={()=>{setCleverPaintImg(null);cleverPaintImgRef.current=null;setCleverPaintCmd(null);userDrawLockRef.current=false;}}
         userSvg={libDraw?.svg||null}
         userSvgName={libDraw?.name}
         onClearUserSvg={()=>{libDrawRef.current=null;setLibDraw(null);lastDrawDescriptionRef.current='';userDrawLockRef.current=false;}}/>
@@ -2130,7 +2075,6 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
         onResult={(png)=>{
           cleverPaintImgRef.current=png;
           setCleverPaintImg(png);
-          if(cleverPaintCmd) cleverPaintCmdRef.current=cleverPaintCmd; // keep the builder JSON — the narrator explains from it (no vision cost)
           setCleverPaintCmd(null);
           setIsDrawingChart(false);
           userDrawLockRef.current=false;
