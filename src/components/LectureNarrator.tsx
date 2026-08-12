@@ -1018,6 +1018,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   // Stores the last AI-generated explanation for the manual drawing (survives chart replacement)
   const lastDrawDescriptionRef=useRef<string>('');
   const autoExplainRef=useRef<{id:string;at:number}|null>(null); // dedup guard for auto-explain on drawing open
+  const lastLookDrawTriggerRef=useRef(0); // dedup: server look_drawing + transcript path may both fire for one utterance
   // ── Library drawings (رسوماتي) — code drawings shown in the top bar ──
   const [privateDrawings,setPrivateDrawings]=useState<UserDrawing[]>([]); // خاصة بهذه المحاضرة
   const [libraryDrawings,setLibraryDrawings]=useState<UserDrawing[]>([]); // عامة (كل المحاضرات)
@@ -1686,7 +1687,11 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
           }
           // User asks "انظر الرسم" / "اشرح السبورة" → describe what's on the whiteboard
           if(role==='user'&&LOOK_DRAWING_CMD.test(txt)){
-            handleLookAtWhiteboard();
+            const now=Date.now();
+            if(now-lastLookDrawTriggerRef.current>2000){
+              lastLookDrawTriggerRef.current=now;
+              handleLookAtWhiteboard();
+            }
           }
         }else if(msg.type==='turn_complete'){
           // Wait 250ms so any in-flight transcript WS messages arrive before we process
@@ -1700,6 +1705,14 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
             }
           },250);
         }else if(msg.type==='interrupted'){hardStop();setStatus('listening');}
+        else if(msg.type==='look_drawing'){
+          // Phase 2: the server already cut the blind reply — explain the board now
+          const now=Date.now();
+          if(now-lastLookDrawTriggerRef.current>2000){
+            lastLookDrawTriggerRef.current=now;
+            handleLookAtWhiteboard();
+          }
+        }
         else if(msg.type==='lecture_complete'){setStatus('done');}
         else if(msg.type==='error'){
           setErrorMsg(msg.message==='no_api_key'?'لم يتم إدخال مفتاح Gemini API.':(msg.message||'حدث خطأ.'));

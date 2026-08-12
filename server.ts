@@ -2862,7 +2862,16 @@ Drawing rules — very important:
     // ── Lecture narration state (mode=lecture) ──────────────────
     let lectureChunks: string[] = [];
     let lectureIdx = 0;
-    let lecturePhase: "idle" | "narrating" | "awaiting_answer" | "paused" = "idle";
+    let lecturePhase: "idle" | "narrating" | "awaiting_answer" | "paused" | "held" = "idle";
+    // ── Phase 2: intercept board-explanation voice requests at the source ──
+    // The live model is blind to the whiteboard, so if the user asks about the
+    // drawing it would answer "لا يوجد رسم". The server sees inputTranscription
+    // BEFORE the client, so it cuts the blind reply, asks the client to explain
+    // from the actual drawing code, then resumes the lecture from the same chunk.
+    const LOOK_DRAWING_CMD = /انظر.*(رسم|سبور)|اشرح.*(رسم|سبور)|ما.*(رسم|السبور)|(رسم|سبور).*(شرح|انظر)|look.*(draw|board)|explain.*(draw|board)|describe.*(draw|board)|what.*(draw|board)/i;
+    let lastLookDrawAt = 0;
+    let lookDrawPending = false;
+    let lookDrawResumeTimer: NodeJS.Timeout | null = null;
 
     function splitLectureIntoChunks(text: string): string[] {
       const sentences = text.replace(/\s+/g, " ").trim().match(/[^.!?؟\n]+[.!?؟]?/g) || [text];
@@ -2909,7 +2918,9 @@ Drawing rules — very important:
               const parts = msg?.serverContent?.modelTurn?.parts || [];
               for (const part of parts) {
                 if (part?.thought) continue;
-                if (part?.inlineData?.mimeType?.startsWith("audio/")) {
+                // While a board explanation is pending we suppress the blind reply
+                // (both audio and text) so the user never hears "لا يوجد رسم".
+                if (part?.inlineData?.mimeType?.startsWith("audio/") && !lookDrawPending) {
                   send({ type: "audio", data: part.inlineData.data });
                 }
               }
@@ -2925,13 +2936,38 @@ Drawing rules — very important:
               //    can buffer the full model description before chart analysis runs.
               // Real spoken transcript (model's actual reply, from outputAudioTranscription)
               const outputTrans = msg?.serverContent?.outputTranscription;
-              if (outputTrans?.text) {
+              if (outputTrans?.text && !lookDrawPending) {
                 send({ type: "transcript", text: outputTrans.text, role: "model" });
               }
               // What the user said (from inputAudioTranscription)
               const inputTrans = msg?.serverContent?.inputTranscription;
               if (inputTrans?.text) {
                 send({ type: "transcript", text: inputTrans.text, role: "user" });
+                // ── Phase 2: intercept board-explanation requests HERE. The server
+                //    sees the transcript before the client; cut the blind reply off
+                //    immediately and let the client explain from the real drawing
+                //    code, then resume the lecture once the explanation is spoken.
+                if (LOOK_DRAWING_CMD.test(inputTrans.text)) {
+                  const now = Date.now();
+                  if (now - lastLookDrawAt > 1500) {
+                    lastLookDrawAt = now;
+                    lookDrawPending = true;
+                    if (lecturePhase === "narrating" || lecturePhase === "awaiting_answer") lecturePhase = "held";
+                    try { geminiSession?.sendRealtimeInput?.({ activityStart: {} }); } catch (_) {}
+                    send({ type: "look_drawing" });
+                    // Failsafe: if the client cannot inject an explanation (e.g. no
+                    // drawing on the board), resume the lecture anyway.
+                    if (lookDrawResumeTimer) clearTimeout(lookDrawResumeTimer);
+                    lookDrawResumeTimer = setTimeout(() => {
+                      if (!lookDrawPending) return;
+                      lookDrawPending = false;
+                      if (lecturePhase === "held" && lectureChunks.length) {
+                        lecturePhase = "awaiting_answer";
+                        sendLectureChunk(lectureIdx);
+                      }
+                    }, 5000);
+                  }
+                }
               }
               // Turn complete — send AFTER transcripts so client buffer is populated
               if (msg?.serverContent?.turnComplete) {
@@ -2942,6 +2978,9 @@ Drawing rules — very important:
                 } else if (lecturePhase === "awaiting_answer") {
                   // Resume reading the same chunk that was cut short by the question
                   setTimeout(() => sendLectureChunk(lectureIdx), 80);
+                } else if (lecturePhase === "held") {
+                  // Board-explanation interception: hold the resume until the client
+                  // injects the explanation (type:"text" arms the resume).
                 }
                 // if lecturePhase === "paused", do nothing until resume_lecture arrives
               }
@@ -2988,6 +3027,13 @@ Drawing rules — very important:
             turns: [{ role: "user", parts: [{ text: msg.text }] }],
             turnComplete: true,
           });
+          // If this text is the injected board explanation, arm the lecture to
+          // resume once the model finishes speaking it (instead of staying held).
+          if (lookDrawPending) {
+            lookDrawPending = false;
+            if (lookDrawResumeTimer) clearTimeout(lookDrawResumeTimer);
+            if (lecturePhase === "held") lecturePhase = "awaiting_answer";
+          }
         } else if (msg.type === "interrupt") {
           // Manual "ask a question" button — user wants to cut in right now.
           // Client already silences local playback instantly; here we make sure
