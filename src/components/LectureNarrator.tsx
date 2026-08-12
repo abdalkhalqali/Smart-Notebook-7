@@ -1086,6 +1086,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   useEffect(()=>{currentChartRef.current=currentChart;},[currentChart]);
   useEffect(()=>{libDrawRef.current=libDraw;},[libDraw]);
   useEffect(()=>{svgContentRef.current=svgContent;},[svgContent]);
+  useEffect(()=>{cleverPaintImgRef.current=cleverPaintImg;},[cleverPaintImg]); // restored clever-painter PNGs stay visible to the explainer
   // Load the public drawings library + saved narrations once
   useEffect(()=>{
     setLibraryDrawings(loadPublicDrawings());
@@ -1476,12 +1477,11 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
           :data.error==='invalid_key'?'🔑 مفتاح Gemini API غير صالح أو محظور — افتح الإعدادات ← مفاتيح API وصحّحه.'
           :data.error==='quota'?'⚠️ نفدت حصة Gemini API اليومية — جرّب مفتاحاً آخر أو انتظر حتى الغد.'
           :data.error==='rate_limit'?'⏱️ تجاوزت الحد المسموح في الدقيقة — جرّب مرة ثانية بعد لحظة.'
-          :`📋 ${extractDrawingSummary(lib.svg)}`;
-        lastDrawDescriptionRef.current=msg;
+          :`⚠️ تعذّر إكمال الشرح${data.error==='network'?' — تعذّر الاتصال بخدمة الذكاء الاصطناعي من الخادم، أعد المحاولة.':'، أعد المحاولة.'} (ملخص محلي: ${extractDrawingSummary(lib.svg)})`;
+        if(!data.error&&aiMsg) lastDrawDescriptionRef.current=aiMsg; // cache real explanations only — never the local fallback
         setQa(q=>q.map(item=>item.id===thinkId?{...item,text:`🖼️ ${msg}`}:item));
       }catch{
-        const fallback=`📋 ${extractDrawingSummary(lib.svg)}`;
-        setQa(q=>q.map(item=>item.id===thinkId?{...item,text:fallback}:item));
+        setQa(q=>q.map(item=>item.id===thinkId?{...item,text:`⚠️ تعذّر الاتصال بخدمة الشرح (شبكة) — تحقق من اتصالك وأعد المحاولة. (ملخص محلي: ${extractDrawingSummary(lib.svg)})`}:item));
       }
       return;
     }
@@ -1513,12 +1513,11 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
           :data.error==='invalid_key'?'🔑 مفتاح Gemini API غير صالح أو محظور — افتح الإعدادات ← مفاتيح API وصحّحه.'
           :data.error==='quota'?'⚠️ نفدت حصة Gemini API اليومية — جرّب مفتاحاً آخر أو انتظر حتى الغد.'
           :data.error==='rate_limit'?'⏱️ تجاوزت الحد المسموح في الدقيقة — جرّب مرة ثانية بعد لحظة.'
-          :`📋 ${extractDrawingSummary(svgCode)}`;
-        lastDrawDescriptionRef.current=msg;
+          :`⚠️ تعذّر إكمال الشرح${data.error==='network'?' — تعذّر الاتصال بخدمة الذكاء الاصطناعي من الخادم، أعد المحاولة.':'، أعد المحاولة.'} (ملخص محلي: ${extractDrawingSummary(svgCode)})`;
+        if(!data.error&&aiMsg) lastDrawDescriptionRef.current=aiMsg; // cache real explanations only — never the local fallback
         setQa(q=>q.map(item=>item.id===thinkId?{...item,text:`🖼️ ${msg}`}:item));
       }catch{
-        const fallback=`📋 ${extractDrawingSummary(svgCode)}`;
-        setQa(q=>q.map(item=>item.id===thinkId?{...item,text:fallback}:item));
+        setQa(q=>q.map(item=>item.id===thinkId?{...item,text:`⚠️ تعذّر الاتصال بخدمة الشرح (شبكة) — تحقق من اتصالك وأعد المحاولة. (ملخص محلي: ${extractDrawingSummary(svgCode)})`}:item));
       }
       return;
     }
@@ -1568,12 +1567,11 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
           :data.error==='invalid_key'?'🔑 مفتاح Gemini API غير صالح أو محظور — افتح الإعدادات ← مفاتيح API وصحّحه.'
           :data.error==='quota'?'⚠️ نفدت حصة Gemini API اليومية — جرّب مفتاحاً آخر أو انتظر حتى الغد.'
           :data.error==='rate_limit'?'⏱️ تجاوزت الحد المسموح في الدقيقة — جرّب مرة ثانية بعد لحظة.'
-          :`📋 ${cpLocalSummary(cpCmd)}`;
-        lastDrawDescriptionRef.current=msg;
+          :`⚠️ تعذّر إكمال الشرح${data.error==='network'?' — تعذّر الاتصال بخدمة الذكاء الاصطناعي من الخادم، أعد المحاولة.':'، أعد المحاولة.'} (ملخص محلي: ${cpLocalSummary(cpCmd)})`;
+        if(!data.error&&aiMsg) lastDrawDescriptionRef.current=aiMsg; // cache real explanations only — never the local fallback
         setQa(q=>q.map(item=>item.id===thinkId?{...item,text:`🖼️ ${msg}`}:item));
       }catch{
-        const fallback=`📋 ${cpLocalSummary(cpCmd)}`;
-        setQa(q=>q.map(item=>item.id===thinkId?{...item,text:fallback}:item));
+        setQa(q=>q.map(item=>item.id===thinkId?{...item,text:`⚠️ تعذّر الاتصال بخدمة الشرح (شبكة) — تحقق من اتصالك وأعد المحاولة. (ملخص محلي: ${cpLocalSummary(cpCmd)})`}:item));
       }
       return;
     }
