@@ -1560,6 +1560,22 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     }
   },[speakOnBoard]);
 
+  // ── Phase 4: auto-explain generated drawings the moment they appear on the board ──
+  // Only code-carrying SVG drawings for now (zero vision cost — the teacher reads the SVG).
+  // Clever-painter physics drawings join auto-explain when the JSON-code path lands in a
+  // later phase (their PNG-only path would burn vision credits on every generation).
+  const lastAutoExplainKeyRef=useRef('');
+  useEffect(()=>{
+    if(!svgContent) return;
+    const key='svg:'+svgContent.slice(0,96);
+    if(lastAutoExplainKeyRef.current===key) return; // already explained this exact drawing
+    const st=statusRef.current;
+    if(st!=='narrating'&&st!=='answering') return; // only inside an active live session
+    lastAutoExplainKeyRef.current=key;
+    const t=setTimeout(()=>{handleLookAtWhiteboard();},450);
+    return ()=>clearTimeout(t);
+  },[svgContent]);
+
   // Handle AI enhancement of a manual sketch
   const handleExplainDrawing=useCallback(async(imgB64:string, mimeType:string='image/jpeg')=>{
     // ① Show the raw drawing on the whiteboard IMMEDIATELY — no waiting for AI
