@@ -1651,13 +1651,16 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     setStatus('connecting');
     // Get Gemini key from new multi-key system; empty = server uses its own key pool.
     // Gemini Live accepts GOOGLE keys ONLY — never let an OpenAI/Groq/… key land
-    // in the voice slot (Google rejects it and the session dies). Google AI
-    // Studio keys always start with "AIza".
+    // in the voice slot (Google rejects it and the session dies). The key's
+    // prefix is NOT a contract — Google now issues AQ.Ab… Auth keys as well as
+    // legacy AIza… keys — so we never sniff prefixes; we trust provider metadata.
     const _keys=loadKeys();
     let _geminiKey=getActiveKey(_keys,'gemini')?.key.trim()||'';
     if(!_geminiKey){
+      // Legacy single-key storage: only use it when it was configured for Gemini.
       const legacy=(localStorage.getItem('customAiKey')||'').trim();
-      if(legacy.startsWith('AIza')) _geminiKey=legacy;
+      const legacyProv=localStorage.getItem('aiProvider')||'gemini';
+      if(legacy && legacyProv==='gemini') _geminiKey=legacy;
     }
     const key=_geminiKey;
     const params=new URLSearchParams({key,lang:'ar',mode:'lecture',voice});

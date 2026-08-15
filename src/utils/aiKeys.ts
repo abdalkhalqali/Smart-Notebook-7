@@ -20,7 +20,7 @@ export interface AiKeyEntry {
 }
 
 export const PROVIDER_OPTIONS: { value: AiProvider; label: string; placeholder?: string }[] = [
-  { value: "gemini", label: "Google Gemini AI", placeholder: "AIza..." },
+  { value: "gemini", label: "Google Gemini AI", placeholder: "AIza… / AQ…" },
   { value: "openrouter", label: "OpenRouter API", placeholder: "sk-or-..." },
   { value: "huggingface", label: "HuggingFace Inference", placeholder: "hf_..." },
   { value: "openai", label: "OpenAI API", placeholder: "sk-..." },
