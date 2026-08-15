@@ -330,7 +330,7 @@ async function executeGeminiOrOpenRouterCall(req: express.Request, systemPrompt:
       model: "gemini-2.5-flash",
       contents: fullContents,
       config
-    });
+    }, { fallbackToPool: hasCustomKey, currentKey: hasCustomKey ? trimmedKey : getServerGeminiKey(), fallbackChain: buildFallbackChain(), splitHints: systemPrompt ? { system: systemPrompt, user: userPrompt } : undefined });
 
     return response.text || "";
   }
@@ -550,9 +550,80 @@ function makeGeminiClient(apiKey: string) {
 // Rotation is attempted for any quota error when the pool has >1 key available.
 // If the active `ai` was using a personal key that's exhausted, falling back to
 // a server pool key is the right thing to do (better than a hard failure).
+// ── Phase 5: automatic multi-provider failover ─────────────────────
+// Priority order for provider fallback when Gemini fails entirely
+// (personal key dead, pool exhausted, or no Gemini key configured).
+function buildFallbackChain(): any[] {
+  const chain: any[] = [];
+  const push = (name: string, key: string, endpoint: string, model: string, pool: KeyPool) => {
+    if (key) chain.push({ name, key, endpoint, model, pool });
+  };
+  push("groq", groqPool.current(), "https://api.groq.com/openai/v1/chat/completions", "llama3-70b-8192", groqPool);
+  push("deepseek", deepseekPool.current(), "https://api.deepseek.com/v1/chat/completions", "deepseek-chat", deepseekPool);
+  push("openrouter", openrouterPool.current(), "https://openrouter.ai/api/v1/chat/completions", "google/gemini-2.5-flash", openrouterPool);
+  push("openai", openaiPool.current(), "https://api.openai.com/v1/chat/completions", "gpt-4o-mini", openaiPool);
+  push("huggingface", hfPool.current(), "https://api-inference.huggingface.co/v1/chat/completions", "Qwen/Qwen2.5-72B-Instruct", hfPool);
+  return chain;
+}
+
+// OpenAI-compatible chat completion used by the cross-provider failover
+async function callOpenAICompat(
+  endpointUrl: string, apiKey: string, model: string,
+  systemPrompt: string | null, userPrompt: string, schema?: any, maxTokens = 1500
+): Promise<string> {
+  const messages: any[] = [];
+  const userText = schema
+    ? `${userPrompt}\n\nSTRICT INSTRUCTION: Your output MUST be a valid JSON object strictly matching this schema format: ${JSON.stringify(schema)}. Output ONLY raw JSON, with NO preamble, NO conversational text, and NO markdown ticks or code blocks.`
+    : userPrompt;
+  if (systemPrompt && !userPrompt.trim()) {
+    messages.push({ role: "user", content: systemPrompt });
+  } else {
+    if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
+    messages.push({ role: "user", content: userText });
+  }
+  const body: any = { model, messages, max_tokens: maxTokens };
+  if (schema) body.response_format = { type: "json_object" };
+  const res = await callWithRetry(async () => {
+    const resp = await fetch(endpointUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const t = await resp.text();
+      const err: any = new Error(`${model} failed: ${resp.status} - ${t.slice(0, 200)}`);
+      err.status = resp.status;
+      throw err;
+    }
+    return resp;
+  }, 1);
+  const data: any = await res.json();
+  let text = (data.choices?.[0]?.message?.content || "").trim();
+  if (text.startsWith("```json")) text = text.replace(/^```json\s*/, "").replace(/\s*```$/, "");
+  else if (text.startsWith("```")) text = text.replace(/^```\s*/, "").replace(/\s*```$/, "");
+  return text.trim();
+}
+
+// Extract {system,user} from Gemini contents (array of role/parts or a string).
+function splitContentsText(contents: any): { system: string | null; user: string } {
+  if (Array.isArray(contents)) {
+    let system = "";
+    let user = "";
+    for (const msg of contents) {
+      const text = (msg?.parts || []).map((p: any) => p?.text || "").join(" ");
+      if (msg?.role === "system") system += text + "\n";
+      else user += text + "\n";
+    }
+    return { system: system.trim() || null, user: user.trim() };
+  }
+  const text = typeof contents === "string" ? contents : String(contents || "");
+  return { system: null, user: text.trim() };
+}
+
 async function generateContentWithRetryAndFallback(
   ai: any,
-  p: { model: string; contents: any; config?: any }
+  p: { model: string; contents: any; config?: any },
+  opts: { fallbackToPool?: boolean; currentKey?: string; fallbackChain?: any[]; splitHints?: { system: string | null; user: string } } = {}
 ): Promise<any> {
   const isDemandOrQuota = (error: any) =>
     error?.status === "UNAVAILABLE" ||
@@ -571,44 +642,84 @@ async function generateContentWithRetryAndFallback(
       error.message.includes("busy")
     ));
 
+  const models = p.model === "gemini-2.5-flash" ? ["gemini-2.5-flash", "gemini-2.5-flash-lite"] : [p.model];
+
   // ── Attempt with the primary model ────────────────────────────
   let primaryError: any = null;
   try {
     return await callWithRetry(() => ai.models.generateContent(p));
   } catch (error: any) {
     primaryError = error;
-    if (!isDemandOrQuota(error)) throw error; // auth / unknown → rethrow immediately
+    // With a PERSONAL key (fallbackToPool) we do NOT give up on auth/unknown
+    // errors — the server key pool can still complete the request.
+    if (!isDemandOrQuota(error) && !opts.fallbackToPool) throw error;
   }
 
-  // ── Fallback 1: switch gemini-2.5-flash → gemini-2.0-flash ────
-  if (p.model === "gemini-2.5-flash") {
-    console.warn("[Gemini Fallback] gemini-2.5-flash busy/quota. Trying gemini-2.5-flash-lite…");
-    try {
-      return await callWithRetry(() => ai.models.generateContent({ ...p, model: "gemini-2.5-flash-lite" }));
-    } catch (_) { /* continue to key rotation */ }
+  // ── Fallback 1: switch gemini-2.5-flash → gemini-2.5-flash-lite (same key) ──
+  for (const m of models.slice(1)) {
+    console.warn(`[Gemini Fallback] ${p.model} busy/quota. Trying ${m}…`);
+    try { return await callWithRetry(() => ai.models.generateContent({ ...p, model: m })); }
+    catch (_) { /* continue */ }
   }
 
-  // ── Fallback 2: quota exhausted → rotate server key ────────────
-  if (isQuotaError(primaryError) && geminiPool.size > 1) {
+  // ── Fallback 2: quota exhausted on the active server key → rotate pool ──
+  if (!opts.fallbackToPool && isQuotaError(primaryError) && geminiPool.size > 1) {
     const nextKey = geminiPool.rotate();
     if (nextKey) {
       console.warn("[Key Rotation] Retrying with next Gemini server key…");
       const newAi = makeGeminiClient(nextKey);
+      for (const m of models) {
+        try { return await callWithRetry(() => newAi.models.generateContent({ ...p, model: m })); }
+        catch (_) {}
+      }
+    }
+  }
+
+  // ── Fallback 3: a PERSONAL/custom key failed for ANY reason → server key pool ──
+  if (opts.fallbackToPool && geminiPool.size > 0) {
+    const tried = new Set<string>(opts.currentKey ? [opts.currentKey] : []);
+    let n = geminiPool.size;
+    while (n-- > 0) {
+      const poolKey = geminiPool.current();
+      if (!poolKey || tried.has(poolKey)) break;
+      tried.add(poolKey);
+      const poolAi = makeGeminiClient(poolKey);
+      let poolErr: any = null;
+      for (const m of models) {
+        try { return await callWithRetry(() => poolAi.models.generateContent({ ...p, model: m })); }
+        catch (e) { poolErr = e; }
+      }
+      if (isQuotaError(poolErr) || isRateLimitError(poolErr)) { geminiPool.rotate(); continue; }
+      break; // auth/network on a healthy server key → don't burn the rest of the pool
+    }
+  }
+
+  // ── Fallback 4: Gemini exhausted/unavailable → cross-provider failover ──
+  // Tries each configured provider's server pool in priority order, immediately
+  // (no artificial gap), rotating a provider's pool only when it is quota-hit.
+  const chain = opts.fallbackChain || [];
+  if (chain.length) {
+    const { system, user } = opts.splitHints || splitContentsText(p.contents);
+    const schema = p.config?.responseSchema;
+    for (const prov of chain) {
+      if (!prov.key) continue;
       try {
-        return await callWithRetry(() => newAi.models.generateContent(p));
-      } catch (err2: any) {
-        // Also try the model fallback on the new key
-        if (p.model === "gemini-2.5-flash") {
-          try {
-            return await callWithRetry(() => newAi.models.generateContent({ ...p, model: "gemini-2.5-flash-lite" }));
-          } catch (_) {}
+        const out = await callOpenAICompat(prov.endpoint, prov.key, prov.model, system, user, schema);
+        if (out) return { text: out };
+      } catch (err: any) {
+        console.warn(`[${prov.name} failover] ${(err?.message || "").slice(0, 120)}`);
+        if (isQuotaError(err) || isRateLimitError(err) || err?.status === 429 || err?.status === 503) {
+          prov.pool?.rotate?.();
+          continue; // exhausted → next provider
         }
+        // auth/unknown on this provider → try the next one anyway
       }
     }
   }
 
   throw primaryError;
 }
+
 
 // ══════════════════════════════════════════════════════════════════
 // Template Drawing — قوالب الرسم الجاهزة (20 قالباً، مجانية وفورية)
@@ -2308,7 +2419,7 @@ app.post("/api/ai/lecture-chart-analyze", async (req, res) => {
         responseMimeType: "application/json",
         responseSchema: schema
       }
-    });
+    }, { fallbackToPool: !!customKey, currentKey: customKey || getServerGeminiKey(), fallbackChain: buildFallbackChain() });
     let chartData: any = { hasChart: false, chartType: "none" };
     try { chartData = JSON.parse(result?.text || "{}"); } catch (_) {}
     return res.json(chartData);
@@ -2517,7 +2628,7 @@ app.post("/api/ai/clever-painter-command", async (req, res) => {
         thinkingConfig: { thinkingBudget: 0 },
         responseMimeType: "application/json",
       },
-    });
+    }, { fallbackToPool: !!customKey, currentKey: customKey || getServerGeminiKey(), fallbackChain: buildFallbackChain() });
 
     let parsed: any = null;
     try { parsed = JSON.parse(result?.text || "{}"); } catch (_) {}
@@ -2848,8 +2959,43 @@ Drawing rules — very important:
       return;
     }
 
-    const ai = new GoogleGenAI({ apiKey });
     let geminiSession: any = null;
+    // ── Phase 5: silent key rotation + auto-reconnect for the live session ──
+    // The session never dies in front of the student: on any error/close it
+    // rotates to the next available key (personal key dead → server pool) and
+    // resumes the lecture from the exact same chunk, without an error UI.
+    let reconnectAttempts = 0;
+    const MAX_RECONNECTS = 3;
+    let intentionalClose = false;
+
+    function nextSessionKey(): string {
+      if (customKey.trim()) return getServerGeminiKey(); // dead personal key → server pool
+      return geminiPool.size > 1 ? geminiPool.rotate() : getServerGeminiKey();
+    }
+
+    function scheduleReconnect() {
+      if (intentionalClose || reconnectAttempts >= MAX_RECONNECTS) {
+        send({ type: "error", message: "انقطعت جلسة الصوت الحي بعد عدة محاولات. أعد فتح الجلسة من جديد." });
+        try { clientWs.close(); } catch (_) {}
+        return;
+      }
+      reconnectAttempts++;
+      send({ type: "reconnecting" }); // silent — client keeps narrating, no error UI
+      const nextKey = nextSessionKey();
+      setTimeout(async () => {
+        try {
+          await connectSession(nextKey, false);
+          reconnectAttempts = 0; // a successful reconnect resets the budget
+          if (lectureChunks.length) {
+            send({ type: "lecture_started", total: lectureChunks.length });
+            sendLectureChunk(lectureIdx); // resume from the exact same chunk
+          }
+        } catch (e: any) {
+          console.error("[voice-chat] reconnect failed:", e?.message);
+          scheduleReconnect();
+        }
+      }, 700);
+    }
     let audioBuffer: Int16Array[] = [];
     let flushTimer: NodeJS.Timeout | null = null;
 
@@ -2907,11 +3053,15 @@ Drawing rules — very important:
       });
     }
 
-    try {
-      geminiSession = await (ai as any).live.connect({
+    async function connectSession(key: string, isFirst: boolean) {
+      const aiClient = new GoogleGenAI({ apiKey: key });
+      geminiSession = await (aiClient as any).live.connect({
         model: "gemini-2.5-flash-native-audio-latest",
         callbacks: {
-          onopen: () => send({ type: "ready" }),
+          onopen: () => {
+            if (isFirst) send({ type: "ready" });
+            else send({ type: "reconnected" });
+          },
           onmessage: (msg: any) => {
             try {
               // Audio chunks from model (skip internal "thought" parts — not the spoken reply)
@@ -2986,8 +3136,16 @@ Drawing rules — very important:
               }
             } catch (_) {}
           },
-          onerror: (e: any) => { console.error("[voice-chat] Gemini Live error:", e); send({ type: "error", message: String(e) }); },
-          onclose: (e: any) => { console.error("[voice-chat] Gemini Live closed:", e?.code, e?.reason); try { clientWs.close(); } catch (_) {} },
+          onerror: (e: any) => {
+            console.error("[voice-chat] Gemini Live error:", e);
+            if (intentionalClose) return;
+            scheduleReconnect(); // silent reconnect — no lecture interruption
+          },
+          onclose: (e: any) => {
+            console.error("[voice-chat] Gemini Live closed:", e?.code, e?.reason);
+            if (intentionalClose) { try { clientWs.close(); } catch (_) {} return; }
+            scheduleReconnect();
+          },
         },
         config: {
           responseModalities: [Modality.AUDIO],
@@ -3008,6 +3166,10 @@ Drawing rules — very important:
           },
         },
       });
+    }
+
+    try {
+      await connectSession(apiKey, true);
     } catch (e: any) {
       send({ type: "error", message: e?.message || "Gemini Live connection failed" });
       clientWs.close();
@@ -3047,6 +3209,7 @@ Drawing rules — very important:
           send({ type: "lecture_started", total: lectureChunks.length });
           sendLectureChunk(0);
         } else if (msg.type === "stop_lecture") {
+          intentionalClose = true;
           lectureChunks = [];
           lecturePhase = "idle";
         } else if (msg.type === "pause_lecture") {
@@ -3058,11 +3221,13 @@ Drawing rules — very important:
     });
 
     clientWs.on("close", () => {
+      intentionalClose = true;
       if (flushTimer) clearTimeout(flushTimer);
       try { geminiSession?.close?.(); } catch (_) {}
     });
 
     clientWs.on("error", () => {
+      intentionalClose = true;
       try { geminiSession?.close?.(); } catch (_) {}
     });
   });
@@ -3076,6 +3241,7 @@ Drawing rules — very important:
       if (!prompt?.trim()) return res.json({ error: "no_prompt" });
 
       const ai = getAI(req);
+      const customKey = (req.headers["x-custom-api-key"] as string || "").trim();
       const response = await generateContentWithRetryAndFallback(ai, {
         model: "gemini-2.5-flash",
         contents: `أنت رسام SVG متخصص في الرسوم العلمية والهندسية والتقنية.
@@ -3091,7 +3257,7 @@ Drawing rules — very important:
 - أضف نصوص توضيحية مناسبة بالعربية أو الإنجليزية حسب السياق
 - لا تُضف أي نص أو شرح خارج SVG — فقط SVG نقي من أول حرف لآخر حرف`,
         config: { thinkingConfig: { thinkingBudget: 0 } }
-      });
+      }, { fallbackToPool: !!customKey, currentKey: customKey || getServerGeminiKey(), fallbackChain: buildFallbackChain() });
 
       const raw = response.text || "";
       const match = raw.match(/<svg[\s\S]*?<\/svg>/i);
