@@ -1649,9 +1649,16 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     }catch(_){}
 
     setStatus('connecting');
-    // Get Gemini key from new multi-key system; empty = server uses its own key pool
+    // Get Gemini key from new multi-key system; empty = server uses its own key pool.
+    // Gemini Live accepts GOOGLE keys ONLY — never let an OpenAI/Groq/… key land
+    // in the voice slot (Google rejects it and the session dies). Google AI
+    // Studio keys always start with "AIza".
     const _keys=loadKeys();
-    const _geminiKey=getActiveKey(_keys,'gemini')?.key.trim()||(localStorage.getItem('customAiKey')||'').trim();
+    let _geminiKey=getActiveKey(_keys,'gemini')?.key.trim()||'';
+    if(!_geminiKey){
+      const legacy=(localStorage.getItem('customAiKey')||'').trim();
+      if(legacy.startsWith('AIza')) _geminiKey=legacy;
+    }
     const key=_geminiKey;
     const params=new URLSearchParams({key,lang:'ar',mode:'lecture',voice});
     audioCtxRef.current=new AudioContext();

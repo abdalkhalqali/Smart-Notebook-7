@@ -2965,16 +2965,26 @@ Drawing rules — very important:
     // rotates to the next available key (personal key dead → server pool) and
     // resumes the lecture from the exact same chunk, without an error UI.
     let reconnectAttempts = 0;
-    const MAX_RECONNECTS = 3;
+    const MAX_RECONNECTS = 5;
     let intentionalClose = false;
+    let sessionKeyUsed = ""; // the key the current/last session was built with
 
     function nextSessionKey(): string {
-      if (customKey.trim()) return getServerGeminiKey(); // dead personal key → server pool
-      return geminiPool.size > 1 ? geminiPool.rotate() : getServerGeminiKey();
+      // 1) The key that already worked is the best first retry — most session
+      //    drops are transient (Google session time limit / network blip) and the
+      //    SAME key reconnects fine. Never abandon it on the first failure.
+      if (reconnectAttempts === 1 && sessionKeyUsed) return sessionKeyUsed;
+      // 2) Then the server pool (rotating only when it has >1 key).
+      const poolKey = geminiPool.size > 1 ? geminiPool.rotate() : getServerGeminiKey();
+      if (poolKey) return poolKey;
+      // 3) No pool configured → keep the key that worked before; never hand an
+      //    empty key to the client builder (that is what exhausted the retries).
+      return sessionKeyUsed || getServerGeminiKey();
     }
 
     function scheduleReconnect() {
       if (intentionalClose || reconnectAttempts >= MAX_RECONNECTS) {
+        console.error("[voice-chat] reconnect exhausted. Last key:", sessionKeyUsed ? sessionKeyUsed.slice(0, 8) + "…" : "NONE");
         send({ type: "error", message: "انقطعت جلسة الصوت الحي بعد عدة محاولات. أعد فتح الجلسة من جديد." });
         try { clientWs.close(); } catch (_) {}
         return;
@@ -2982,6 +2992,7 @@ Drawing rules — very important:
       reconnectAttempts++;
       send({ type: "reconnecting" }); // silent — client keeps narrating, no error UI
       const nextKey = nextSessionKey();
+      console.warn(`[voice-chat] reconnecting attempt ${reconnectAttempts}/${MAX_RECONNECTS} (key: ${nextKey ? nextKey.slice(0, 8) + "…" : "EMPTY"})`);
       setTimeout(async () => {
         try {
           await connectSession(nextKey, false);
@@ -3054,6 +3065,7 @@ Drawing rules — very important:
     }
 
     async function connectSession(key: string, isFirst: boolean) {
+      sessionKeyUsed = key || "";
       const aiClient = new GoogleGenAI({ apiKey: key });
       geminiSession = await (aiClient as any).live.connect({
         model: "gemini-2.5-flash-native-audio-latest",
@@ -3171,9 +3183,23 @@ Drawing rules — very important:
     try {
       await connectSession(apiKey, true);
     } catch (e: any) {
-      send({ type: "error", message: e?.message || "Gemini Live connection failed" });
-      clientWs.close();
-      return;
+      // The personal key was rejected at connect (e.g. a non-Gemini key landed
+      // in the voice slot) → try the server pool once before giving up.
+      const poolKey = getServerGeminiKey();
+      if (poolKey && poolKey !== apiKey) {
+        console.warn("[voice-chat] personal key rejected at connect — falling back to server pool key");
+        try {
+          await connectSession(poolKey, true);
+        } catch (e2: any) {
+          send({ type: "error", message: e2?.message || "Gemini Live connection failed" });
+          clientWs.close();
+          return;
+        }
+      } else {
+        send({ type: "error", message: e?.message || "Gemini Live connection failed" });
+        clientWs.close();
+        return;
+      }
     }
 
     clientWs.on("message", (raw: Buffer) => {
