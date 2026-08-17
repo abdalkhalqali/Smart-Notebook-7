@@ -90,6 +90,39 @@ export function getAnyAvailableKey(keys: AiKeyEntry[]): AiKeyEntry | undefined {
   return keys.find((k) => k.key.trim() !== "");
 }
 
+// ── Key routing: Gemini keys → voice ONLY; the other providers → services ──
+// Gemini Live accepts Google keys only, so the live voice session must never
+// receive an OpenAI/Groq/… key (Google rejects it and the session dies).
+// Drawing, SVG code-reading and chart/diagram analysis run on any provider,
+// so those requests prefer the first NON-Gemini key and leave Gemini keys
+// exclusively for voice.
+const SERVICE_PROVIDERS: AiProvider[] = ["openai", "openrouter", "huggingface", "groq", "deepseek", "custom"];
+
+export function getServiceKey(keys: AiKeyEntry[]): AiKeyEntry | undefined {
+  return keys.find((k) => SERVICE_PROVIDERS.includes(k.provider) && k.key.trim() !== "");
+}
+
+// Headers for drawing / code-reading requests — first non-Gemini key wins.
+// Falls back to the active-provider headers when no non-Gemini key exists so
+// nothing regresses for users who only have Gemini keys.
+export function getServiceRequestHeaders(): Record<string, string> {
+  const serviceKey = getServiceKey(loadKeys());
+  if (serviceKey?.key.trim()) {
+    const headers: Record<string, string> = {
+      "x-custom-api-key": serviceKey.key.trim(),
+      "x-custom-provider": serviceKey.provider,
+    };
+    if (serviceKey.provider === "custom" && serviceKey.endpointUrl?.trim()) {
+      headers["x-custom-endpoint-url"] = serviceKey.endpointUrl.trim();
+    }
+    if (serviceKey.model?.trim()) {
+      headers["x-custom-model"] = serviceKey.model.trim();
+    }
+    return headers;
+  }
+  return getActiveRequestHeaders();
+}
+
 export function addKey(
   keys: AiKeyEntry[],
   entry: Omit<AiKeyEntry, "id" | "createdAt">

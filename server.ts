@@ -569,7 +569,7 @@ function buildFallbackChain(): any[] {
 // OpenAI-compatible chat completion used by the cross-provider failover
 async function callOpenAICompat(
   endpointUrl: string, apiKey: string, model: string,
-  systemPrompt: string | null, userPrompt: string, schema?: any, maxTokens = 1500
+  systemPrompt: string | null, userPrompt: string, schema?: any, jsonMode = false, maxTokens = 1500
 ): Promise<string> {
   const messages: any[] = [];
   const userText = schema
@@ -582,7 +582,7 @@ async function callOpenAICompat(
     messages.push({ role: "user", content: userText });
   }
   const body: any = { model, messages, max_tokens: maxTokens };
-  if (schema) body.response_format = { type: "json_object" };
+  if (schema || jsonMode) body.response_format = { type: "json_object" };
   const res = await callWithRetry(async () => {
     const resp = await fetch(endpointUrl, {
       method: "POST",
@@ -618,6 +618,89 @@ function splitContentsText(contents: any): { system: string | null; user: string
   }
   const text = typeof contents === "string" ? contents : String(contents || "");
   return { system: null, user: text.trim() };
+}
+
+// Map a provider name + personal key to an OpenAI-compatible endpoint/model.
+function resolveProvider(provider: string, key: string, req: express.Request): { endpoint: string; key: string; model: string } | null {
+  if (!key) return null;
+  switch (provider) {
+    case "openai":       return { endpoint: "https://api.openai.com/v1/chat/completions", key, model: "gpt-4o-mini" };
+    case "groq":         return { endpoint: "https://api.groq.com/openai/v1/chat/completions", key, model: "llama3-70b-8192" };
+    case "deepseek":     return { endpoint: "https://api.deepseek.com/v1/chat/completions", key, model: "deepseek-chat" };
+    case "openrouter":   return { endpoint: "https://openrouter.ai/api/v1/chat/completions", key, model: "google/gemini-2.5-flash" };
+    case "huggingface":  return { endpoint: "https://api-inference.huggingface.co/v1/chat/completions", key, model: "Qwen/Qwen2.5-72B-Instruct" };
+    case "custom": {
+      const u = ((req.headers["x-custom-endpoint-url"] as string) || "").trim();
+      const m = ((req.headers["x-custom-model"] as string) || "").trim() || "gpt-4o-mini";
+      return u ? { endpoint: u, key, model: m } : null;
+    }
+    default: return null;
+  }
+}
+
+// ── Unified text call that honors the ACTIVE provider ──────────────────
+// Voice stays Gemini-only, but drawing / code-reading / explanations can run
+// on ANY provider key. The active provider is tried first with the personal
+// key, then the cross-provider server chain (no artificial delay).
+async function callTextSmart(
+  req: express.Request,
+  systemPrompt: string | null,
+  userPrompt: string,
+  schema?: any,
+  json = false
+): Promise<string> {
+  const customKey = (req.headers["x-custom-api-key"] as string || "").trim();
+  const provider = (req.headers["x-custom-provider"] as string || "gemini");
+  const jsonMode = json || !!schema;
+
+  // ── Active provider = Gemini (default) → native SDK + full failover ──
+  if (provider === "gemini") {
+    const ai = getAI(req);
+    const result = await generateContentWithRetryAndFallback(ai, {
+      model: "gemini-2.5-flash",
+      contents: systemPrompt ? `${systemPrompt}\n\n${userPrompt}` : userPrompt,
+      config: {
+        thinkingConfig: { thinkingBudget: 0 },
+        ...(jsonMode ? { responseMimeType: "application/json", ...(schema ? { responseSchema: schema } : {}) } : {}),
+      },
+    }, {
+      fallbackToPool: !!customKey,
+      currentKey: customKey || getServerGeminiKey(),
+      fallbackChain: buildFallbackChain(),
+      splitHints: systemPrompt ? { system: systemPrompt, user: userPrompt } : undefined,
+    });
+    return result?.text || "";
+  }
+
+  // ── Active provider ≠ Gemini → try it first with the personal key ──
+  const active = resolveProvider(provider, customKey, req);
+  if (active) {
+    try {
+      const out = await callOpenAICompat(active.endpoint, active.key, active.model, systemPrompt, userPrompt, schema, jsonMode);
+      if (out) return out;
+    } catch (e: any) {
+      console.warn(`[${provider} active] ${(e?.message || "").slice(0, 120)}`);
+    }
+  }
+
+  // ── Then the cross-provider server chain (Groq→DeepSeek→OpenRouter→OpenAI→HF) ──
+  const chain = buildFallbackChain();
+  for (const prov of chain) {
+    if (!prov.key) continue;
+    if (active && active.endpoint === prov.endpoint && active.key === prov.key) continue; // already tried
+    try {
+      const out = await callOpenAICompat(prov.endpoint, prov.key, prov.model, systemPrompt, userPrompt, schema, jsonMode);
+      if (out) return out;
+    } catch (err: any) {
+      console.warn(`[${prov.name} failover] ${(err?.message || "").slice(0, 120)}`);
+      if (isQuotaError(err) || isRateLimitError(err) || err?.status === 429 || err?.status === 503) {
+        prov.pool?.rotate?.();
+        continue;
+      }
+    }
+  }
+
+  throw new Error("AI_TEXT_ALL_FAILED");
 }
 
 async function generateContentWithRetryAndFallback(
@@ -2358,7 +2441,6 @@ app.post("/api/ai/lecture-chart-analyze", async (req, res) => {
     const apiKey = customKey || getServerGeminiKey();
     if (!apiKey) return res.json({ hasChart: false, chartType: "none" });
 
-    const ai = new GoogleGenAI({ apiKey, httpOptions: { headers: { "User-Agent": "aistudio-build" } } });
     const schema = {
       type: Type.OBJECT,
       properties: {
@@ -2411,17 +2493,9 @@ app.post("/api/ai/lecture-chart-analyze", async (req, res) => {
       "- محاور x,y أو نقاط هندسية أو متجهات → coordinate لا diagram.\n\n" +
       "المقطع:\n\"\"\"" + snippet + "\"\"\"";
 
-    const result: any = await generateContentWithRetryAndFallback(ai, {
-      model: "gemini-2.5-flash",
-      contents: prompt,
-      config: {
-        thinkingConfig: { thinkingBudget: 0 },
-        responseMimeType: "application/json",
-        responseSchema: schema
-      }
-    }, { fallbackToPool: !!customKey, currentKey: customKey || getServerGeminiKey(), fallbackChain: buildFallbackChain() });
+    const result = await callTextSmart(req, null, prompt, schema);
     let chartData: any = { hasChart: false, chartType: "none" };
-    try { chartData = JSON.parse(result?.text || "{}"); } catch (_) {}
+    try { chartData = JSON.parse(result || "{}"); } catch (_) {}
     return res.json(chartData);
   } catch (err: any) {
     console.error(`[lecture-chart-analyze] error: status=${err?.status||err?.code} msg=${err?.message}`);
@@ -2507,21 +2581,36 @@ app.post("/api/ai/explain-drawing", async (req, res) => {
       "- coordinate: coordPoints[{x,y,label}] و/أو coordLines[{x1,y1,x2,y2,label}]\n" +
       "  للميل (slope): الخط الذي يرتفع من اليسار إلى اليمين له ميل موجب (x2>x1 و y2>y1)";
 
-    const result: any = await generateContentWithRetryAndFallback(ai, {
-      model: "gemini-2.5-flash",
-      contents: [
-        { inlineData: { mimeType, data: imageBase64 } },
-        { text: prompt }
-      ],
-      config: {
-        thinkingConfig: { thinkingBudget: 0 },
-        responseMimeType: "application/json",
-        responseSchema: schema
-      }
-    });
-
+    // ── Provider-aware routing ──────────────────────────────────────
+    // Gemini → native SDK + JSON schema. Other providers (OpenAI/OpenRouter/
+    // HF/custom…) → vision call with the schema as a strict prompt instruction.
+    // Gemini keys stay reserved for the live voice session, so drawing and
+    // code-reading arrive here with the service (non-Gemini) key.
+    const provider = (req.headers["x-custom-provider"] as string || "gemini");
     let data: any = { explanation: "تعذّر تحليل الرسم", hasChart: false, chartType: "none" };
-    try { data = JSON.parse(result?.text || "{}"); } catch (_) {}
+
+    if (provider === "gemini") {
+      const result: any = await generateContentWithRetryAndFallback(ai, {
+        model: "gemini-2.5-flash",
+        contents: [
+          { inlineData: { mimeType, data: imageBase64 } },
+          { text: prompt }
+        ],
+        config: {
+          thinkingConfig: { thinkingBudget: 0 },
+          responseMimeType: "application/json",
+          responseSchema: schema
+        }
+      });
+      try { data = JSON.parse(result?.text || "{}"); } catch (_) {}
+    } else {
+      // Groq/DeepSeek have no vision → executeVisionCall naturally falls back
+      // to the server Gemini key for those.
+      const schemaInstruction = `\n\nSTRICT INSTRUCTION: Your output MUST be a valid JSON object strictly matching this schema format: ${JSON.stringify(schema)}. Output ONLY raw JSON, with NO preamble, NO conversational text, and NO markdown ticks or code blocks.`;
+      const raw = await executeVisionCall(req, prompt + schemaInstruction, imageBase64, mimeType);
+      try { data = JSON.parse(raw || "{}"); } catch (_) {}
+    }
+
     return res.json({ success: true, ...data });
   } catch (err: any) {
     const errMsg = (err?.message || "").toLowerCase();
@@ -2577,8 +2666,6 @@ app.post("/api/ai/clever-painter-command", async (req, res) => {
     const apiKey = customKey || getServerGeminiKey();
     if (!apiKey) return res.json({ command: null, error: "no_api_key" });
 
-    const ai = new GoogleGenAI({ apiKey, httpOptions: { headers: { "User-Agent": "aistudio-build" } } });
-
     const prompt = `أنت محلل نصوص علمية ومولّد أوامر رسوميات. لديك مكتبة رسومات (clever-painter) تدعم الأنواع التالية:
 
 1. circuit — دوائر كهربائية
@@ -2621,17 +2708,12 @@ app.post("/api/ai/clever-painter-command", async (req, res) => {
 - إذا لم يكن النص ذا صلة برسم فيزيائي/هندسي محدد → أرجع {"command":null}
 - أرجع JSON صحيح فقط`;
 
-    const result: any = await generateContentWithRetryAndFallback(ai, {
-      model: "gemini-2.5-flash",
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      config: {
-        thinkingConfig: { thinkingBudget: 0 },
-        responseMimeType: "application/json",
-      },
-    }, { fallbackToPool: !!customKey, currentKey: customKey || getServerGeminiKey(), fallbackChain: buildFallbackChain() });
+    const result = await callTextSmart(req, null, prompt, undefined, true);
 
+    // Strip any markdown code fences before parsing (some providers wrap JSON).
+    const rawJson = (result || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
     let parsed: any = null;
-    try { parsed = JSON.parse(result?.text || "{}"); } catch (_) {}
+    try { parsed = JSON.parse(rawJson || "{}"); } catch (_) {}
 
     // Support both {"action":"draw",...} and {"command":{...}} wrapper
     const cmd = parsed?.action ? parsed : (parsed?.command || null);
@@ -2852,6 +2934,23 @@ app.post("/api/ai/chat", async (req, res) => {
       systemPrompt += `\n\nسياق المحاضرة:\n${context}`;
     }
 
+    const provider = (req.headers["x-custom-provider"] as string || "gemini");
+
+    // Non-Gemini provider → route through the provider-aware text path. This is
+    // what powers the drawing-code reader (SVG explanations), so it runs on the
+    // same service keys as drawing — Gemini keys stay reserved for voice.
+    if (provider !== "gemini") {
+      const historyText = history.slice(-6).map((m: any) =>
+        `${m.role === 'user' ? 'الطالب' : 'المعلم'}: ${m.content || ""}`
+      ).join("\n");
+      const fullMessage = (historyText ? historyText + "\n\n" : "") + message;
+      const result = await callTextSmart(req, systemPrompt, fullMessage);
+      return res.json({
+        response: result || "عذراً، لم أستطع صياغة إجابة مناسبة.",
+        timestamp: new Date().toISOString()
+      });
+    }
+
     const contents: any[] = [];
     history.slice(-6).forEach((msg: any) => {
       if (msg.role === 'user') {
@@ -2922,6 +3021,10 @@ async function startServer() {
     const urlObj = new URL(req.url || "/ws/voice-chat", `http://localhost`);
     const customKey = urlObj.searchParams.get("key") || "";
     const apiKey = customKey.trim() || getServerGeminiKey();
+    // All of the user's Gemini keys (comma-separated) — rotate through them on
+    // reconnect before falling back to the server pool.
+    const personalGeminiKeys = (urlObj.searchParams.get("keys") || "")
+      .split(",").map((k) => k.trim()).filter((k) => k.length > 0);
     const systemLang = urlObj.searchParams.get("lang") || "ar";
     const subjectCtx = urlObj.searchParams.get("subject") || "";
     const isLectureMode = urlObj.searchParams.get("mode") === "lecture";
@@ -2974,10 +3077,15 @@ Drawing rules — very important:
       //    drops are transient (Google session time limit / network blip) and the
       //    SAME key reconnects fine. Never abandon it on the first failure.
       if (reconnectAttempts === 1 && sessionKeyUsed) return sessionKeyUsed;
-      // 2) Then the server pool (rotating only when it has >1 key).
+      // 2) Then the user's other Gemini keys (a dead/quota'd key never burns the
+      //    whole retry budget — the next personal key gets its chance).
+      const others = personalGeminiKeys.filter((k) => k && k !== sessionKeyUsed && k !== getServerGeminiKey());
+      const idx = reconnectAttempts - 2;
+      if (idx >= 0 && idx < others.length) return others[idx];
+      // 3) Then the server pool (rotating only when it has >1 key).
       const poolKey = geminiPool.size > 1 ? geminiPool.rotate() : getServerGeminiKey();
       if (poolKey) return poolKey;
-      // 3) No pool configured → keep the key that worked before; never hand an
+      // 4) No pool configured → keep the key that worked before; never hand an
       //    empty key to the client builder (that is what exhausted the retries).
       return sessionKeyUsed || getServerGeminiKey();
     }
@@ -3266,11 +3374,8 @@ Drawing rules — very important:
       const { prompt } = req.body as { prompt?: string };
       if (!prompt?.trim()) return res.json({ error: "no_prompt" });
 
-      const ai = getAI(req);
       const customKey = (req.headers["x-custom-api-key"] as string || "").trim();
-      const response = await generateContentWithRetryAndFallback(ai, {
-        model: "gemini-2.5-flash",
-        contents: `أنت رسام SVG متخصص في الرسوم العلمية والهندسية والتقنية.
+      const response = await callTextSmart(req, null, `أنت رسام SVG متخصص في الرسوم العلمية والهندسية والتقنية.
 المستخدم يريد رسم: "${prompt.trim()}"
 
 أنشئ SVG دقيق ومفصل يمثل هذا الطلب تماماً. اتبع هذه القواعد بدقة:
@@ -3281,11 +3386,9 @@ Drawing rules — very important:
 - للتشريح والأحياء: رسوم تفصيلية مع مؤشرات (lines pointing to parts)
 - للهندسة المعمارية والميكانيكية: قياسات وتفاصيل دقيقة
 - أضف نصوص توضيحية مناسبة بالعربية أو الإنجليزية حسب السياق
-- لا تُضف أي نص أو شرح خارج SVG — فقط SVG نقي من أول حرف لآخر حرف`,
-        config: { thinkingConfig: { thinkingBudget: 0 } }
-      }, { fallbackToPool: !!customKey, currentKey: customKey || getServerGeminiKey(), fallbackChain: buildFallbackChain() });
+- لا تُضف أي نص أو شرح خارج SVG — فقط SVG نقي من أول حرف لآخر حرف`);
 
-      const raw = response.text || "";
+      const raw = response || "";
       const match = raw.match(/<svg[\s\S]*?<\/svg>/i);
       if (!match) return res.json({ error: "no_svg", raw: raw.slice(0, 300) });
 

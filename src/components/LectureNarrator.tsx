@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import MathText from './MathText';
 import CleverPainterRenderer, { CpCmd } from './CleverPainterRenderer';
 import { resolveApiUrl } from '../utils/apiBase';
-import { loadKeys, getActiveKey } from '../utils/aiKeys';
+import { loadKeys, getActiveKey, getProviderKeys, getServiceRequestHeaders } from '../utils/aiKeys';
 import UserDrawingsBar, { AddDrawingDialog } from './UserDrawingPanel';
 import type { UserDrawing, QaMessage } from '../types';
 import { loadPublicDrawings, persistPublicDrawings, loadSavedNarrations, persistSavedNarrations, mergeUnique, findByName, extractDrawingSummary, formatNiceDate, todayInputDate, uid, SavedNarration } from '../utils/lectureLibrary';
@@ -846,6 +846,14 @@ function getAiHeaders():Record<string,string>{
   return h;
 }
 
+// ── Service headers (drawing / code-reading) ──────────────────────
+// Gemini keys are reserved for the live voice session ONLY. Drawing and
+// reading drawing codes (charts, SVG explanations, vision analysis) run on
+// the first NON-Gemini key so they never compete with the voice session.
+function getServiceHeaders():Record<string,string>{
+  return getServiceRequestHeaders();
+}
+
 function chartScore(text:string):number{
   let s=0;
   if(CHART_KW.test(text)) s+=2;
@@ -947,7 +955,7 @@ function parseChartLocally(text:string):ChartData{
 async function callChartAnalyze(text:string):Promise<ChartData&{quotaExceeded?:boolean}>{
   try{
     const r=await fetch(resolveApiUrl('/api/ai/lecture-chart-analyze'),{
-      method:'POST',headers:{'Content-Type':'application/json',...getAiHeaders()},
+      method:'POST',headers:{'Content-Type':'application/json',...getServiceHeaders()},
       body:JSON.stringify({text})
     });
     const d=await r.json();
@@ -1150,7 +1158,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     setIsDrawingChart(true);
     try{
       const res=await fetch(resolveApiUrl('/api/ai/clever-painter-command'),{
-        method:'POST',headers:{'Content-Type':'application/json',...getAiHeaders()},
+        method:'POST',headers:{'Content-Type':'application/json',...getServiceHeaders()},
         body:JSON.stringify({text})
       });
       const data=await res.json();
@@ -1204,7 +1212,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
       // ── ليست بيانات → توليد رسم SVG حر (تشريح، دورة حياة، مفاهيم…) ──
       try{
         const svgRes=await fetch(resolveApiUrl('/api/ai/draw-svg'),{
-          method:'POST',headers:{'Content-Type':'application/json',...getAiHeaders()},
+          method:'POST',headers:{'Content-Type':'application/json',...getServiceHeaders()},
           body:JSON.stringify({prompt:fullDesc})
         });
         if(drawGenRef.current!==gen) return;
@@ -1382,7 +1390,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     // ── 3) ليست بيانات → رسم SVG حر ──
     try{
       const svgRes=await fetch(resolveApiUrl('/api/ai/draw-svg'),{
-        method:'POST',headers:{'Content-Type':'application/json',...getAiHeaders()},
+        method:'POST',headers:{'Content-Type':'application/json',...getServiceHeaders()},
         body:JSON.stringify({prompt:text})
       });
       if(userDrawGenRef.current!==myGen) return;
@@ -1447,7 +1455,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
       try{
         const r=await fetch(resolveApiUrl('/api/ai/chat'),{
           method:'POST',
-          headers:{'Content-Type':'application/json',...getAiHeaders()},
+          headers:{'Content-Type':'application/json',...getServiceHeaders()},
           body:JSON.stringify({
             message:`الرسمة التالية تُعرض الآن على السبورة في محاضرة (اسمها: "${lib.name}"). اشرحها كأنك مدرّس: ما الذي تصوّره؟ ما مكوناتها وكيف تُقرأ خطوة بخطوة؟ أسلوب تعليمي عربي واضح مرتب في نقاط.\n\nكود SVG للرسمة:\n\`\`\`svg\n${lib.svg.slice(0,5000)}\n\`\`\``,
             lang:'ar'
@@ -1484,7 +1492,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
       setQa(q=>[...q,{id:thinkId,role:'model',text:'🔍 أقرأ كود الرسمة المولّدة…'}]);
       try{
         const r=await fetch(resolveApiUrl('/api/ai/chat'),{
-          method:'POST',headers:{'Content-Type':'application/json',...getAiHeaders()},
+          method:'POST',headers:{'Content-Type':'application/json',...getServiceHeaders()},
           body:JSON.stringify({
             message:`الرسمة التالية تُعرض الآن على السبورة (رسمة مولّدة بالذكاء الاصطناعي). اشرحها كأنك مدرّس: ما الذي تصوّره؟ ما مكوناتها وكيف تُقرأ خطوة بخطوة؟ أسلوب تعليمي عربي واضح مرتب في نقاط.\n\nكود SVG للرسمة:\n\`\`\`svg\n${svgCode.slice(0,5000)}\n\`\`\``,
             lang:'ar'
@@ -1543,7 +1551,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
       }
       const r=await fetch(resolveApiUrl('/api/ai/explain-drawing'),{
         method:'POST',
-        headers:{'Content-Type':'application/json',...getAiHeaders()},
+        headers:{'Content-Type':'application/json',...getServiceHeaders()},
         body:JSON.stringify({imageBase64:imgB64,mimeType:mimeType})
       });
       const data=await r.json();
@@ -1588,7 +1596,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     try{
       const r=await fetch(resolveApiUrl('/api/ai/explain-drawing'),{
         method:'POST',
-        headers:{'Content-Type':'application/json',...getAiHeaders()},
+        headers:{'Content-Type':'application/json',...getServiceHeaders()},
         body:JSON.stringify({imageBase64:imgB64,mimeType})
       });
       const data=await r.json();
@@ -1656,6 +1664,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     // legacy AIza… keys — so we never sniff prefixes; we trust provider metadata.
     const _keys=loadKeys();
     let _geminiKey=getActiveKey(_keys,'gemini')?.key.trim()||'';
+    const _extraGeminiKeys=getProviderKeys(_keys,'gemini').map(k=>k.key.trim()).filter(k=>k&&k!==_geminiKey);
     if(!_geminiKey){
       // Legacy single-key storage: only use it when it was configured for Gemini.
       const legacy=(localStorage.getItem('customAiKey')||'').trim();
@@ -1663,7 +1672,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
       if(legacy && legacyProv==='gemini') _geminiKey=legacy;
     }
     const key=_geminiKey;
-    const params=new URLSearchParams({key,lang:'ar',mode:'lecture',voice});
+    const params=new URLSearchParams({key,keys:_extraGeminiKeys.join(','),lang:'ar',mode:'lecture',voice});
     audioCtxRef.current=new AudioContext();
     playTimeRef.current=audioCtxRef.current.currentTime;
 

@@ -13,7 +13,7 @@ import { loadPublicDrawings, persistPublicDrawings, mergeUnique } from '../utils
 import MathCanvasOverlay from './MathCanvasOverlay';
 import CleverPainterRenderer, { CpCmd } from './CleverPainterRenderer';
 import { arabicToUnicode } from '../utils/mathUtils';
-import { getActiveRequestHeaders } from '../utils/aiKeys';
+import { getServiceRequestHeaders } from '../utils/aiKeys';
 import { resolveApiUrl } from '../utils/apiBase';
 import { motion } from 'motion/react';
 import { CLEVER_PAINTER_CMD, svgToPng, getTouchDist, getTouchMid, clamp, renderSmoothPath, renderShape, Point, DrawingPath, DrawnShape, TextItem, BoardImage, DrawTool, HistorySnapshot, SmartBoardProps } from './smartBoardShared';
@@ -782,7 +782,7 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
     try {
       const res = await fetch(resolveApiUrl('/api/ai/draw-template'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getActiveRequestHeaders() },
+        headers: { 'Content-Type': 'application/json', ...getServiceRequestHeaders() },
         body: JSON.stringify({ id }),
       });
       const data = await res.json();
@@ -811,7 +811,7 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
       try {
         const tplRes = await fetch(resolveApiUrl('/api/ai/draw-template'), {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...getActiveRequestHeaders() },
+          headers: { 'Content-Type': 'application/json', ...getServiceRequestHeaders() },
           body: JSON.stringify({ text: clean }),
         });
         const tplData = await tplRes.json();
@@ -826,7 +826,7 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
       // ── 2) ثم المسار الذكي: clever-painter (أمر JSON) ──
       const res = await fetch(resolveApiUrl('/api/ai/clever-painter-command'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getActiveRequestHeaders() },
+        headers: { 'Content-Type': 'application/json', ...getServiceRequestHeaders() },
         body: JSON.stringify({ text: clean }),
       });
       const data = await res.json();
@@ -841,7 +841,7 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
         try {
           const svgRes = await fetch(resolveApiUrl('/api/ai/draw-svg'), {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...getActiveRequestHeaders() },
+            headers: { 'Content-Type': 'application/json', ...getServiceRequestHeaders() },
             body: JSON.stringify({ prompt: clean }),
           });
           const svgData = await svgRes.json();

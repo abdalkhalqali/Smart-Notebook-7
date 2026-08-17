@@ -276,13 +276,19 @@ export default function VoiceConversation({ onClose }: VoiceConversationProps) {
     // selected provider is Gemini — a key from another provider (OpenRouter/HF/custom) won't work here.
     // Get Gemini key from new multi-key store; fallback to old storage; empty = server pool
     let customKey = '';
+    let extraGeminiKeys: string[] = [];
     try {
-      const { loadKeys, getActiveKey } = await import('../utils/aiKeys');
-      customKey = getActiveKey(loadKeys(), 'gemini')?.key.trim() || '';
+      const { loadKeys, getActiveKey, getProviderKeys } = await import('../utils/aiKeys');
+      const allKeys = loadKeys();
+      customKey = getActiveKey(allKeys, 'gemini')?.key.trim() || '';
+      extraGeminiKeys = getProviderKeys(allKeys, 'gemini')
+        .map((k) => k.key.trim())
+        .filter((k) => k && k !== customKey);
     } catch (_) {}
     if (!customKey) customKey = (localStorage.getItem('customAiKey') || '').trim();
     const params = new URLSearchParams({
       key: customKey,
+      keys: extraGeminiKeys.join(','),
       lang: language,
       subject,
     });
