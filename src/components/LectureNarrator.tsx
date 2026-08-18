@@ -495,16 +495,17 @@ function ChartPanel({chart}:{chart:ChartData}){
 // ══════════════════════════════════════════════════════════════════
 // WHITEBOARD — realistic white board, fills all available space
 // ══════════════════════════════════════════════════════════════════
-function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMsg,drawImg,isAnalyzingDraw,onClearDraw,svgContent,onClearSvg,cleverPaintImg,onClearCleverPaint,userSvg,userSvgName,onClearUserSvg}:{
+function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMsg,drawImg,isAnalyzingDraw,onClearDraw,svgContent,onClearSvg,cleverPaintImg,onClearCleverPaint,userSvg,userSvgName,onClearUserSvg,caption,captionActive}:{
   text:string; chart:ChartData|null; chunkIdx:number; totalChunks:number; isDrawingChart:boolean; chartErrorMsg?:string;
   drawImg?:string|null; isAnalyzingDraw?:boolean; onClearDraw?:()=>void;
   svgContent?:string|null; onClearSvg?:()=>void;
   cleverPaintImg?:string|null; onClearCleverPaint?:()=>void;
   userSvg?:string|null; userSvgName?:string; onClearUserSvg?:()=>void;
+  caption?:string; captionActive?:boolean;
 }){
   const {disp,done}=useTypewriter(text,5,11);
   const boardScrollRef=useRef<HTMLDivElement>(null);
-  const hasContent=disp.trim().length>0||chart?.hasChart||!!drawImg||!!svgContent||!!cleverPaintImg||!!userSvg;
+  const hasContent=disp.trim().length>0||chart?.hasChart||!!drawImg||!!svgContent||!!cleverPaintImg||!!userSvg||!!caption;
 
   // Auto-scroll to bottom as text is typed so board always shows latest content
   useEffect(()=>{
@@ -687,6 +688,27 @@ function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMs
                 <div className="w-full flex items-center justify-center p-2"
                   dangerouslySetInnerHTML={{__html:userSvg}}
                   style={{minHeight:120}}/>
+              </div>
+            )}
+
+            {/* 📝 Explanation caption — written under the drawing, synced with the voice */}
+            {caption&&(
+              <div className="relative mt-4 rounded-2xl overflow-hidden border-2 border-blue-400/50 shadow-lg bg-white">
+                <div className="flex items-center gap-1.5 bg-blue-600 text-white text-[10px] font-black px-3 py-1.5">
+                  <span>📝</span><span>الشرح المكتوب للرسمة</span>
+                  {captionActive&&(
+                    <span className="mr-auto inline-flex items-center gap-1 text-[9px] font-bold opacity-90">
+                      <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"/>يُنطق الآن
+                    </span>
+                  )}
+                </div>
+                <div className="px-4 py-3" dir="rtl"
+                  style={{fontFamily:'Georgia,"Times New Roman",serif',fontSize:'clamp(14px,1.6vw,18px)',lineHeight:'30px',color:'#1a1832'}}>
+                  <MathText text={caption} dir="rtl"/>
+                  {captionActive&&(
+                    <span className="inline-block w-[3px] h-4 bg-blue-600 align-middle ml-1 animate-pulse"/>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -1027,6 +1049,11 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   const lastDrawDescriptionRef=useRef<string>('');
   const autoExplainRef=useRef<{id:string;at:number}|null>(null); // dedup guard for auto-explain on drawing open
   const lastLookDrawTriggerRef=useRef(0); // dedup: server look_drawing + transcript path may both fire for one utterance
+  // ── Board caption: written explanation under the drawing, synced word-by-word ──
+  const [boardCaption,setBoardCaption]=useState('');
+  const [boardCaptionActive,setBoardCaptionActive]=useState(false);
+  const boardCaptionRef=useRef('');
+  const boardExplainActiveRef=useRef(false);
   // ── Library drawings (رسوماتي) — code drawings shown in the top bar ──
   const [privateDrawings,setPrivateDrawings]=useState<UserDrawing[]>([]); // خاصة بهذه المحاضرة
   const [libraryDrawings,setLibraryDrawings]=useState<UserDrawing[]>([]); // عامة (كل المحاضرات)
@@ -1415,6 +1442,34 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
 
   // Handle user asking AI narrator to "look at the drawing on the whiteboard"
   // ── Voice-narrate board explanations through the live session ──────────
+  // ── Board caption helpers ────────────────────────────────────
+  // Live streaming: reset the caption and arm the WS transcript sink so every
+  // spoken word of the explanation is written under the drawing as it is
+  // pronounced (Gemini Live delivers transcript deltas in sync with the audio).
+  const beginBoardCaptionStream=useCallback(()=>{
+    boardExplainActiveRef.current=true;
+    boardCaptionRef.current='';
+    setBoardCaption('');
+    setBoardCaptionActive(true);
+  },[]);
+  // Full text at once (REST fallback — not spoken through the live session).
+  const showBoardCaptionFull=useCallback((text:string)=>{
+    boardExplainActiveRef.current=false;
+    boardCaptionRef.current=text;
+    setBoardCaption(text);
+    setBoardCaptionActive(false);
+  },[]);
+  const finishBoardCaption=useCallback(()=>{
+    boardExplainActiveRef.current=false;
+    setBoardCaptionActive(false);
+  },[]);
+  const clearBoardCaption=useCallback(()=>{
+    boardExplainActiveRef.current=false;
+    boardCaptionRef.current='';
+    setBoardCaption('');
+    setBoardCaptionActive(false);
+  },[]);
+
   // Sends text to the live voice session so the teacher SPEAKS it aloud,
   // interrupting any current narration first (server resumes the same chunk after).
   const speakOnBoard=useCallback((text:string):boolean=>{
@@ -1435,7 +1490,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
 
     // ① If we already have a saved description from when the drawing was submitted → reuse it instantly
     if(savedDesc){
-      speakOnBoard(savedDesc); // narrator speaks the cached explanation too when the session is open
+      if(speakOnBoard(savedDesc)) beginBoardCaptionStream(); // narrator speaks the cached explanation too when the session is open
       setQa(q=>[...q,{id:Date.now().toString(),role:'model',text:`🖼️ ${savedDesc}`}]);
       return;
     }
@@ -1447,6 +1502,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
       const livePrompt=`الرسمة التالية تُعرض الآن على السبورة في محاضرة (اسمها: "${lib.name}"). اشرحها بصوتك كأنك مدرّس: ما الذي تصوّره؟ ما مكوناتها وكيف تُقرأ خطوة بخطوة؟ أسلوب تعليمي عربي واضح مرتب في نقاط.\n\nكود SVG للرسمة:\n\`\`\`svg\n${lib.svg.slice(0,5000)}\n\`\`\``;
       // Live voice session open → the teacher explains ALOUD from the code (saves a REST call)
       if(speakOnBoard(livePrompt)){
+        beginBoardCaptionStream(); // شرح يُكتب على السبورة كلمة-بكلمة مع النطق
         setQa(q=>[...q,{id:thinkId,role:'model',text:`🎙️ أشرح الآن الرسمة "${lib.name}" بصوت المعلّم من كودها…`}]);
         lastDrawDescriptionRef.current='';
         return;
@@ -1470,6 +1526,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
           :data.error==='rate_limit'?'⏱️ تجاوزت الحد المسموح في الدقيقة — جرّب مرة ثانية بعد لحظة.'
           :`📋 ${extractDrawingSummary(lib.svg)}`;
         lastDrawDescriptionRef.current=msg;
+        showBoardCaptionFull(msg); // لا جلسة صوتية → يُكتب الشرح كاملاً تحت الرسمة
         setQa(q=>q.map(item=>item.id===thinkId?{...item,text:`🖼️ ${msg}`}:item));
       }catch{
         const fallback=`📋 ${extractDrawingSummary(lib.svg)}`;
@@ -1485,6 +1542,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
       const livePrompt=`الرسمة التالية تُعرض الآن على السبورة (رسمة مولّدة بالذكاء الاصطناعي). اشرحها بصوتك كأنك مدرّس: ما الذي تصوّره؟ ما مكوناتها وكيف تُقرأ خطوة بخطوة؟ أسلوب تعليمي عربي واضح مرتب في نقاط.\n\nكود SVG للرسمة:\n\`\`\`svg\n${svgCode.slice(0,5000)}\n\`\`\``;
       // Live voice session open → the teacher explains ALOUD from the code (saves a REST call)
       if(speakOnBoard(livePrompt)){
+        beginBoardCaptionStream(); // شرح يُكتب على السبورة كلمة-بكلمة مع النطق
         setQa(q=>[...q,{id:thinkId,role:'model',text:'🎙️ أشرح الآن الرسمة المولّدة بصوت المعلّم من كودها…'}]);
         lastDrawDescriptionRef.current='';
         return;
@@ -1507,6 +1565,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
           :data.error==='rate_limit'?'⏱️ تجاوزت الحد المسموح في الدقيقة — جرّب مرة ثانية بعد لحظة.'
           :`📋 ${extractDrawingSummary(svgCode)}`;
         lastDrawDescriptionRef.current=msg;
+        showBoardCaptionFull(msg); // لا جلسة صوتية → يُكتب الشرح كاملاً تحت الرسمة
         setQa(q=>q.map(item=>item.id===thinkId?{...item,text:`🖼️ ${msg}`}:item));
       }catch{
         const fallback=`📋 ${extractDrawingSummary(svgCode)}`;
@@ -1561,7 +1620,10 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
           :data.error==='rate_limit'?'⏱️ تجاوزت الحد المسموح في الدقيقة — جرّب مرة ثانية بعد لحظة.'
           :'⚠️ تعذّر تحليل الرسم — تأكد من ضبط مفتاح Gemini API في الإعدادات.');
       if(data.explanation) lastDrawDescriptionRef.current=data.explanation; // cache for next time
-      if(data.explanation&&!data.error) speakOnBoard(data.explanation); // narrator speaks the vision result too
+      if(data.explanation&&!data.error){
+        if(speakOnBoard(data.explanation)) beginBoardCaptionStream(); // narrator speaks the vision result too
+        else showBoardCaptionFull(data.explanation);
+      }
       setQa(q=>q.map(item=>item.id===thinkId?{...item,text:`🖼️ ${msg}`}:item));
     }catch{
       setQa(q=>q.map(item=>item.id===thinkId?{...item,text:'⚠️ تعذّر الاتصال بالخادم.'}:item));
@@ -1623,6 +1685,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
       // ③ Save explanation so narrator can reuse it without re-calling API
       if(data.explanation){
         lastDrawDescriptionRef.current=data.explanation;
+        showBoardCaptionFull(data.explanation); // written under the drawing on the board
       }
 
       // ④ Show AI explanation in Q&A strip
@@ -1706,6 +1769,15 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
             if(last&&last.role===role) return[...prev.slice(0,-1),{...last,text:last.text+txt}];
             return[...prev,{id:Date.now()+Math.random()+'',role,text:txt}];
           });
+          // Stream the spoken explanation onto the board caption — the live
+          // session delivers transcript deltas in sync with the audio, so each
+          // word is written under the drawing the moment it is pronounced.
+          if(role==='model'&&boardExplainActiveRef.current){
+            boardCaptionRef.current+=txt;
+            setBoardCaption(boardCaptionRef.current);
+          }
+          // User started talking → the explanation turn is over; freeze the caption.
+          if(role==='user'){ boardExplainActiveRef.current=false; setBoardCaptionActive(false); }
           // Accumulate model transcript into buffer
           if(role==='model'){
             modelTransBuf.current+=txt+' ';
@@ -1730,6 +1802,9 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
             }
           }
         }else if(msg.type==='turn_complete'){
+          // Explanation turn finished → stop streaming (caption keeps the full text).
+          boardExplainActiveRef.current=false;
+          setBoardCaptionActive(false);
           // Wait 250ms so any in-flight transcript WS messages arrive before we process
           setTimeout(()=>{
             clearDrawFallback();
@@ -2096,14 +2171,16 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
         chartErrorMsg={chartErrorMsg}
         drawImg={manualDrawImg}
         isAnalyzingDraw={isEnhancing}
-        onClearDraw={()=>{setManualDrawImg(null);libDrawRef.current=null;setLibDraw(null);lastDrawDescriptionRef.current='';userDrawLockRef.current=false;}}
+        onClearDraw={()=>{clearBoardCaption();setManualDrawImg(null);libDrawRef.current=null;setLibDraw(null);lastDrawDescriptionRef.current='';userDrawLockRef.current=false;}}
         svgContent={svgContent}
-        onClearSvg={()=>{setSvgContent(null);userDrawLockRef.current=false;}}
+        onClearSvg={()=>{clearBoardCaption();setSvgContent(null);userDrawLockRef.current=false;}}
         cleverPaintImg={cleverPaintImg}
-        onClearCleverPaint={()=>{setCleverPaintImg(null);cleverPaintImgRef.current=null;setCleverPaintCmd(null);userDrawLockRef.current=false;}}
+        onClearCleverPaint={()=>{clearBoardCaption();setCleverPaintImg(null);cleverPaintImgRef.current=null;setCleverPaintCmd(null);userDrawLockRef.current=false;}}
         userSvg={libDraw?.svg||null}
         userSvgName={libDraw?.name}
-        onClearUserSvg={()=>{libDrawRef.current=null;setLibDraw(null);lastDrawDescriptionRef.current='';userDrawLockRef.current=false;}}/>
+        onClearUserSvg={()=>{clearBoardCaption();libDrawRef.current=null;setLibDraw(null);lastDrawDescriptionRef.current='';userDrawLockRef.current=false;}}
+        caption={boardCaption}
+        captionActive={boardCaptionActive}/>
 
       {/* Clever Painter hidden renderer — draws to off-screen canvas and calls back with PNG */}
       <CleverPainterRenderer
