@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import MathText from './MathText';
 import CleverPainterRenderer, { CpCmd } from './CleverPainterRenderer';
 import { resolveApiUrl } from '../utils/apiBase';
@@ -6,6 +6,7 @@ import { loadKeys, getActiveKey, getProviderKeys, getServiceRequestHeaders } fro
 import UserDrawingsBar, { AddDrawingDialog } from './UserDrawingPanel';
 import type { UserDrawing, QaMessage } from '../types';
 import { loadPublicDrawings, persistPublicDrawings, loadSavedNarrations, persistSavedNarrations, mergeUnique, findByName, extractDrawingSummary, formatNiceDate, todayInputDate, uid, SavedNarration } from '../utils/lectureLibrary';
+import { initialLectures } from '../initialData';
 
 // ══════════════════════════════════════════════════════════════════
 // شارح المحاضرات التفاعلي — سبورة بيضاء تملأ الشاشة
@@ -1070,8 +1071,8 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
   const boardCaptionRef=useRef('');
   const boardExplainActiveRef=useRef(false);
   // ── Auto physics diagrams during narration (inclines, forces, pulleys…) ──
-  const PHYSICS_DRAW_RE=/مائ|منحدر|inclin|زاوية الميل|تحليل القوى|مخطط القوى|قوة الاحتكاك|قوة عمودية|قوى|free body|fbd|بكرة|بكرات|حبل|نيوتن|قذف|قوة أفقية|أتود|atwood|آلة أتوود/i;
-  const PHYSICS_HEADER_RE=/(الجزء|الحالة|مثال|المثال|تمرين|تمارين|جدول|نصائح|خاتمة|المقدمة|تعريف)/i;
+  const PHYSICS_DRAW_RE=/مائ|منحدر|inclin|زاوية الميل|تحليل القوى|مخطط القوى|قوة الاحتكاك|قوة عمودية|قوى|free body|fbd|بكرة|بكرات|حبل|نيوتن|قذف|قوة أفقية|أتود|atwood|آلة أتوود|مصعد|المصعد|وزن ظاهري|الوزن الظاهري|انعدام الوزن|القصور الذاتي/i;
+  const PHYSICS_HEADER_RE=/(الجزء|الحالة|مثال|المثال|تمرين|تمارين|جدول|نصائح|خاتمة|المقدمة|تعريف|سؤال)/i;
   const physicsDrawSigRef=useRef('');
   const physicsDrawAtRef=useRef(0);
   const physicsDrawBusyRef=useRef(false);
@@ -1095,6 +1096,19 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
   // ── Opening saved lectures ──
   const [showOpenModal,setShowOpenModal]=useState(false);
   const [savedNarrations,setSavedNarrations]=useState<SavedNarration[]>([]);
+  // المحاضرات الجاهزة المدمجة (lec-3, lec-4…) تظهر في قائمة الفتح دائماً
+  const readyNarrations=useMemo<SavedNarration[]>(()=>initialLectures
+    .filter(l=>l.lectureText&&l.lectureText.trim())
+    .map(l=>({
+      id:l.id,name:l.title,date:l.date,scope:'public' as const,hasDiscussion:false,
+      lectureText:l.lectureText||'',drawings:[],qaHistory:[],
+      createdAt:`${l.date}T00:00:00.000Z`,updatedAt:`${l.date}T00:00:00.000Z`,ready:true,
+    })),[]);
+  // القائمة المعروضة: الجاهزة أولاً ثم محفوظات المستخدم (بدون تكرار بالاسم)
+  const allNarrations=useMemo(()=>{
+    const seedNames=new Set(readyNarrations.map(r=>r.name.trim().toLowerCase()));
+    return [...readyNarrations,...savedNarrations.filter(n=>!seedNames.has(n.name.trim().toLowerCase()))];
+  },[readyNarrations,savedNarrations]);
 
   // Refs
   const wsRef=useRef<WebSocket|null>(null);
@@ -2053,6 +2067,8 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
     setQa([]);
     const first=n.drawings&&n.drawings[0];
     if(first){pickLibraryDrawing(first);}
+    // المحاضرات الجاهزة تبدأ الشرح فوراً (مثل زر "تشغيل الشرح المباشر")
+    if(n.ready&&n.lectureText){setTimeout(()=>{startRef.current();},600);}
   };
 
   const inSession=!['idle','error'].includes(status);
@@ -2077,11 +2093,11 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
   const renderSetupPanel=()=>(
     <div className="flex flex-col h-full overflow-hidden">
       {/* Saved lectures quick access */}
-      {savedNarrations.length>0&&(
+      {allNarrations.length>0&&(
         <div className="shrink-0 mx-4 mt-3">
           <button onClick={()=>{setShowOpenModal(true);}}
             className="w-full py-2.5 rounded-xl bg-sky-600/20 border border-sky-500/40 text-sky-300 hover:bg-sky-600/35 text-xs font-extrabold transition">
-            📂 فتح محاضرة محفوظة ({savedNarrations.length})
+            📂 فتح محاضرة محفوظة ({allNarrations.length})
           </button>
         </div>
       )}
@@ -2520,17 +2536,20 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
               <p className="text-sm font-black text-white">📂 المحاضرات المحفوظة</p>
               <button onClick={()=>setShowOpenModal(false)} className="text-slate-500 hover:text-white transition text-sm font-black">✕</button>
             </div>
-            {savedNarrations.length===0?(
-              <p className="text-xs text-slate-500 py-6 text-center">لا توجد محاضرات محفوظة بعد — أضف محاضرة وابدأ الشرح ثم احفظها بزر 💾.</p>
+            {allNarrations.length===0?(
+              <p className="text-xs text-slate-500 py-6 text-center">لا توجد محاضرات بعد — أضف محاضرة وابدأ الشرح ثم احفظها بزر 💾.</p>
             ):(
               <div className="space-y-2">
-                {[...savedNarrations].sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)).map(n=>(
+                {[...allNarrations].sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)).map(n=>(
                   <button key={n.id} onClick={()=>openSavedLecture(n)}
                     className="w-full text-right bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl px-3 py-2.5 transition group">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-bold text-slate-200 group-hover:text-white">{n.name}</span>
-                      <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${n.scope==='public'?'bg-violet-600 text-white':'bg-amber-600 text-white'}`}>
-                        {n.scope==='public'?'عامة':'خاصة'}
+                      <span className="flex items-center gap-1">
+                        {n.ready&&(<span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-emerald-600 text-white">📦 جاهزة</span>)}
+                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${n.scope==='public'?'bg-violet-600 text-white':'bg-amber-600 text-white'}`}>
+                          {n.scope==='public'?'عامة':'خاصة'}
+                        </span>
                       </span>
                     </div>
                     <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-500">

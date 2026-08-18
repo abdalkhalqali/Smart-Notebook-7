@@ -17,6 +17,8 @@ export interface SavedNarration {
   qaHistory: QaMessage[]; // سجل المناقشة (إن وُجد)
   createdAt: string;
   updatedAt: string;
+  /** محاضرة جاهزة مدمجة تظهر دائماً (من initialLectures) ولو لم تُحفظ */
+  ready?: boolean;
 }
 
 const NARRATIONS_KEY = "smartNotebook_saved_narrations";

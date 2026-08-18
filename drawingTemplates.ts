@@ -822,6 +822,36 @@ ${t(280, 386, "الكواكب تدور حول الشمس في مدارات إه�
 }
 
 // ══════════════════════════════════════════════════════════════════════
+// 21) المصعد — الوزن الظاهري (حالات المصعد الست)
+// ══════════════════════════════════════════════════════════════════════
+function elevator(p: TemplateParams): string {
+  const state = p.state ?? "المصعد ساكن (a = 0)";
+  const title = p.title ?? "المصعد — الوزن الظاهري";
+  const b = `
+${line(115, 100, 115, 332, { w: 6 })}
+${line(445, 100, 445, 332, { w: 6 })}
+${line(95, 332, 465, 332, { w: 6 })}
+<rect x="140" y="110" width="280" height="222" rx="4" fill="#ffffff" stroke="${C.ink}" stroke-width="2.5"/>
+${t(280, 134, "المصعد", { size: 12, fill: C.soft })}
+${circle(280, 205, 16, { fill: C.blueSoft, stroke: C.ink, w: 2.5 })}
+${line(280, 221, 280, 265, { w: 3.5 })}
+${line(280, 235, 256, 259, { w: 3.5 })}
+${line(280, 235, 304, 259, { w: 3.5 })}
+${line(280, 265, 258, 306, { w: 3.5 })}
+${line(280, 265, 302, 306, { w: 3.5 })}
+${t(280, 186, "m", { size: 12, italic: true })}
+${arrow(280, 221, 280, 138, C.green, { w: 3.5, head: 12 })}
+${t(296, 156, "N", { size: 14, italic: true, fill: C.green, anchor: "start" })}
+${arrow(280, 265, 280, 318, C.red, { w: 3.5, head: 12 })}
+${t(296, 308, "W = mg", { size: 13, italic: true, fill: C.red, anchor: "start" })}
+${arrow(120, 344, 120, 382, C.blue, { w: 3, head: 10 })}
+${t(140, 376, "a", { size: 13, italic: true, fill: C.blue, anchor: "start" })}
+${t(280, 396, esc(state), { size: 13, fill: C.blue, weight: 700 })}
+`;
+  return frame(title, b);
+}
+
+// ══════════════════════════════════════════════════════════════════════
 // قائمة القوالب
 // ══════════════════════════════════════════════════════════════════════
 export const templates: DrawingTemplate[] = [
@@ -876,7 +906,7 @@ export const templates: DrawingTemplate[] = [
   {
     id: "free_body",
     nameAr: "مخطط الجسم الحر",
-    keywords: ["مخطط القوى", "القوى", "قوى", "جسم حر", "free body", "fbd", "وزن", "قوة الاحتكاك", "قوة عمودية", "مخطط جسم"],
+    keywords: ["مخطط القوى", "القوى", "قوى", "جسم حر", "free body", "fbd", "وزن", "قوة الاحتكاك", "قوة عمودية", "مخطط جسم", "قوة أفقية", "سطح أفقي"],
     render: freeBody,
     defaults: { mass: "m = 5 kg" },
     extractHint: "يمكن استخراج: mass (كتلة الجسم), title.",
@@ -946,6 +976,14 @@ export const templates: DrawingTemplate[] = [
     extractHint: "يمكن استخراج: m1 (كتلة الكتلة الأولى), m2 (كتلة الكتلة الثانية), title.",
   },
   {
+    id: "elevator",
+    nameAr: "المصعد — الوزن الظاهري",
+    keywords: ["مصعد", "المصعد", "elevator", "lift", "وزن ظاهري", "الوزن الظاهري", "انعدام الوزن", "سقوط حر"],
+    render: elevator,
+    defaults: { state: "المصعد ساكن (a = 0)" },
+    extractHint: "يمكن استخراج: state (حالة المصعد مثل: ساكن، يتسارع لأعلى، يتسارع لأسفل، سقوط حر، يتباطأ أثناء الصعود، يتباطأ أثناء الهبوط), title.",
+  },
+  {
     id: "thermo_cycle",
     nameAr: "الدورة الديناميكية الحرارية",
     keywords: ["دورة", "ديناميكا حرارية", "thermo", "ضغط", "حجم", "P-V", "pv", "كلفن", "كارنو", "عمل", "حرارة"],
@@ -1013,6 +1051,7 @@ export function matchTemplate(text: string): DrawingTemplate | null {
   if (/محول|transformer|اللفات|لفات/i.test(qn)) return findById("transformer");
   if (/شمس|كواكب|solar|المريخ|المشتري|زحل|عطارد|الارض|الأرض/i.test(qn)) return findById("solar_system");
   if (/بكرة|بكرات|pulley|أتود|atwood/i.test(qn)) return findById("pulley_system");
+  if (/مصعد|المصعد|elevator|وزن ظاهري|انعدام الوزن/i.test(qn)) return findById("elevator");
 
   let best: DrawingTemplate | null = null;
   let bestScore = 0;
