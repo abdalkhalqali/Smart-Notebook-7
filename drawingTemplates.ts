@@ -884,7 +884,7 @@ export const templates: DrawingTemplate[] = [
   {
     id: "inclined_plane",
     nameAr: "المستوى المائل",
-    keywords: ["مستوى مائل", "منحدر", "inclined", "slope", "زاوية الميل", "تحليل القوى"],
+    keywords: ["مستوى مائل", "سطح مائل", "منحدر", "inclined", "slope", "زاوية الميل", "تحليل القوى"],
     render: inclinedPlane,
     defaults: { angle: 30 },
     extractHint: "يمكن استخراج: angle (زاوية الميل بالدرجات).",
@@ -1051,7 +1051,7 @@ export function matchTemplate(text: string): DrawingTemplate | null {
     }
   }
   // مستوى مائل قبل مخطط القوى
-  if (best.id === "free_body" && /مستوى مائل|منحدر|inclined/i.test(qn)) {
+  if (best.id === "free_body" && /مستوى مائل|سطح مائل|منحدر|inclined/i.test(qn)) {
     return templates.find((t) => t.id === "inclined_plane") ?? best;
   }
   return best;

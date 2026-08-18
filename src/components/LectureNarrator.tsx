@@ -495,6 +495,17 @@ function ChartPanel({chart}:{chart:ChartData}){
 // ══════════════════════════════════════════════════════════════════
 // WHITEBOARD — realistic white board, fills all available space
 // ══════════════════════════════════════════════════════════════════
+// Laser pointer shown over drawings while the explanation is being spoken aloud.
+function LaserOverlay(){
+  return(
+    <div className="ln-draw-laser" aria-hidden="true">
+      <div className="ln-draw-laser-beam"/>
+      <div className="ln-draw-laser-ring"/>
+      <div className="ln-draw-laser-dot"/>
+    </div>
+  );
+}
+
 function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMsg,drawImg,isAnalyzingDraw,onClearDraw,svgContent,onClearSvg,cleverPaintImg,onClearCleverPaint,userSvg,userSvgName,onClearUserSvg,caption,captionActive}:{
   text:string; chart:ChartData|null; chunkIdx:number; totalChunks:number; isDrawingChart:boolean; chartErrorMsg?:string;
   drawImg?:string|null; isAnalyzingDraw?:boolean; onClearDraw?:()=>void;
@@ -629,6 +640,7 @@ function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMs
                   alt="رسم يدوي"
                   className="w-full object-contain bg-white"
                   style={{maxHeight:400}}/>
+                {captionActive&&<LaserOverlay/>}
                 {isAnalyzingDraw&&(
                   <div className="absolute inset-0 flex items-center justify-center bg-white/60 backdrop-blur-sm">
                     <div className="flex items-center gap-3 bg-indigo-600 text-white px-5 py-3 rounded-2xl text-sm font-black shadow-2xl">
@@ -651,6 +663,7 @@ function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMs
                 <div className="absolute top-2 right-2 z-10 flex items-center gap-1 bg-emerald-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow">
                   <span>🤖</span><span>رسم AI</span>
                 </div>
+                {captionActive&&<LaserOverlay/>}
                 <div className="w-full flex items-center justify-center p-2"
                   dangerouslySetInnerHTML={{__html:svgContent}}
                   style={{minHeight:120}}/>
@@ -671,6 +684,7 @@ function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMs
                 <img src={cleverPaintImg} alt="رسم فيزيائي"
                   className="w-full object-contain bg-white"
                   style={{maxHeight:460}}/>
+                {captionActive&&<LaserOverlay/>}
               </div>
             )}
 
@@ -685,6 +699,7 @@ function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMs
                 <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5 bg-amber-500 text-white text-[10px] font-black px-2.5 py-0.5 rounded-full shadow">
                   <span>🖼️</span><span>رسمة من مكتبتي{userSvgName?` — ${userSvgName}`:''}</span>
                 </div>
+                {captionActive&&<LaserOverlay/>}
                 <div className="w-full flex items-center justify-center p-2"
                   dangerouslySetInnerHTML={{__html:userSvg}}
                   style={{minHeight:120}}/>
@@ -996,9 +1011,9 @@ async function callChartAnalyze(text:string):Promise<ChartData&{quotaExceeded?:b
 // ══════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ══════════════════════════════════════════════════════════════════
-interface Props{onClose:()=>void;initialText?:string;}
+interface Props{onClose:()=>void;initialText?:string;autoStart?:boolean;}
 
-export default function LectureNarrator({onClose,initialText=''}:Props){
+export default function LectureNarrator({onClose,initialText='',autoStart=false}:Props){
   // Session state
   const [status,setStatus]=useState<Status>('idle');
   const [lectureText,setLectureText]=useState(initialText);
@@ -1054,6 +1069,13 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   const [boardCaptionActive,setBoardCaptionActive]=useState(false);
   const boardCaptionRef=useRef('');
   const boardExplainActiveRef=useRef(false);
+  // ── Auto physics diagrams during narration (inclines, forces, pulleys…) ──
+  const PHYSICS_DRAW_RE=/مائ|منحدر|inclin|زاوية الميل|تحليل القوى|مخطط القوى|قوة الاحتكاك|قوة عمودية|قوى|free body|fbd|بكرة|بكرات|حبل|نيوتن|قذف|قوة أفقية|أتود|atwood|آلة أتوود/i;
+  const PHYSICS_HEADER_RE=/(الجزء|الحالة|مثال|المثال|تمرين|تمارين|جدول|نصائح|خاتمة|المقدمة|تعريف)/i;
+  const physicsDrawSigRef=useRef('');
+  const physicsDrawAtRef=useRef(0);
+  const physicsDrawBusyRef=useRef(false);
+  const autoPhysicsDrawRef=useRef(false); // suppress voice auto-explain for auto-drawn diagrams
   // ── Library drawings (رسوماتي) — code drawings shown in the top bar ──
   const [privateDrawings,setPrivateDrawings]=useState<UserDrawing[]>([]); // خاصة بهذه المحاضرة
   const [libraryDrawings,setLibraryDrawings]=useState<UserDrawing[]>([]); // عامة (كل المحاضرات)
@@ -1308,6 +1330,39 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
       setCurrentChart(c.hasChart?{...c}:null);
       setIsDrawingChart(false);
     }
+  },[]);
+
+  // ── Auto physics diagrams — the board draws the figure being narrated ──
+  // Each scenario heading (الجزء/الحالة/مثال/تمرين…) that mentions an incline,
+  // force, rope or pulley triggers a diagram through /api/ai/draw-svg (the
+  // template system answers instantly for سطح مائل/بكرة/مخطط القوى). One diagram
+  // per ~5s of speech, deduped by heading signature, so drawings appear in sync
+  // with the narration without a redraw storm.
+  const analyzePhysicsDraw=useCallback(async(text:string)=>{
+    const t=(text||'').trim();
+    if(t.length<24) return;
+    if(userDrawLockRef.current||physicsDrawBusyRef.current) return;
+    if(!PHYSICS_DRAW_RE.test(t)||!PHYSICS_HEADER_RE.test(t)) return;
+    // جدول نصي (أحرف تنسيق) → يتركه لمسار المخططات
+    if(/[│┌└├]/u.test(t)) return;
+    const now=Date.now();
+    if(now-physicsDrawAtRef.current<5000) return;
+    const sig=t.replace(/\s+/g,' ').slice(0,80);
+    if(sig===physicsDrawSigRef.current) return;
+    physicsDrawSigRef.current=sig;
+    physicsDrawAtRef.current=now;
+    physicsDrawBusyRef.current=true;
+    try{
+      const r=await fetch(resolveApiUrl('/api/ai/draw-svg'),{
+        method:'POST',headers:{'Content-Type':'application/json',...getServiceHeaders()},
+        body:JSON.stringify({prompt:t.slice(0,500)})
+      });
+      const d=await r.json();
+      if(!d.svg||!d.svg.trim()) return;
+      autoPhysicsDrawRef.current=true; // الشكل تلقائي → لا يشرحه المعلم بصوت تلقائياً
+      setSvgContent(d.svg);
+      setCurrentChart(null);
+    }catch(_){}finally{physicsDrawBusyRef.current=false;}
   },[]);
 
   // ── QR Scan session ──────────────────────────────────────────────
@@ -1637,6 +1692,8 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
   const lastAutoExplainKeyRef=useRef('');
   useEffect(()=>{
     if(!svgContent) return;
+    // الشكل رُسم تلقائياً أثناء السرد → لا يقاطع السرد بشرح صوتي تلقائي
+    if(autoPhysicsDrawRef.current){ autoPhysicsDrawRef.current=false; return; }
     const key='svg:'+svgContent.slice(0,96);
     if(lastAutoExplainKeyRef.current===key) return; // already explained this exact drawing
     const st=statusRef.current;
@@ -1758,6 +1815,7 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
           // from overwriting/hiding a drawing the user pinned on the whiteboard
           if(!manualDrawImgRef.current) userDrawLockRef.current=false;
           analyzeChart(msg.text);
+          analyzePhysicsDraw(msg.text); // رسوم فيزيائية تظهر متزامنة مع السرد
         }else if(msg.type==='audio'){
           if(statusRef.current!=='paused') playChunk(msg.data);
           setStatus(s=>s==='listening'||s==='answering'?'answering':'narrating');
@@ -1834,6 +1892,17 @@ export default function LectureNarrator({onClose,initialText=''}:Props){
     ws.onerror=()=>{setErrorMsg('تعذّر الاتصال بالخادم.');setStatus('error');};
     ws.onclose=()=>{stopMic();};
   },[lectureText,voice,playChunk,hardStop,analyzeChart,handleDirectDraw,handleLookAtWhiteboard,clearDrawFallback,triggerChartFromBuffer]);
+
+  // Auto-start when opened with a ready lecture (تشغيل الشرح المباشر من المحاضرة)
+  const startRef=useRef<()=>void>(()=>{});
+  useEffect(()=>{startRef.current=start;},[start]);
+  useEffect(()=>{
+    if(autoStart&&initialText.trim()){
+      const t=setTimeout(()=>{startRef.current();},600);
+      return ()=>clearTimeout(t);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
 
   const stop=useCallback(()=>{
     wsRef.current?.send(JSON.stringify({type:'stop_lecture'}));

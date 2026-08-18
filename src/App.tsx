@@ -616,6 +616,9 @@ export default function App() {
 
   // Lecture text (transcription result) editing state
   const [lectureTextEdit, setLectureTextEdit] = useState<string>("");
+  // Ready-lecture direct play: pre-filled text + auto-start for the narrator
+  const [narratorText, setNarratorText] = useState<string>("");
+  const [narratorAutoStart, setNarratorAutoStart] = useState(false);
 
   // Dictation (speech-to-textbox) state
   const [isDictating, setIsDictating] = useState(false);
@@ -3846,7 +3849,7 @@ export default function App() {
 
               {/* 📖 Lecture Narrator - قارئ المحاضرات التفاعلي */}
               <button
-                onClick={() => { setActiveOverlay('lecture-narrator'); setOverlayIsFullscreen(true); setIsAiAdvisorCollapsed(false); setIsSidebarOpen(false); }}
+                onClick={() => { setActiveOverlay('lecture-narrator'); setOverlayIsFullscreen(true); setIsAiAdvisorCollapsed(false); setIsSidebarOpen(false); setNarratorText(''); setNarratorAutoStart(false); }}
                 className={`w-full p-2 rounded-xl text-right text-xs font-black transition flex items-center justify-between gap-2 ${activeOverlay === 'lecture-narrator' ? 'bg-gradient-to-l from-amber-600/25 to-orange-600/25 text-amber-200 border-r-4 border-amber-500 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
               >
                 <div className="flex items-center gap-2">
@@ -5424,7 +5427,7 @@ export default function App() {
                   {/* 16. Lecture Narrator - قارئ المحاضرات التفاعلي */}
                   {activeOverlay === 'lecture-narrator' && (
                     <div className="h-full min-h-[560px]">
-                      <LectureNarrator onClose={() => setActiveOverlay(null)} />
+                      <LectureNarrator onClose={() => setActiveOverlay(null)} initialText={narratorText} autoStart={narratorAutoStart} />
                     </div>
                   )}
 
@@ -6303,6 +6306,20 @@ export default function App() {
                                   className="px-3 py-1 bg-emerald-700 hover:bg-emerald-600 text-white text-[10px] font-black rounded-lg transition cursor-pointer"
                                 >
                                   💾 حفظ التعديلات
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setNarratorText(lecture.lectureText || lectureTextEdit || '');
+                                    setNarratorAutoStart(true);
+                                    setActiveOverlay('lecture-narrator');
+                                    setOverlayIsFullscreen(true);
+                                    setIsAiAdvisorCollapsed(false);
+                                    setIsSidebarOpen(false);
+                                  }}
+                                  className="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white text-[10px] font-black rounded-lg transition cursor-pointer"
+                                  title="فتح القارئ مع نص هذه المحاضرة وبدء الشرح الصوتي مباشرة"
+                                >
+                                  🎙️ تشغيل الشرح المباشر
                                 </button>
                                 <button
                                   onClick={handleInsertTranscriptToCanvas}
