@@ -507,17 +507,21 @@ function LaserOverlay(){
   );
 }
 
-function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMsg,drawImg,isAnalyzingDraw,onClearDraw,svgContent,onClearSvg,cleverPaintImg,onClearCleverPaint,userSvg,userSvgName,onClearUserSvg,caption,captionActive}:{
+function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMsg,drawImg,isAnalyzingDraw,onClearDraw,svgContent,onClearSvg,cleverPaintImg,onClearCleverPaint,userSvg,userSvgName,onClearUserSvg,caption,captionActive,liveText,laserActive}:{
   text:string; chart:ChartData|null; chunkIdx:number; totalChunks:number; isDrawingChart:boolean; chartErrorMsg?:string;
   drawImg?:string|null; isAnalyzingDraw?:boolean; onClearDraw?:()=>void;
   svgContent?:string|null; onClearSvg?:()=>void;
   cleverPaintImg?:string|null; onClearCleverPaint?:()=>void;
   userSvg?:string|null; userSvgName?:string; onClearUserSvg?:()=>void;
   caption?:string; captionActive?:boolean;
+  liveText?:string; laserActive?:boolean;
 }){
   const {disp,done}=useTypewriter(text,5,11);
+  // كلمة-بكلمة: عند وجود بث حي يُعرض النص لحظة نطقه بدل انتظار اكتمال المقطع
+  const liveStreaming=!!liveText&&liveText.trim().length>0;
+  const display=liveStreaming?liveText||'':disp;
   const boardScrollRef=useRef<HTMLDivElement>(null);
-  const hasContent=disp.trim().length>0||chart?.hasChart||!!drawImg||!!svgContent||!!cleverPaintImg||!!userSvg||!!caption;
+  const hasContent=disp.trim().length>0||!!liveText||chart?.hasChart||!!drawImg||!!svgContent||!!cleverPaintImg||!!userSvg||!!caption;
 
   // Auto-scroll to bottom as text is typed so board always shows latest content
   useEffect(()=>{
@@ -600,8 +604,8 @@ function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMs
                 color:'#1a1832',
                 letterSpacing:'0.01em'
               }}>
-                <MathText text={disp} className="text-slate-900" dir="rtl"/>
-                {!done&&(
+                <MathText text={display} className="text-slate-900" dir="rtl"/>
+                {!liveStreaming&&!done&&(
                   <span className="inline-block align-middle" style={{marginRight:6,position:'relative',display:'inline-flex',alignItems:'center',gap:4}}>
                     {/* Chalk pen icon */}
                     <svg className="ln-pen" width={20} height={20} viewBox="0 0 24 24" fill="none"
@@ -641,7 +645,7 @@ function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMs
                   alt="رسم يدوي"
                   className="w-full object-contain bg-white"
                   style={{maxHeight:400}}/>
-                {captionActive&&<LaserOverlay/>}
+                {laserActive&&<LaserOverlay/>}
                 {isAnalyzingDraw&&(
                   <div className="absolute inset-0 flex items-center justify-center bg-white/60 backdrop-blur-sm">
                     <div className="flex items-center gap-3 bg-indigo-600 text-white px-5 py-3 rounded-2xl text-sm font-black shadow-2xl">
@@ -664,7 +668,7 @@ function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMs
                 <div className="absolute top-2 right-2 z-10 flex items-center gap-1 bg-emerald-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow">
                   <span>🤖</span><span>رسم AI</span>
                 </div>
-                {captionActive&&<LaserOverlay/>}
+                {laserActive&&<LaserOverlay/>}
                 <div className="w-full flex items-center justify-center p-2"
                   dangerouslySetInnerHTML={{__html:svgContent}}
                   style={{minHeight:120}}/>
@@ -685,7 +689,7 @@ function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMs
                 <img src={cleverPaintImg} alt="رسم فيزيائي"
                   className="w-full object-contain bg-white"
                   style={{maxHeight:460}}/>
-                {captionActive&&<LaserOverlay/>}
+                {laserActive&&<LaserOverlay/>}
               </div>
             )}
 
@@ -700,7 +704,7 @@ function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMs
                 <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5 bg-amber-500 text-white text-[10px] font-black px-2.5 py-0.5 rounded-full shadow">
                   <span>🖼️</span><span>رسمة من مكتبتي{userSvgName?` — ${userSvgName}`:''}</span>
                 </div>
-                {captionActive&&<LaserOverlay/>}
+                {laserActive&&<LaserOverlay/>}
                 <div className="w-full flex items-center justify-center p-2"
                   dangerouslySetInnerHTML={{__html:userSvg}}
                   style={{minHeight:120}}/>
@@ -1070,6 +1074,11 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
   const [boardCaptionActive,setBoardCaptionActive]=useState(false);
   const boardCaptionRef=useRef('');
   const boardExplainActiveRef=useRef(false);
+  // بث كلمة-بكلمة أثناء سرد المحاضرة (النص يظهر لحظة نطقه)
+  const [boardLiveText,setBoardLiveText]=useState('');
+  const boardLiveRef=useRef('');
+  const chunkTextRef=useRef('');
+  const boardLiveFallbackRef=useRef<ReturnType<typeof setTimeout>|null>(null);
   // ── Auto physics diagrams during narration (inclines, forces, pulleys…) ──
   const PHYSICS_DRAW_RE=/مائ|منحدر|inclin|زاوية الميل|تحليل القوى|مخطط القوى|قوة الاحتكاك|قوة عمودية|قوى|free body|fbd|بكرة|بكرات|حبل|نيوتن|قذف|قوة أفقية|أتود|atwood|آلة أتوود|مصعد|المصعد|وزن ظاهري|الوزن الظاهري|انعدام الوزن|القصور الذاتي|المحصلة|قوة محصلة/i;
   const PHYSICS_HEADER_RE=/(الجزء|الحالة|القانون|مثال|المثال|تمرين|تمارين|جدول|نصائح|خاتمة|المقدمة|تعريف|سؤال)/i;
@@ -1828,13 +1837,17 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
         }else if(msg.type==='lecture_started'){
           setTotalChunks(msg.total||0); setStatus('narrating');
         }else if(msg.type==='lecture_progress'){
-          setChunkIndex(msg.index); setChunkText(msg.text);
+          setChunkIndex(msg.index); setChunkText(msg.text); chunkTextRef.current=msg.text;
           setAskMode(false); setStatus('narrating');
           // Only release lock if no active manual drawing — prevents chart auto-analysis
           // from overwriting/hiding a drawing the user pinned on the whiteboard
           if(!manualDrawImgRef.current) userDrawLockRef.current=false;
           analyzeChart(msg.text);
           analyzePhysicsDraw(msg.text); // رسوم فيزيائية تظهر متزامنة مع السرد
+          // كلمة-بكلمة: يبدأ المقطع فارغاً وتملؤه تدفقات النطق لحظة وصولها
+          boardLiveRef.current=''; setBoardLiveText('');
+          if(boardLiveFallbackRef.current){clearTimeout(boardLiveFallbackRef.current);boardLiveFallbackRef.current=null;}
+          boardLiveFallbackRef.current=setTimeout(()=>{setBoardLiveText(chunkTextRef.current);},6000);
         }else if(msg.type==='audio'){
           if(statusRef.current!=='paused') playChunk(msg.data);
           setStatus(s=>s==='listening'||s==='answering'?'answering':'narrating');
@@ -1852,6 +1865,12 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
           if(role==='model'&&boardExplainActiveRef.current){
             boardCaptionRef.current+=txt;
             setBoardCaption(boardCaptionRef.current);
+          }
+          // أثناء سرد المحاضرة: نفس التدفق يكتب النص على السبورة كلمة-بكلمة مع الصوت
+          if(role==='model'&&statusRef.current==='narrating'){
+            boardLiveRef.current+=txt;
+            setBoardLiveText(boardLiveRef.current);
+            if(boardLiveFallbackRef.current){clearTimeout(boardLiveFallbackRef.current);boardLiveFallbackRef.current=null;}
           }
           // User started talking → the explanation turn is over; freeze the caption.
           if(role==='user'){ boardExplainActiveRef.current=false; setBoardCaptionActive(false); }
@@ -1882,6 +1901,11 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
           // Explanation turn finished → stop streaming (caption keeps the full text).
           boardExplainActiveRef.current=false;
           setBoardCaptionActive(false);
+          // نهاية مقطع السرد: إكمال النص على السبورة (أمان إن فاتت كلمات من البث)
+          if(statusRef.current==='narrating'){
+            setBoardLiveText(chunkTextRef.current);
+            if(boardLiveFallbackRef.current){clearTimeout(boardLiveFallbackRef.current);boardLiveFallbackRef.current=null;}
+          }
           // Wait 250ms so any in-flight transcript WS messages arrive before we process
           setTimeout(()=>{
             clearDrawFallback();
@@ -2270,7 +2294,9 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
         userSvgName={libDraw?.name}
         onClearUserSvg={()=>{clearBoardCaption();libDrawRef.current=null;setLibDraw(null);lastDrawDescriptionRef.current='';userDrawLockRef.current=false;}}
         caption={boardCaption}
-        captionActive={boardCaptionActive}/>
+        captionActive={boardCaptionActive}
+        liveText={boardLiveText}
+        laserActive={boardCaptionActive||((status==='narrating'||status==='answering')&&(!!manualDrawImg||!!svgContent||!!cleverPaintImg||!!libDraw?.svg))}/>
 
       {/* Clever Painter hidden renderer — draws to off-screen canvas and calls back with PNG */}
       <CleverPainterRenderer

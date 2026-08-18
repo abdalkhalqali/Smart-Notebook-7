@@ -841,13 +841,14 @@ ${line(280, 226, 254, 250, { w: 3.5 })}
 ${line(280, 226, 306, 250, { w: 3.5 })}
 ${line(280, 262, 256, 304, { w: 4 })}
 ${line(280, 262, 304, 304, { w: 4 })}
+<style>@keyframes lpc{0%,100%{opacity:1}50%{opacity:.35}}.lpc{animation:lpc 1.7s ease-in-out infinite}</style>
 ${t(280, 176, "m", { size: 12, italic: true })}
-${arrow(280, 213, 280, 134, C.green, { w: 4, head: 13 })}
-${t(296, 150, "N", { size: 15, italic: true, fill: C.green, anchor: "start" })}
-${arrow(280, 262, 280, 314, C.red, { w: 4, head: 13 })}
-${t(298, 304, "W = mg", { size: 13, italic: true, fill: C.red, anchor: "start" })}
-${arrow(122, 342, 122, 380, C.blue, { w: 3.5, head: 11 })}
-${t(142, 374, "a", { size: 13, italic: true, fill: C.blue, anchor: "start" })}
+<g class="lpc">${arrow(280, 213, 280, 134, C.green, { w: 4, head: 13 })}
+${t(296, 150, "N", { size: 15, italic: true, fill: C.green, anchor: "start" })}</g>
+<g class="lpc">${arrow(280, 262, 280, 314, C.red, { w: 4, head: 13 })}
+${t(298, 304, "W = mg", { size: 13, italic: true, fill: C.red, anchor: "start" })}</g>
+<g class="lpc">${arrow(122, 342, 122, 380, C.blue, { w: 3.5, head: 11 })}
+${t(142, 374, "a", { size: 13, italic: true, fill: C.blue, anchor: "start" })}</g>
 ${t(280, 396, esc(state), { size: 13, fill: C.blue, weight: 700 })}
 `;
   return frame(title, b);
@@ -869,15 +870,16 @@ ${line(420, 320, 412, 328, { w: 2 })}
 ${line(440, 320, 432, 328, { w: 2 })}
 ${line(460, 320, 452, 328, { w: 2 })}
 <rect x="225" y="230" width="110" height="90" rx="7" fill="${C.graySoft}" stroke="${C.ink}" stroke-width="2.5"/>
+<style>@keyframes lpc{0%,100%{opacity:1}50%{opacity:.35}}.lpc{animation:lpc 1.7s ease-in-out infinite}</style>
 ${t(280, 273, "m", { size: 16, italic: true })}
-${arrow(280, 270, 280, 196, C.green, { w: 4, head: 13 })}
-${t(296, 212, "N", { size: 15, italic: true, fill: C.green, anchor: "start" })}
-${arrow(280, 270, 280, 314, C.red, { w: 4, head: 13 })}
-${t(296, 304, "W = mg", { size: 13, italic: true, fill: C.red, anchor: "start" })}
-${arrow(280, 275, 420, 275, C.blue, { w: 4, head: 13 })}
-${t(428, 279, esc(force), { size: 15, italic: true, fill: C.blue, anchor: "start" })}
-${arrow(280, 275, 140, 275, C.amber, { w: 4, head: 13 })}
-${t(134, 252, "f", { size: 15, italic: true, fill: C.amber, anchor: "end" })}
+<g class="lpc">${arrow(280, 270, 280, 196, C.green, { w: 4, head: 13 })}
+${t(296, 212, "N", { size: 15, italic: true, fill: C.green, anchor: "start" })}</g>
+<g class="lpc">${arrow(280, 270, 280, 314, C.red, { w: 4, head: 13 })}
+${t(296, 304, "W = mg", { size: 13, italic: true, fill: C.red, anchor: "start" })}</g>
+<g class="lpc">${arrow(280, 275, 420, 275, C.blue, { w: 4, head: 13 })}
+${t(428, 279, esc(force), { size: 15, italic: true, fill: C.blue, anchor: "start" })}</g>
+<g class="lpc">${arrow(280, 275, 140, 275, C.amber, { w: 4, head: 13 })}
+${t(134, 252, "f", { size: 15, italic: true, fill: C.amber, anchor: "end" })}</g>
 ${t(280, 358, "f_k = ${esc(mu)}·N", { size: 14, italic: true, fill: C.amber })}
 ${t(280, 382, "الاحتكاك يعاكس اتجاه الحركة دائماً", { size: 12, fill: C.soft })}
 `;
@@ -895,10 +897,11 @@ ${line(120, 252, 440, 252, { w: 3 })}
 ${t(205, 211, "A", { size: 17, italic: true })}
 <rect x="300" y="170" width="110" height="82" rx="7" fill="${C.amberSoft}" stroke="${C.ink}" stroke-width="2.5"/>
 ${t(355, 211, "B", { size: 17, italic: true })}
-${arrow(260, 208, 300, 208, C.blue, { w: 4, head: 13 })}
-${t(280, 192, "F₁₂", { size: 14, italic: true, fill: C.blue })}
-${arrow(300, 248, 260, 248, C.red, { w: 4, head: 13 })}
-${t(280, 270, "F₂₁", { size: 14, italic: true, fill: C.red })}
+<style>@keyframes lpc{0%,100%{opacity:1}50%{opacity:.35}}.lpc{animation:lpc 1.7s ease-in-out infinite}</style>
+<g class="lpc">${arrow(260, 208, 300, 208, C.blue, { w: 4, head: 13 })}
+${t(280, 192, "F₁₂", { size: 14, italic: true, fill: C.blue })}</g>
+<g class="lpc">${arrow(300, 248, 260, 248, C.red, { w: 4, head: 13 })}
+${t(280, 270, "F₂₁", { size: 14, italic: true, fill: C.red })}</g>
 ${t(280, 308, "متساويتان في المقدار ومتعاكستان في الاتجاه", { size: 13, fill: C.soft })}
 ${t(280, 338, "F₁₂ = −F₂₁", { size: 15, italic: true, fill: C.red })}
 `;
