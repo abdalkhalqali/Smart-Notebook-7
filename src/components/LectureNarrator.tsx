@@ -1071,8 +1071,8 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
   const boardCaptionRef=useRef('');
   const boardExplainActiveRef=useRef(false);
   // ── Auto physics diagrams during narration (inclines, forces, pulleys…) ──
-  const PHYSICS_DRAW_RE=/مائ|منحدر|inclin|زاوية الميل|تحليل القوى|مخطط القوى|قوة الاحتكاك|قوة عمودية|قوى|free body|fbd|بكرة|بكرات|حبل|نيوتن|قذف|قوة أفقية|أتود|atwood|آلة أتوود|مصعد|المصعد|وزن ظاهري|الوزن الظاهري|انعدام الوزن|القصور الذاتي/i;
-  const PHYSICS_HEADER_RE=/(الجزء|الحالة|مثال|المثال|تمرين|تمارين|جدول|نصائح|خاتمة|المقدمة|تعريف|سؤال)/i;
+  const PHYSICS_DRAW_RE=/مائ|منحدر|inclin|زاوية الميل|تحليل القوى|مخطط القوى|قوة الاحتكاك|قوة عمودية|قوى|free body|fbd|بكرة|بكرات|حبل|نيوتن|قذف|قوة أفقية|أتود|atwood|آلة أتوود|مصعد|المصعد|وزن ظاهري|الوزن الظاهري|انعدام الوزن|القصور الذاتي|المحصلة|قوة محصلة/i;
+  const PHYSICS_HEADER_RE=/(الجزء|الحالة|القانون|مثال|المثال|تمرين|تمارين|جدول|نصائح|خاتمة|المقدمة|تعريف|سؤال)/i;
   const physicsDrawSigRef=useRef('');
   const physicsDrawAtRef=useRef(0);
   const physicsDrawBusyRef=useRef(false);
@@ -1097,12 +1097,17 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
   const [showOpenModal,setShowOpenModal]=useState(false);
   const [savedNarrations,setSavedNarrations]=useState<SavedNarration[]>([]);
   // المحاضرات الجاهزة المدمجة (lec-3, lec-4…) تظهر في قائمة الفتح دائماً
+  const READY_DESC:Record<string,string>={
+    "lec-3":"السطح المائل: تحليل القوى، الاحتكاك، القذف لأعلى، و10 أمثلة محلولة",
+    "lec-4":"المحاضرة الثانية (لرهف): الديناميكا، قوانين نيوتن الثلاثة، حالات المصعد الست، الاحتكاك، و5 أسئلة محلولة",
+  };
   const readyNarrations=useMemo<SavedNarration[]>(()=>initialLectures
     .filter(l=>l.lectureText&&l.lectureText.trim())
     .map(l=>({
       id:l.id,name:l.title,date:l.date,scope:'public' as const,hasDiscussion:false,
       lectureText:l.lectureText||'',drawings:[],qaHistory:[],
       createdAt:`${l.date}T00:00:00.000Z`,updatedAt:`${l.date}T00:00:00.000Z`,ready:true,
+      desc:READY_DESC[l.id]||'',
     })),[]);
   // القائمة المعروضة: الجاهزة أولاً ثم محفوظات المستخدم (بدون تكرار بالاسم)
   const allNarrations=useMemo(()=>{
@@ -2552,6 +2557,7 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
                         </span>
                       </span>
                     </div>
+                    {n.desc&&(<div className="text-[10px] text-slate-400 mt-1 leading-snug">{n.desc}</div>)}
                     <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-500">
                       <span>🗓️ {formatNiceDate(n.date)}</span>
                       <span>🖼️ {n.drawings?.length||0} رسمة</span>

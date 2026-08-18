@@ -19,6 +19,8 @@ export interface SavedNarration {
   updatedAt: string;
   /** محاضرة جاهزة مدمجة تظهر دائماً (من initialLectures) ولو لم تُحفظ */
   ready?: boolean;
+  /** وصف مختصر يوضّح محتوى المحاضرة (للمحاضرات الجاهزة) */
+  desc?: string;
 }
 
 const NARRATIONS_KEY = "smartNotebook_saved_narrations";

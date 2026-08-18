@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════════════════════════════
-// drawingTemplates.ts — مكتبة القوالب الجاهزة للرسم العلمي (20 قالباً)
+// drawingTemplates.ts — مكتبة القوالب الجاهزة للرسم العلمي (23 قالباً)
 // كل قالب يرسم SVG دقيق وجميل بتنسيق موحد، ويُطابَق عليه النص محلياً
 // بدون أي استهلاك للحصة (مجاني وفوري)، والنموذج يستخرج القيم فقط عند
 // الحاجة (خيار اختياري يرتد تلقائياً للقيم الافتراضية عند أي فشل).
@@ -828,25 +828,79 @@ function elevator(p: TemplateParams): string {
   const state = p.state ?? "المصعد ساكن (a = 0)";
   const title = p.title ?? "المصعد — الوزن الظاهري";
   const b = `
-${line(115, 100, 115, 332, { w: 6 })}
-${line(445, 100, 445, 332, { w: 6 })}
-${line(95, 332, 465, 332, { w: 6 })}
-<rect x="140" y="110" width="280" height="222" rx="4" fill="#ffffff" stroke="${C.ink}" stroke-width="2.5"/>
+${line(112, 96, 112, 330, { w: 7 })}
+${line(448, 96, 448, 330, { w: 7 })}
+${line(92, 330, 468, 330, { w: 6 })}
+<rect x="132" y="88" width="296" height="10" rx="3" fill="#cbd5e1"/>
+<rect x="140" y="112" width="280" height="218" rx="6" fill="#f8fafc" stroke="${C.ink}" stroke-width="2.5"/>
+<rect x="140" y="316" width="280" height="14" rx="4" fill="${C.blueSoft}"/>
 ${t(280, 134, "المصعد", { size: 12, fill: C.soft })}
-${circle(280, 205, 16, { fill: C.blueSoft, stroke: C.ink, w: 2.5 })}
-${line(280, 221, 280, 265, { w: 3.5 })}
-${line(280, 235, 256, 259, { w: 3.5 })}
-${line(280, 235, 304, 259, { w: 3.5 })}
-${line(280, 265, 258, 306, { w: 3.5 })}
-${line(280, 265, 302, 306, { w: 3.5 })}
-${t(280, 186, "m", { size: 12, italic: true })}
-${arrow(280, 221, 280, 138, C.green, { w: 3.5, head: 12 })}
-${t(296, 156, "N", { size: 14, italic: true, fill: C.green, anchor: "start" })}
-${arrow(280, 265, 280, 318, C.red, { w: 3.5, head: 12 })}
-${t(296, 308, "W = mg", { size: 13, italic: true, fill: C.red, anchor: "start" })}
-${arrow(120, 344, 120, 382, C.blue, { w: 3, head: 10 })}
-${t(140, 376, "a", { size: 13, italic: true, fill: C.blue, anchor: "start" })}
+${circle(280, 196, 17, { fill: C.amberSoft, stroke: C.ink, w: 2.5 })}
+${line(280, 213, 280, 262, { w: 4 })}
+${line(280, 226, 254, 250, { w: 3.5 })}
+${line(280, 226, 306, 250, { w: 3.5 })}
+${line(280, 262, 256, 304, { w: 4 })}
+${line(280, 262, 304, 304, { w: 4 })}
+${t(280, 176, "m", { size: 12, italic: true })}
+${arrow(280, 213, 280, 134, C.green, { w: 4, head: 13 })}
+${t(296, 150, "N", { size: 15, italic: true, fill: C.green, anchor: "start" })}
+${arrow(280, 262, 280, 314, C.red, { w: 4, head: 13 })}
+${t(298, 304, "W = mg", { size: 13, italic: true, fill: C.red, anchor: "start" })}
+${arrow(122, 342, 122, 380, C.blue, { w: 3.5, head: 11 })}
+${t(142, 374, "a", { size: 13, italic: true, fill: C.blue, anchor: "start" })}
 ${t(280, 396, esc(state), { size: 13, fill: C.blue, weight: 700 })}
+`;
+  return frame(title, b);
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// 22) الاحتكاك — القوى المؤثرة على جسم على سطح أفقي
+// ══════════════════════════════════════════════════════════════════════
+function friction(p: TemplateParams): string {
+  const title = p.title ?? "الاحتكاك — القوى المؤثرة على جسم";
+  const force = p.force ?? "F";
+  const mu = p.mu ?? "μ";
+  const b = `
+${line(90, 320, 470, 320, { w: 4 })}
+${line(100, 320, 92, 328, { w: 2 })}
+${line(120, 320, 112, 328, { w: 2 })}
+${line(140, 320, 132, 328, { w: 2 })}
+${line(420, 320, 412, 328, { w: 2 })}
+${line(440, 320, 432, 328, { w: 2 })}
+${line(460, 320, 452, 328, { w: 2 })}
+<rect x="225" y="230" width="110" height="90" rx="7" fill="${C.graySoft}" stroke="${C.ink}" stroke-width="2.5"/>
+${t(280, 273, "m", { size: 16, italic: true })}
+${arrow(280, 270, 280, 196, C.green, { w: 4, head: 13 })}
+${t(296, 212, "N", { size: 15, italic: true, fill: C.green, anchor: "start" })}
+${arrow(280, 270, 280, 314, C.red, { w: 4, head: 13 })}
+${t(296, 304, "W = mg", { size: 13, italic: true, fill: C.red, anchor: "start" })}
+${arrow(280, 275, 420, 275, C.blue, { w: 4, head: 13 })}
+${t(428, 279, esc(force), { size: 15, italic: true, fill: C.blue, anchor: "start" })}
+${arrow(280, 275, 140, 275, C.amber, { w: 4, head: 13 })}
+${t(134, 252, "f", { size: 15, italic: true, fill: C.amber, anchor: "end" })}
+${t(280, 358, "f_k = ${esc(mu)}·N", { size: 14, italic: true, fill: C.amber })}
+${t(280, 382, "الاحتكاك يعاكس اتجاه الحركة دائماً", { size: 12, fill: C.soft })}
+`;
+  return frame(title, b);
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// 23) قانون الفعل ورد الفعل — نيوتن الثالث
+// ══════════════════════════════════════════════════════════════════════
+function newtonThird(p: TemplateParams): string {
+  const title = p.title ?? "قانون الفعل ورد الفعل — نيوتن الثالث";
+  const b = `
+${line(120, 252, 440, 252, { w: 3 })}
+<rect x="150" y="170" width="110" height="82" rx="7" fill="${C.blueSoft}" stroke="${C.ink}" stroke-width="2.5"/>
+${t(205, 211, "A", { size: 17, italic: true })}
+<rect x="300" y="170" width="110" height="82" rx="7" fill="${C.amberSoft}" stroke="${C.ink}" stroke-width="2.5"/>
+${t(355, 211, "B", { size: 17, italic: true })}
+${arrow(260, 208, 300, 208, C.blue, { w: 4, head: 13 })}
+${t(280, 192, "F₁₂", { size: 14, italic: true, fill: C.blue })}
+${arrow(300, 248, 260, 248, C.red, { w: 4, head: 13 })}
+${t(280, 270, "F₂₁", { size: 14, italic: true, fill: C.red })}
+${t(280, 308, "متساويتان في المقدار ومتعاكستان في الاتجاه", { size: 13, fill: C.soft })}
+${t(280, 338, "F₁₂ = −F₂₁", { size: 15, italic: true, fill: C.red })}
 `;
   return frame(title, b);
 }
@@ -906,7 +960,7 @@ export const templates: DrawingTemplate[] = [
   {
     id: "free_body",
     nameAr: "مخطط الجسم الحر",
-    keywords: ["مخطط القوى", "القوى", "قوى", "جسم حر", "free body", "fbd", "وزن", "قوة الاحتكاك", "قوة عمودية", "مخطط جسم", "قوة أفقية", "سطح أفقي"],
+    keywords: ["مخطط القوى", "القوى", "قوى", "جسم حر", "free body", "fbd", "وزن", "قوة الاحتكاك", "قوة عمودية", "مخطط جسم", "قوة أفقية", "سطح أفقي", "القوة المحصلة", "قوة محصلة", "المحصلة"],
     render: freeBody,
     defaults: { mass: "m = 5 kg" },
     extractHint: "يمكن استخراج: mass (كتلة الجسم), title.",
@@ -984,6 +1038,22 @@ export const templates: DrawingTemplate[] = [
     extractHint: "يمكن استخراج: state (حالة المصعد مثل: ساكن، يتسارع لأعلى، يتسارع لأسفل، سقوط حر، يتباطأ أثناء الصعود، يتباطأ أثناء الهبوط), title.",
   },
   {
+    id: "friction",
+    nameAr: "الاحتكاك — القوى المؤثرة على جسم",
+    keywords: ["احتكاك", "friction", "الاحتكاك السكوني", "الاحتكاك الحركي", "سطح أفقي خشن", "قوة أفقية", "معامل الاحتكاك"],
+    render: friction,
+    defaults: { force: "F", mu: "μ" },
+    extractHint: "يمكن استخراج: force (مقدار القوة الأفقية), mu (معامل الاحتكاك), title.",
+  },
+  {
+    id: "newton_third",
+    nameAr: "قانون الفعل ورد الفعل — نيوتن الثالث",
+    keywords: ["فعل ورد فعل", "رد الفعل", "نيوتن الثالث", "action reaction", "third law"],
+    render: newtonThird,
+    defaults: {},
+    extractHint: "يمكن استخراج: title.",
+  },
+  {
     id: "thermo_cycle",
     nameAr: "الدورة الديناميكية الحرارية",
     keywords: ["دورة", "ديناميكا حرارية", "thermo", "ضغط", "حجم", "P-V", "pv", "كلفن", "كارنو", "عمل", "حرارة"],
@@ -1052,6 +1122,8 @@ export function matchTemplate(text: string): DrawingTemplate | null {
   if (/شمس|كواكب|solar|المريخ|المشتري|زحل|عطارد|الارض|الأرض/i.test(qn)) return findById("solar_system");
   if (/بكرة|بكرات|pulley|أتود|atwood/i.test(qn)) return findById("pulley_system");
   if (/مصعد|المصعد|elevator|وزن ظاهري|انعدام الوزن/i.test(qn)) return findById("elevator");
+  if (/فعل ورد فعل|رد الفعل|نيوتن الثالث|third law|action\s*reaction/i.test(qn)) return findById("newton_third");
+  if (/احتكاك|friction/i.test(qn) && !/مائ|منحدر|inclin|مصعد|elevator|بكرة|pulley/i.test(qn)) return findById("friction");
 
   let best: DrawingTemplate | null = null;
   let bestScore = 0;
