@@ -14,6 +14,7 @@ import SmartBoard from "./components/SmartBoard";
 import PhysicsLab from "./components/PhysicsLab";
 import VoiceConversation from "./components/VoiceConversation";
 import LectureNarrator from "./components/LectureNarrator";
+import AiKeyStatusIndicator from "./components/AiKeyStatusIndicator";
 import { resolveApiUrl } from "./utils/apiBase";
 import { AiProvider, AiKeyEntry, loadKeys, saveKeys, getActiveKey, getActiveRequestHeaders, providerLabel, providerPlaceholder, PROVIDER_OPTIONS, addKey, removeKey, updateKey } from "./utils/aiKeys";
 
@@ -6975,6 +6976,12 @@ export default function App() {
                 <div className="p-6 space-y-4 overflow-y-auto flex-1 custom-scrollbar">
                   <p className="text-xs text-slate-400 leading-relaxed">
                     يمكنك تشغيل المساعد الدراسي الذكي بمفتاح الذكاء الاصطناعي الخاص بك لتفادي أي انقطاع بالخدمة أو للوصول لموديلات مالكة وفوق العادة ومستقلة.
+                  </p>
+
+                  {/* ── Live key routing indicator ─────────────────── */}
+                  <AiKeyStatusIndicator />
+                  <p className="text-[10px] text-slate-500 leading-relaxed">
+                    🟢 مؤشر أخضر = المفتاح الشخصي قيد الاستخدام • 🟡 مؤشر كهرماني = مفتاح الخادم الاحتياطي. مفتاح Gemini مخصص للصوت فقط، والرسم وقراءة كود الرسم يستخدمان أول مفتاح غير-Gemini في قائمتك.
                   </p>
 
                   <div className="space-y-1.5">

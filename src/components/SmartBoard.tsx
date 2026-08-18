@@ -12,6 +12,7 @@ import type { UserDrawing } from '../types';
 import { loadPublicDrawings, persistPublicDrawings, mergeUnique } from '../utils/lectureLibrary';
 import MathCanvasOverlay from './MathCanvasOverlay';
 import CleverPainterRenderer, { CpCmd } from './CleverPainterRenderer';
+import AiKeyStatusIndicator from './AiKeyStatusIndicator';
 import { arabicToUnicode } from '../utils/mathUtils';
 import { getServiceRequestHeaders } from '../utils/aiKeys';
 import { resolveApiUrl } from '../utils/apiBase';
@@ -1010,6 +1011,10 @@ export default function SmartBoard({ isDarkMode = true, onSave, lectureTitle = '
                 🎤 إملاء
               </span>
             )}
+            {/* المفتاح المستخدم للرسم وللصوت */}
+            <div className="hidden md:block">
+              <AiKeyStatusIndicator />
+            </div>
           </div>
           <div className="flex items-center gap-1">
             <button

@@ -66,6 +66,10 @@ export function loadKeys(): AiKeyEntry[] {
 
 export function saveKeys(keys: AiKeyEntry[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(keys.filter(isValidEntry)));
+  // Notify live status indicators (SmartBoard, VoiceConversation, keys modal) to refresh.
+  try {
+    if (typeof window !== "undefined") window.dispatchEvent(new Event("ai-keys-changed"));
+  } catch (_) {}
 }
 
 function isValidEntry(entry: any): entry is AiKeyEntry {
@@ -121,6 +125,52 @@ export function getServiceRequestHeaders(): Record<string, string> {
     return headers;
   }
   return getActiveRequestHeaders();
+}
+
+// ── Live routing indicator ─────────────────────────────────────
+// Describes which key actually powers the voice session and which one
+// powers drawing / code-reading, for the on-screen status indicator.
+export interface KeyRouteInfo {
+  source: "personal" | "server" | "none";
+  provider: AiProvider;
+  label: string;
+  tail: string; // masked key tail, e.g. "…Ab12"
+}
+
+function maskKeyTail(key: string): string {
+  const k = (key || "").trim();
+  if (!k) return "";
+  return k.length > 4 ? `…${k.slice(-4)}` : k;
+}
+
+export function getVoiceKeyInfo(): KeyRouteInfo {
+  const keys = loadKeys();
+  const gem = getActiveKey(keys, "gemini");
+  if (gem?.key.trim()) {
+    return { source: "personal", provider: "gemini", label: providerLabel("gemini"), tail: maskKeyTail(gem.key) };
+  }
+  // Legacy single-key storage: only when it was configured for Gemini.
+  const legacy = (localStorage.getItem(LEGACY_KEY) || "").trim();
+  const legacyProv = (localStorage.getItem(LEGACY_PROVIDER) as AiProvider) || "gemini";
+  if (legacy && legacyProv === "gemini") {
+    return { source: "personal", provider: "gemini", label: providerLabel("gemini"), tail: maskKeyTail(legacy) };
+  }
+  return { source: "server", provider: "gemini", label: providerLabel("gemini"), tail: "" };
+}
+
+export function getServiceKeyInfo(): KeyRouteInfo {
+  const keys = loadKeys();
+  // Drawing / code-reading prefer the first NON-Gemini key; Gemini stays for voice.
+  const svc = getServiceKey(keys);
+  if (svc?.key.trim()) {
+    return { source: "personal", provider: svc.provider, label: svc.label?.trim() || providerLabel(svc.provider), tail: maskKeyTail(svc.key) };
+  }
+  // Fallback: the active-provider key (usually Gemini) powers services too.
+  const active = getActiveKey(keys, (localStorage.getItem(LEGACY_PROVIDER) as AiProvider) || "gemini");
+  if (active?.key.trim()) {
+    return { source: "personal", provider: active.provider, label: active.label?.trim() || providerLabel(active.provider), tail: maskKeyTail(active.key) };
+  }
+  return { source: "server", provider: "gemini", label: providerLabel("gemini"), tail: "" };
 }
 
 export function addKey(

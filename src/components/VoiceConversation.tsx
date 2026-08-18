@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import AiKeyStatusIndicator from './AiKeyStatusIndicator';
 
 // ────────────────────────────────────────────────────────────────
 // TYPES
@@ -478,6 +479,11 @@ export default function VoiceConversation({ onClose }: VoiceConversationProps) {
           {/* Close */}
           <button onClick={onClose} className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/5 transition text-sm">✕</button>
         </div>
+      </div>
+
+      {/* ── Active keys indicator ───────────────────────────────── */}
+      <div className="px-5 py-2 border-b border-white/5 flex items-center justify-center">
+        <AiKeyStatusIndicator />
       </div>
 
       {/* ── Settings Panel ─────────────────────────────────────── */}
