@@ -497,24 +497,26 @@ function ChartPanel({chart}:{chart:ChartData}){
 // WHITEBOARD — realistic white board, fills all available space
 // ══════════════════════════════════════════════════════════════════
 // Laser pointer shown over drawings while the explanation is being spoken aloud.
-function LaserOverlay(){
+function LaserOverlay({pos}:{pos?:{x:number;y:number}}){
+  const useJs=!!pos;
+  const style=useJs?{left:`${pos!.x}%`,top:`${pos!.y}%`}:{left:'12%',top:'20%'}; // CSS animation fallback if no pos
   return(
     <div className="ln-draw-laser" aria-hidden="true">
       <div className="ln-draw-laser-beam"/>
-      <div className="ln-draw-laser-ring"/>
-      <div className="ln-draw-laser-dot"/>
+      <div className={`ln-draw-laser-ring${useJs?' js-controlled':''}`} style={style}/>
+      <div className={`ln-draw-laser-dot${useJs?' js-controlled':''}`} style={style}/>
     </div>
   );
 }
 
-function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMsg,drawImg,isAnalyzingDraw,onClearDraw,svgContent,onClearSvg,cleverPaintImg,onClearCleverPaint,userSvg,userSvgName,onClearUserSvg,caption,captionActive,liveText,laserActive}:{
+function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMsg,drawImg,isAnalyzingDraw,onClearDraw,svgContent,onClearSvg,cleverPaintImg,onClearCleverPaint,userSvg,userSvgName,onClearUserSvg,caption,captionActive,liveText,laserActive,laserPos}:{
   text:string; chart:ChartData|null; chunkIdx:number; totalChunks:number; isDrawingChart:boolean; chartErrorMsg?:string;
   drawImg?:string|null; isAnalyzingDraw?:boolean; onClearDraw?:()=>void;
   svgContent?:string|null; onClearSvg?:()=>void;
   cleverPaintImg?:string|null; onClearCleverPaint?:()=>void;
   userSvg?:string|null; userSvgName?:string; onClearUserSvg?:()=>void;
   caption?:string; captionActive?:boolean;
-  liveText?:string; laserActive?:boolean;
+  liveText?:string; laserActive?:boolean; laserPos?:{x:number;y:number};
 }){
   const {disp,done}=useTypewriter(text,5,11);
   // كلمة-بكلمة: عند وجود بث حي يُعرض النص لحظة نطقه بدل انتظار اكتمال المقطع
@@ -645,7 +647,7 @@ function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMs
                   alt="رسم يدوي"
                   className="w-full object-contain bg-white"
                   style={{maxHeight:400}}/>
-                {laserActive&&<LaserOverlay/>}
+                {laserActive&&<LaserOverlay pos={laserPos}/>}
                 {isAnalyzingDraw&&(
                   <div className="absolute inset-0 flex items-center justify-center bg-white/60 backdrop-blur-sm">
                     <div className="flex items-center gap-3 bg-indigo-600 text-white px-5 py-3 rounded-2xl text-sm font-black shadow-2xl">
@@ -668,7 +670,7 @@ function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMs
                 <div className="absolute top-2 right-2 z-10 flex items-center gap-1 bg-emerald-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow">
                   <span>🤖</span><span>رسم AI</span>
                 </div>
-                {laserActive&&<LaserOverlay/>}
+                {laserActive&&<LaserOverlay pos={laserPos}/>}
                 <div className="w-full flex items-center justify-center p-2"
                   dangerouslySetInnerHTML={{__html:svgContent}}
                   style={{minHeight:120}}/>
@@ -689,7 +691,7 @@ function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMs
                 <img src={cleverPaintImg} alt="رسم فيزيائي"
                   className="w-full object-contain bg-white"
                   style={{maxHeight:460}}/>
-                {laserActive&&<LaserOverlay/>}
+                {laserActive&&<LaserOverlay pos={laserPos}/>}
               </div>
             )}
 
@@ -704,7 +706,7 @@ function Whiteboard({text,chart,chunkIdx,totalChunks,isDrawingChart,chartErrorMs
                 <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5 bg-amber-500 text-white text-[10px] font-black px-2.5 py-0.5 rounded-full shadow">
                   <span>🖼️</span><span>رسمة من مكتبتي{userSvgName?` — ${userSvgName}`:''}</span>
                 </div>
-                {laserActive&&<LaserOverlay/>}
+                {laserActive&&<LaserOverlay pos={laserPos}/>}
                 <div className="w-full flex items-center justify-center p-2"
                   dangerouslySetInnerHTML={{__html:userSvg}}
                   style={{minHeight:120}}/>
@@ -1132,6 +1134,13 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
   const isMutedRef=useRef(false);
   const playTimeRef=useRef(0);
   const sourcesRef=useRef<AudioBufferSourceNode[]>([]);
+  // -- Audio-sync: reveal text and laser position aligned with audio playback --
+  const audioScheduleRef=useRef<Array<{start:number;dur:number}>>([]);
+  const transcriptBufRef=useRef('');
+  const transcriptIntervalRef=useRef<ReturnType<typeof setInterval>|null>(null);
+  const [laserPos,setLaserPos]=useState<{x:number;y:number}|undefined>(undefined);
+  const laserTargetRef=useRef<{x:number;y:number}>({x:50,y:50});
+  const laserTimerRef=useRef<ReturnType<typeof setInterval>|null>(null);
   const statusRef=useRef<Status>('idle');
   const chartCacheRef=useRef<Map<string,ChartData>>(new Map());
   const qaEndRef=useRef<HTMLDivElement>(null);
@@ -1169,8 +1178,57 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
     return()=>{el.remove();};
   },[]);
 
+  // -- Audio-sync: helpers --
+  const stopSyncEffects=useCallback(()=>{
+    if(transcriptIntervalRef.current){clearInterval(transcriptIntervalRef.current);transcriptIntervalRef.current=null;}
+    if(laserTimerRef.current){clearInterval(laserTimerRef.current);laserTimerRef.current=null;}
+    audioScheduleRef.current=[];
+  },[]);
+  const startLaserPulse=useCallback(()=>{
+    if(laserTimerRef.current) clearInterval(laserTimerRef.current);
+    let phase=0;
+    laserTimerRef.current=setInterval(()=>{
+      phase+=0.18;
+      const base=laserTargetRef.current;
+      const jitterX=3*Math.sin(phase*2.3);
+      const jitterY=2*Math.cos(phase*1.7);
+      setLaserPos({x:Math.min(95,Math.max(5,base.x+jitterX)),y:Math.min(95,Math.max(5,base.y+jitterY))});
+    },60);
+  },[]);
+  const startTranscriptSync=useCallback((fullText:string)=>{
+    if(transcriptIntervalRef.current) clearInterval(transcriptIntervalRef.current);
+    transcriptBufRef.current='';
+    let revealedIdx=0;
+    transcriptIntervalRef.current=setInterval(()=>{
+      if(!audioCtxRef.current){if(transcriptIntervalRef.current)clearInterval(transcriptIntervalRef.current);return;}
+      const now=audioCtxRef.current.currentTime;
+      const sch=audioScheduleRef.current;
+      let charBudget=0;
+      for(const ch of sch){
+        if(now>=ch.start+ch.dur) charBudget+=Math.floor(ch.dur*5);
+        else if(now>=ch.start) charBudget+=Math.floor((now-ch.start)*5);
+      }
+      charBudget=Math.max(4,charBudget);
+      if(revealedIdx<charBudget&&revealedIdx<fullText.length){
+        revealedIdx=Math.min(charBudget,fullText.length);
+        setBoardLiveText(fullText.slice(0,revealedIdx));
+        if(revealedIdx>0&&fullText.length>0){
+          const p=revealedIdx/fullText.length;
+          const tx=15+65*p+10*Math.sin(p*Math.PI*4);
+          const ty=20+50*p+15*Math.cos(p*Math.PI*3);
+          laserTargetRef.current={x:Math.min(85,Math.max(15,tx)),y:Math.min(85,Math.max(15,ty))};
+        }
+      }
+      if(revealedIdx>=fullText.length&&transcriptIntervalRef.current){
+        clearInterval(transcriptIntervalRef.current);
+        transcriptIntervalRef.current=null;
+      }
+    },50);
+  },[]);
+
   // Audio
   const hardStop=useCallback(()=>{
+    stopSyncEffects(); setLaserPos(undefined);
     for(const s of sourcesRef.current){try{s.onended=null;s.stop();}catch(_){}}
     sourcesRef.current=[];
     if(audioCtxRef.current) playTimeRef.current=audioCtxRef.current.currentTime;
@@ -1186,6 +1244,7 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
     src.buffer=buf; src.connect(ctx.destination);
     const at=Math.max(ctx.currentTime,playTimeRef.current);
     src.start(at); playTimeRef.current=at+buf.duration;
+    audioScheduleRef.current.push({start:at,dur:buf.duration});
     sourcesRef.current.push(src);
     src.onended=()=>{sourcesRef.current=sourcesRef.current.filter(s=>s!==src);};
   },[]);
@@ -1845,9 +1904,9 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
           analyzeChart(msg.text);
           analyzePhysicsDraw(msg.text); // رسوم فيزيائية تظهر متزامنة مع السرد
           // كلمة-بكلمة: يبدأ المقطع فارغاً وتملؤه تدفقات النطق لحظة وصولها
-          boardLiveRef.current=''; setBoardLiveText('');
+          boardLiveRef.current=''; setBoardLiveText(''); transcriptBufRef.current='';
           if(boardLiveFallbackRef.current){clearTimeout(boardLiveFallbackRef.current);boardLiveFallbackRef.current=null;}
-          boardLiveFallbackRef.current=setTimeout(()=>{setBoardLiveText(chunkTextRef.current);},6000);
+          boardLiveFallbackRef.current=setTimeout(()=>{setBoardLiveText(chunkTextRef.current);},8000);
         }else if(msg.type==='audio'){
           if(statusRef.current!=='paused') playChunk(msg.data);
           setStatus(s=>s==='listening'||s==='answering'?'answering':'narrating');
@@ -1866,10 +1925,14 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
             boardCaptionRef.current+=txt;
             setBoardCaption(boardCaptionRef.current);
           }
-          // أثناء سرد المحاضرة: نفس التدفق يكتب النص على السبورة كلمة-بكلمة مع الصوت
+          // أثناء السرد: نخزّن النص ونكشفه متزامناً مع تشغيل الصوت
           if(role==='model'&&statusRef.current==='narrating'){
-            boardLiveRef.current+=txt;
-            setBoardLiveText(boardLiveRef.current);
+            transcriptBufRef.current+=txt;
+            if(transcriptBufRef.current===txt&&transcriptIntervalRef.current===null){
+              startTranscriptSync(transcriptBufRef.current);
+              startLaserPulse();
+            }
+            boardLiveRef.current=transcriptBufRef.current;
             if(boardLiveFallbackRef.current){clearTimeout(boardLiveFallbackRef.current);boardLiveFallbackRef.current=null;}
           }
           // User started talking → the explanation turn is over; freeze the caption.
@@ -1901,6 +1964,7 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
           // Explanation turn finished → stop streaming (caption keeps the full text).
           boardExplainActiveRef.current=false;
           setBoardCaptionActive(false);
+          stopSyncEffects(); setLaserPos(undefined);
           // نهاية مقطع السرد: إكمال النص على السبورة (أمان إن فاتت كلمات من البث)
           if(statusRef.current==='narrating'){
             setBoardLiveText(chunkTextRef.current);
@@ -2296,7 +2360,8 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
         caption={boardCaption}
         captionActive={boardCaptionActive}
         liveText={boardLiveText}
-        laserActive={boardCaptionActive||((status==='narrating'||status==='answering')&&(!!manualDrawImg||!!svgContent||!!cleverPaintImg||!!libDraw?.svg))}/>
+        laserActive={boardCaptionActive||((status==='narrating'||status==='answering')&&(!!manualDrawImg||!!svgContent||!!cleverPaintImg||!!libDraw?.svg))}
+        laserPos={laserPos}/>
 
       {/* Clever Painter hidden renderer — draws to off-screen canvas and calls back with PNG */}
       <CleverPainterRenderer
