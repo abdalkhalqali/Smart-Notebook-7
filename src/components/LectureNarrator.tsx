@@ -1134,13 +1134,7 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
   const isMutedRef=useRef(false);
   const playTimeRef=useRef(0);
   const sourcesRef=useRef<AudioBufferSourceNode[]>([]);
-  // -- Audio-sync: reveal text and laser position aligned with audio playback --
-  const audioScheduleRef=useRef<Array<{start:number;dur:number}>>([]);
-  const transcriptBufRef=useRef('');
-  const transcriptIntervalRef=useRef<ReturnType<typeof setInterval>|null>(null);
   const [laserPos,setLaserPos]=useState<{x:number;y:number}|undefined>(undefined);
-  const laserTargetRef=useRef<{x:number;y:number}>({x:50,y:50});
-  const laserTimerRef=useRef<ReturnType<typeof setInterval>|null>(null);
   const statusRef=useRef<Status>('idle');
   const chartCacheRef=useRef<Map<string,ChartData>>(new Map());
   const qaEndRef=useRef<HTMLDivElement>(null);
@@ -1178,57 +1172,22 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
     return()=>{el.remove();};
   },[]);
 
-  // -- Audio-sync: helpers --
-  const stopSyncEffects=useCallback(()=>{
-    if(transcriptIntervalRef.current){clearInterval(transcriptIntervalRef.current);transcriptIntervalRef.current=null;}
-    if(laserTimerRef.current){clearInterval(laserTimerRef.current);laserTimerRef.current=null;}
-    audioScheduleRef.current=[];
-  },[]);
+  // ── Simple laser pulse (CSS + jitter) ──
+  const laserPulseRef=useRef<ReturnType<typeof setInterval>|null>(null);
+  const laserTargetRef=useRef<{x:number;y:number}>({x:50,y:50});
   const startLaserPulse=useCallback(()=>{
-    if(laserTimerRef.current) clearInterval(laserTimerRef.current);
-    let phase=0;
-    laserTimerRef.current=setInterval(()=>{
-      phase+=0.18;
-      const base=laserTargetRef.current;
-      const jitterX=3*Math.sin(phase*2.3);
-      const jitterY=2*Math.cos(phase*1.7);
-      setLaserPos({x:Math.min(95,Math.max(5,base.x+jitterX)),y:Math.min(95,Math.max(5,base.y+jitterY))});
-    },60);
-  },[]);
-  const startTranscriptSync=useCallback(()=>{
-    if(transcriptIntervalRef.current) clearInterval(transcriptIntervalRef.current);
-    let revealedIdx=0;
-    transcriptIntervalRef.current=setInterval(()=>{
-      if(!audioCtxRef.current||statusRef.current!=='narrating'){if(transcriptIntervalRef.current){clearInterval(transcriptIntervalRef.current);transcriptIntervalRef.current=null;}return;}
-      // Read the LIVE buffer — transcript deltas keep arriving from the WS
-      const fullText=transcriptBufRef.current;
-      if(!fullText){return;}
-      const now=audioCtxRef.current.currentTime;
-      const sch=audioScheduleRef.current;
-      let charBudget=0;
-      for(const ch of sch){
-        if(now>=ch.start+ch.dur) charBudget+=Math.floor(ch.dur*5);
-        else if(now>=ch.start) charBudget+=Math.floor((now-ch.start)*5);
-      }
-      charBudget=Math.max(4,charBudget);
-      if(revealedIdx<charBudget&&revealedIdx<fullText.length){
-        revealedIdx=Math.min(charBudget,fullText.length);
-        setBoardLiveText(fullText.slice(0,revealedIdx));
-        // Move laser along a path over the drawing area
-        if(revealedIdx>0&&fullText.length>0){
-          const p=revealedIdx/fullText.length;
-          const tx=15+65*p+10*Math.sin(p*Math.PI*4);
-          const ty=20+50*p+15*Math.cos(p*Math.PI*3);
-          laserTargetRef.current={x:Math.min(85,Math.max(15,tx)),y:Math.min(85,Math.max(15,ty))};
-        }
-      }
-      // Keep running — interval stops when turn_complete calls stopSyncEffects
-    },50);
+    if(laserPulseRef.current) clearInterval(laserPulseRef.current);
+    let t=0;
+    laserPulseRef.current=setInterval(()=>{
+      t+=0.15;
+      const b=laserTargetRef.current;
+      setLaserPos({x:Math.min(92,Math.max(8,b.x+3*Math.sin(t*2.1))),y:Math.min(92,Math.max(8,b.y+2*Math.cos(t*1.9)))});
+    },70);
   },[]);
 
   // Audio
   const hardStop=useCallback(()=>{
-    stopSyncEffects(); setLaserPos(undefined);
+    if(laserPulseRef.current){clearInterval(laserPulseRef.current);laserPulseRef.current=null;} setLaserPos(undefined);
     for(const s of sourcesRef.current){try{s.onended=null;s.stop();}catch(_){}}
     sourcesRef.current=[];
     if(audioCtxRef.current) playTimeRef.current=audioCtxRef.current.currentTime;
@@ -1244,7 +1203,6 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
     src.buffer=buf; src.connect(ctx.destination);
     const at=Math.max(ctx.currentTime,playTimeRef.current);
     src.start(at); playTimeRef.current=at+buf.duration;
-    audioScheduleRef.current.push({start:at,dur:buf.duration});
     sourcesRef.current.push(src);
     src.onended=()=>{sourcesRef.current=sourcesRef.current.filter(s=>s!==src);};
   },[]);
@@ -1903,8 +1861,8 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
           if(!manualDrawImgRef.current) userDrawLockRef.current=false;
           analyzeChart(msg.text);
           analyzePhysicsDraw(msg.text); // رسوم فيزيائية تظهر متزامنة مع السرد
-          // كلمة-بكلمة: يبدأ المقطع فارغاً وتملؤه تدفقات النطق لحظة وصولها
-          boardLiveRef.current=''; setBoardLiveText(''); transcriptBufRef.current='';
+          // يبدأ المقطع فارغاً وينتهي بنص كامل عند انتهاء الصوت
+          boardLiveRef.current=''; setBoardLiveText('');
           if(boardLiveFallbackRef.current){clearTimeout(boardLiveFallbackRef.current);boardLiveFallbackRef.current=null;}
           boardLiveFallbackRef.current=setTimeout(()=>{setBoardLiveText(chunkTextRef.current);},8000);
         }else if(msg.type==='audio'){
@@ -1925,14 +1883,10 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
             boardCaptionRef.current+=txt;
             setBoardCaption(boardCaptionRef.current);
           }
-          // أثناء السرد: نخزّن النص ونكشفه متزامناً مع تشغيل الصوت
+          // أثناء السرد: النص يظهر مباشرة مع تدفق transcript (كالمحادثة الخلفية)
           if(role==='model'&&statusRef.current==='narrating'){
-            transcriptBufRef.current+=txt;
-            if(transcriptBufRef.current===txt&&transcriptIntervalRef.current===null){
-              startTranscriptSync();
-              startLaserPulse();
-            }
-            boardLiveRef.current=transcriptBufRef.current;
+            boardLiveRef.current+=txt;
+            setBoardLiveText(boardLiveRef.current);
             if(boardLiveFallbackRef.current){clearTimeout(boardLiveFallbackRef.current);boardLiveFallbackRef.current=null;}
           }
           // User started talking → the explanation turn is over; freeze the caption.
@@ -1964,7 +1918,7 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
           // Explanation turn finished → stop streaming (caption keeps the full text).
           boardExplainActiveRef.current=false;
           setBoardCaptionActive(false);
-          stopSyncEffects(); setLaserPos(undefined);
+          if(laserPulseRef.current){clearInterval(laserPulseRef.current);laserPulseRef.current=null;} setLaserPos(undefined);
           // نهاية مقطع السرد: إكمال النص على السبورة (أمان إن فاتت كلمات من البث)
           if(statusRef.current==='narrating'){
             setBoardLiveText(chunkTextRef.current);
