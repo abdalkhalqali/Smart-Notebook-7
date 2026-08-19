@@ -1195,12 +1195,14 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
       setLaserPos({x:Math.min(95,Math.max(5,base.x+jitterX)),y:Math.min(95,Math.max(5,base.y+jitterY))});
     },60);
   },[]);
-  const startTranscriptSync=useCallback((fullText:string)=>{
+  const startTranscriptSync=useCallback(()=>{
     if(transcriptIntervalRef.current) clearInterval(transcriptIntervalRef.current);
-    transcriptBufRef.current='';
     let revealedIdx=0;
     transcriptIntervalRef.current=setInterval(()=>{
-      if(!audioCtxRef.current){if(transcriptIntervalRef.current)clearInterval(transcriptIntervalRef.current);return;}
+      if(!audioCtxRef.current||statusRef.current!=='narrating'){if(transcriptIntervalRef.current){clearInterval(transcriptIntervalRef.current);transcriptIntervalRef.current=null;}return;}
+      // Read the LIVE buffer — transcript deltas keep arriving from the WS
+      const fullText=transcriptBufRef.current;
+      if(!fullText){return;}
       const now=audioCtxRef.current.currentTime;
       const sch=audioScheduleRef.current;
       let charBudget=0;
@@ -1212,6 +1214,7 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
       if(revealedIdx<charBudget&&revealedIdx<fullText.length){
         revealedIdx=Math.min(charBudget,fullText.length);
         setBoardLiveText(fullText.slice(0,revealedIdx));
+        // Move laser along a path over the drawing area
         if(revealedIdx>0&&fullText.length>0){
           const p=revealedIdx/fullText.length;
           const tx=15+65*p+10*Math.sin(p*Math.PI*4);
@@ -1219,10 +1222,7 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
           laserTargetRef.current={x:Math.min(85,Math.max(15,tx)),y:Math.min(85,Math.max(15,ty))};
         }
       }
-      if(revealedIdx>=fullText.length&&transcriptIntervalRef.current){
-        clearInterval(transcriptIntervalRef.current);
-        transcriptIntervalRef.current=null;
-      }
+      // Keep running — interval stops when turn_complete calls stopSyncEffects
     },50);
   },[]);
 
@@ -1929,7 +1929,7 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
           if(role==='model'&&statusRef.current==='narrating'){
             transcriptBufRef.current+=txt;
             if(transcriptBufRef.current===txt&&transcriptIntervalRef.current===null){
-              startTranscriptSync(transcriptBufRef.current);
+              startTranscriptSync();
               startLaserPulse();
             }
             boardLiveRef.current=transcriptBufRef.current;
