@@ -170,7 +170,6 @@ export interface UserDrawing {
   svg: string;
   createdAt: string;
   scope: 'private' | 'public';
-  regions?: { label: string; keywords: string[]; x: number; y: number }[];
 }
 
 // سجل مناقشة جلسة قارئ المحاضرات

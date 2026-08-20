@@ -1137,8 +1137,6 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
   const [laserPos,setLaserPos]=useState<{x:number;y:number}|undefined>(undefined);
   const statusRef=useRef<Status>('idle');
   const chartCacheRef=useRef<Map<string,ChartData>>(new Map());
-  // Regions of the currently-displayed lecture drawing (for laser targeting)
-  const activeDrawingRegionsRef=useRef<{label:string;keywords:string[];x:number;y:number}[]>([]);
   const qaEndRef=useRef<HTMLDivElement>(null);
   // Buffer model transcript between turns so DRAW_CONFIRM analysis runs on full description
   const modelTransBuf=useRef('');
@@ -1177,7 +1175,6 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
   // ── Simple laser pulse (CSS + jitter) ──
   const laserPulseRef=useRef<ReturnType<typeof setInterval>|null>(null);
   const laserTargetRef=useRef<{x:number;y:number}>({x:50,y:50});
-  const activeDrawingIdRef=useRef<string|null>(null);
   const startLaserPulse=useCallback(()=>{
     if(laserPulseRef.current) clearInterval(laserPulseRef.current);
     let t=0;
@@ -1191,9 +1188,6 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
   // Audio
   const hardStop=useCallback(()=>{
     if(laserPulseRef.current){clearInterval(laserPulseRef.current);laserPulseRef.current=null;} setLaserPos(undefined);
-          // امسح حالة الرسم النشطة عند انتهاء المقطع
-          activeDrawingIdRef.current=null;
-          activeDrawingRegionsRef.current=[];
     for(const s of sourcesRef.current){try{s.onended=null;s.stop();}catch(_){}}
     sourcesRef.current=[];
     if(audioCtxRef.current) playTimeRef.current=audioCtxRef.current.currentTime;
@@ -1552,30 +1546,15 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
   // Live streaming: reset the caption and arm the WS transcript sink so every
   // spoken word of the explanation is written under the drawing as it is
   // pronounced (Gemini Live delivers transcript deltas in sync with the audio).
-  // Find which region in the active drawing the spoken text is pointing at
-  const findBestRegion=useCallback((text:string)=>{
-    const regions=activeDrawingRegionsRef.current;
-    if(!regions.length) return null;
-    let best:{label:string;x:number;y:number}|null=null, bestScore=0;
-    const t=text.toLowerCase();
-    for(const r of regions){
-      let score=0;
-      for(const kw of r.keywords){ if(t.includes(kw)) score+=kw.length; }
-      if(score>bestScore){ bestScore=score; best={label:r.label,x:r.x,y:r.y}; }
-    }
-    return bestScore>0?best:null;
-  },[]);
-
   const beginBoardCaptionStream=useCallback(()=>{
     boardExplainActiveRef.current=true;
     boardCaptionRef.current='';
     setBoardCaption('');
     setBoardCaptionActive(true);
-    // فعّل الليزر فوق الرسمة أثناء الشرح المكتوب — يستهدف المنطقة النشطة
-    const firstRegion=activeDrawingRegionsRef.current[0];
-    laserTargetRef.current=firstRegion?{x:firstRegion.x,y:firstRegion.y}:{x:50,y:35};
+    // فعّل الليزر فوق الرسمة أثناء الشرح المكتوب
+    laserTargetRef.current={x:50,y:35};
     startLaserPulse();
-  },[findBestRegion]);
+  },[]);
   // Full text at once (REST fallback — not spoken through the live session).
   const showBoardCaptionFull=useCallback((text:string)=>{
     boardExplainActiveRef.current=false;
@@ -1884,53 +1863,8 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
           // from overwriting/hiding a drawing the user pinned on the whiteboard
           if(!manualDrawImgRef.current) userDrawLockRef.current=false;
           analyzeChart(msg.text);
-          // مطابقة رسومات المحاضرة الجاهزة محلياً (بلا API) — أولاً
-          if(!userDrawLockRef.current){
-            const activeLect=allNarrations.find(n=>n.lectureText===lectureText);
-            if(activeLect?.drawings?.length){
-              const txtLower=(msg.text||'').toLowerCase();
-              let bestDraw:null|{id:string;svg:string;keywords:string[];regions?:{label:string;keywords:string[];x:number;y:number}[]}=null;
-              let bestScore=0;
-              for(const d of activeLect.drawings as {id:string;svg:string;keywords:string[];regions?:{label:string;keywords:string[];x:number;y:number}[]}[]){
-                if(!d.keywords?.length) continue;
-                let score=0;
-                for(const kw of d.keywords){ if(txtLower.includes(kw)) score+=kw.length; }
-                if(score>bestScore){ bestScore=score; bestDraw=d; }
-              }
-              if(bestDraw&&bestScore>0){
-                // إذا تغيرت الرسمة عن السابقة: امسح القديمة واعرض الجديدة
-                const prevId=activeDrawingIdRef.current;
-                if(prevId!==bestDraw.id){
-                  activeDrawingIdRef.current=bestDraw.id;
-                  activeDrawingRegionsRef.current=(bestDraw as any).regions||[];
-                  autoPhysicsDrawRef.current=false;
-                  setSvgContent(bestDraw.svg);
-                  setCurrentChart(null);
-                  setLibDraw(null);
-                  setManualDrawImg(null);
-                }
-                // حرّك الليزر إلى المنطقة الأولى إن وُجدت
-                if(activeDrawingRegionsRef.current.length){
-                  const first=activeDrawingRegionsRef.current[0];
-                  laserTargetRef.current={x:first.x,y:first.y};
-                  startLaserPulse();
-                }
-              }else{
-                // لا مطابقة: امسح الرسم إن كان هناك سابقة
-                if(activeDrawingIdRef.current){
-                  activeDrawingIdRef.current=null;
-                  activeDrawingRegionsRef.current=[];
-                  autoPhysicsDrawRef.current=false;
-                  setSvgContent(null);
-                }
-              }
-            }
-          }
-          // كخيار أخير: توليد رسم من الخادم (إن لم توجد مطابقة محلية)
-          if(!activeDrawingIdRef.current&&!userDrawLockRef.current){
-            analyzePhysicsDraw(msg.text);
-          }
-          // فعّل الليزر فوق الرسم إن وُجد
+          analyzePhysicsDraw(msg.text); // رسوم فيزيائية تظهر متزامنة مع السرد
+          // فعّل مؤشر الليزر أثناء السرد فوق الرسم إن وُجد
           if(autoPhysicsDrawRef.current||(!!manualDrawImg||!!svgContent||!!cleverPaintImg||!!libDraw?.svg)){
             laserTargetRef.current={x:50,y:35};
             startLaserPulse();
@@ -1956,12 +1890,14 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
           if(role==='model'&&boardExplainActiveRef.current){
             boardCaptionRef.current+=txt;
             setBoardCaption(boardCaptionRef.current);
-            // حرّك الليزر فوق المنطقة المشروحة تتبّعاً للكلمات المكتوبة تحت الرسم
-            if(laserPulseRef.current&&activeDrawingRegionsRef.current.length){
-              const region=findBestRegion(boardCaptionRef.current);
-              if(region){
-                laserTargetRef.current={x:region.x,y:region.y};
-              }
+            // حرّك الليزر مع تقدّم الشرح المكتوب تحت الرسم
+            const capLen=boardCaptionRef.current.length;
+            const capPct=Math.min(1,capLen/Math.max(1,500));
+            if(laserPulseRef.current){
+              laserTargetRef.current={
+                x:Math.max(20,Math.min(80,50+capPct*25*Math.sin(capLen*0.1))),
+                y:Math.max(25,Math.min(55,35+capPct*15))
+              };
             }
           }
           // أثناء السرد: النص يظهر مباشرة مع تدفق transcript (كالمحادثة الخلفية)
@@ -1969,12 +1905,13 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
             boardLiveRef.current+=txt;
             setBoardLiveText(boardLiveRef.current);
             if(boardLiveFallbackRef.current){clearTimeout(boardLiveFallbackRef.current);boardLiveFallbackRef.current=null;}
-            // حرّك الليزر فوق المنطقة المشروحة في الرسم تتبّعاً للكلمات المنطوقة
-            if(laserPulseRef.current&&activeDrawingRegionsRef.current.length){
-              const region=findBestRegion(boardLiveRef.current);
-              if(region){
-                laserTargetRef.current={x:region.x,y:region.y};
-              }
+            // حرّك الليزر مع تقدّم السرد فوق الرسمة (مسار يمين→يسار RTL)
+            const pct=Math.min(1,boardLiveRef.current.length/Math.max(1,(chunkTextRef.current||'').length));
+            if(laserPulseRef.current){
+              laserTargetRef.current={
+                x:Math.max(15,Math.min(85,85-pct*65)),
+                y:Math.max(20,Math.min(60,30+pct*25))
+              };
             }
           }
           // User started talking → the explanation turn is over; freeze the caption.
