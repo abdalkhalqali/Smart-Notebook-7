@@ -1116,7 +1116,7 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
     .filter(l=>l.lectureText&&l.lectureText.trim())
     .map(l=>({
       id:l.id,name:l.title,date:l.date,scope:'public' as const,hasDiscussion:false,
-      lectureText:l.lectureText||'',drawings:l.drawings||[],qaHistory:[],
+      lectureText:l.lectureText||'',drawings:[],qaHistory:[],
       createdAt:`${l.date}T00:00:00.000Z`,updatedAt:`${l.date}T00:00:00.000Z`,ready:true,
       desc:READY_DESC[l.id]||'',
     })),[]);
@@ -1551,9 +1551,6 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
     boardCaptionRef.current='';
     setBoardCaption('');
     setBoardCaptionActive(true);
-    // فعّل الليزر فوق الرسمة أثناء الشرح المكتوب
-    laserTargetRef.current={x:50,y:35};
-    startLaserPulse();
   },[]);
   // Full text at once (REST fallback — not spoken through the live session).
   const showBoardCaptionFull=useCallback((text:string)=>{
@@ -1864,11 +1861,6 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
           if(!manualDrawImgRef.current) userDrawLockRef.current=false;
           analyzeChart(msg.text);
           analyzePhysicsDraw(msg.text); // رسوم فيزيائية تظهر متزامنة مع السرد
-          // فعّل مؤشر الليزر أثناء السرد فوق الرسم إن وُجد
-          if(autoPhysicsDrawRef.current||(!!manualDrawImg||!!svgContent||!!cleverPaintImg||!!libDraw?.svg)){
-            laserTargetRef.current={x:50,y:35};
-            startLaserPulse();
-          }
           // يبدأ المقطع فارغاً وينتهي بنص كامل عند انتهاء الصوت
           boardLiveRef.current=''; setBoardLiveText('');
           if(boardLiveFallbackRef.current){clearTimeout(boardLiveFallbackRef.current);boardLiveFallbackRef.current=null;}
@@ -1890,29 +1882,12 @@ export default function LectureNarrator({onClose,initialText='',autoStart=false}
           if(role==='model'&&boardExplainActiveRef.current){
             boardCaptionRef.current+=txt;
             setBoardCaption(boardCaptionRef.current);
-            // حرّك الليزر مع تقدّم الشرح المكتوب تحت الرسم
-            const capLen=boardCaptionRef.current.length;
-            const capPct=Math.min(1,capLen/Math.max(1,500));
-            if(laserPulseRef.current){
-              laserTargetRef.current={
-                x:Math.max(20,Math.min(80,50+capPct*25*Math.sin(capLen*0.1))),
-                y:Math.max(25,Math.min(55,35+capPct*15))
-              };
-            }
           }
           // أثناء السرد: النص يظهر مباشرة مع تدفق transcript (كالمحادثة الخلفية)
           if(role==='model'&&statusRef.current==='narrating'){
             boardLiveRef.current+=txt;
             setBoardLiveText(boardLiveRef.current);
             if(boardLiveFallbackRef.current){clearTimeout(boardLiveFallbackRef.current);boardLiveFallbackRef.current=null;}
-            // حرّك الليزر مع تقدّم السرد فوق الرسمة (مسار يمين→يسار RTL)
-            const pct=Math.min(1,boardLiveRef.current.length/Math.max(1,(chunkTextRef.current||'').length));
-            if(laserPulseRef.current){
-              laserTargetRef.current={
-                x:Math.max(15,Math.min(85,85-pct*65)),
-                y:Math.max(20,Math.min(60,30+pct*25))
-              };
-            }
           }
           // User started talking → the explanation turn is over; freeze the caption.
           if(role==='user'){ boardExplainActiveRef.current=false; setBoardCaptionActive(false); }
